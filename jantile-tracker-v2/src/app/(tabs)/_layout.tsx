@@ -16,6 +16,7 @@ export default function TabLayout() {
                 tabBarActiveTintColor: '#34d399', // text-emerald-400
                 tabBarInactiveTintColor: '#64748b', // text-slate-500
             }}
+            sceneContainerStyle={{ backgroundColor: '#0f172a' }}
         >
             <Tabs.Screen
                 name="index"

@@ -5,20 +5,9 @@ import { useRouter } from 'expo-router';
 import { Box, RefreshCcw, Search, ChevronLeft, ChevronRight, Check } from 'lucide-react-native';
 import clsx from 'clsx';
 import { WizardProvider, useWizard, RequestType } from '../../components/wizard/WizardContext';
+import { useLogisticsData } from '../../hooks/useLogisticsData';
 
-// --- MOCK DATA FOR DEMO ---
-const MOCK_JOBS = [
-    { id: '1', name: '36w 66th St' },
-    { id: '2', name: '72 Park Ave' },
-    { id: '3', name: '10 Hudson Yards' },
-];
 
-const MOCK_INVENTORY = [
-    { id: '101', name: 'White Subway Tile', qty: 500 },
-    { id: '102', name: 'Grout - Grey', qty: 20 },
-    { id: '103', name: 'Thinset', qty: 45 },
-    { id: '104', name: 'Spacers 1/8"', qty: 1000 },
-];
 
 function StepButtons() {
     const { step, setStep, submitRequest } = useWizard();
@@ -89,11 +78,14 @@ function Step1Type() {
 
 function Step2Job() {
     const { jobId, setJobId } = useWizard();
+    const { jobs, loading } = useLogisticsData();
+
+    if (loading) return <View className="p-5"><Text className="text-white">Loading Jobs...</Text></View>;
 
     return (
         <View className="flex-1 px-5 pt-8">
             <Text className="text-white text-2xl font-bold mb-6">Select a Job</Text>
-            {MOCK_JOBS.map(job => (
+            {jobs.map((job: any) => (
                 <TouchableOpacity
                     key={job.id}
                     onPress={() => setJobId(job.id)}
@@ -112,15 +104,18 @@ function Step2Job() {
 
 function Step3Items() {
     const { items, addItem, removeItem } = useWizard();
+    const { inventory, loading } = useLogisticsData();
     const [search, setSearch] = useState('');
     const [qtyMap, setQtyMap] = useState<Record<string, string>>({});
 
-    const filtered = MOCK_INVENTORY.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
+    const filtered = inventory.filter((i: any) => i.item_name?.toLowerCase().includes(search.toLowerCase()));
 
-    const handleAdd = (item: typeof MOCK_INVENTORY[0], qty: string) => {
-        addItem({ id: item.id, name: item.name, quantity: parseInt(qty) || 0 });
+    const handleAdd = (item: any, qty: string) => {
+        addItem({ id: item.id, name: item.item_name, quantity: parseInt(qty) || 0 });
         setQtyMap(prev => ({ ...prev, [item.id]: '' })); // Reset input
     };
+
+    if (loading) return <View className="p-5"><Text className="text-white">Loading Inventory...</Text></View>;
 
     return (
         <View className="flex-1 px-5 pt-4">
@@ -139,13 +134,13 @@ function Step3Items() {
             </View>
 
             <ScrollView className="flex-1">
-                {filtered.map(item => {
+                {filtered.map((item: any) => {
                     const inCart = items.find(i => i.id === item.id);
                     return (
                         <View key={item.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-3">
                             <View className="flex-row justify-between mb-2">
-                                <Text className="text-white font-bold text-lg">{item.name}</Text>
-                                <Text className="text-slate-400">On Hand: {item.qty}</Text>
+                                <Text className="text-white font-bold text-lg">{item.item_name}</Text>
+                                <Text className="text-slate-400">On Hand: {item.quantity_on_hand}</Text>
                             </View>
 
                             <View className="flex-row items-center">
@@ -174,7 +169,8 @@ function Step3Items() {
 
 function Step4Review() {
     const { type, jobId, items } = useWizard();
-    const jobName = MOCK_JOBS.find(j => j.id === jobId)?.name;
+    const { jobs } = useLogisticsData();
+    const jobName = jobs.find((j: any) => j.id === jobId)?.name || 'Unknown Job';
     const typeLabel = type === 'delivery' ? 'Warehouse Request' : 'Field Return';
 
     return (
