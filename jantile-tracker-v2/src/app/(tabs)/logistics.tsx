@@ -6,9 +6,9 @@ export default function LogisticsScreen() {
     const router = useRouter();
 
     return (
-        <View className="flex-1 bg-slate-900 px-5 pt-12">
+        <View className="flex-1 bg-slate-50 px-5 pt-12">
             <View className="flex-row justify-between items-center mb-6">
-                <Text className="text-white text-3xl font-bold">Logistics</Text>
+                <Text className="text-slate-900 text-3xl font-bold">Logistics</Text>
                 <TouchableOpacity
                     onPress={() => router.push('/logistics/new-request')}
                     className="bg-blue-600 p-2 rounded-full"

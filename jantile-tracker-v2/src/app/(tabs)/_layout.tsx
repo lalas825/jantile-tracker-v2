@@ -8,13 +8,13 @@ export default function TabLayout() {
             screenOptions={{
                 headerShown: true, // Enable header for Hamburger
                 headerStyle: {
-                    backgroundColor: '#0f172a', // bg-slate-900
-                    borderBottomColor: '#1e293b', // border-slate-800
+                    backgroundColor: '#ffffff', // bg-white
+                    borderBottomColor: '#e2e8f0', // border-slate-200
                     borderBottomWidth: 1,
                     shadowOpacity: 0,
                     elevation: 0,
                 },
-                headerTintColor: '#fff', // White title
+                headerTintColor: '#0f172a', // Slate-900 title
                 headerTitleStyle: {
                     fontWeight: 'bold',
                 },
@@ -23,18 +23,18 @@ export default function TabLayout() {
                         onPress={() => router.push('/(tabs)/menu')}
                         style={{ marginLeft: 16 }}
                     >
-                        <Menu color="#fff" size={24} />
+                        <Menu color="#0f172a" size={24} />
                     </TouchableOpacity>
                 ),
                 tabBarStyle: {
-                    backgroundColor: '#0f172a',
-                    borderTopColor: '#1e293b',
+                    backgroundColor: '#ffffff',
+                    borderTopColor: '#e2e8f0',
                     borderTopWidth: 1,
                 },
-                tabBarActiveTintColor: '#34d399',
-                tabBarInactiveTintColor: '#64748b',
+                tabBarActiveTintColor: '#3b82f6', // blue-500 for active
+                tabBarInactiveTintColor: '#64748b', // slate-500
             }}
-            sceneContainerStyle={{ backgroundColor: '#0f172a' }}
+            sceneContainerStyle={{ backgroundColor: '#f8fafc' }}
         >
             {/* --- VISIBLE TABS --- */}
             <Tabs.Screen

@@ -4,9 +4,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function WarehouseScreen() {
     return (
-        <SafeAreaView className="flex-1 bg-slate-900 justify-center items-center">
-            <Text className="text-white text-2xl font-bold">WAREHOUSE</Text>
-            <Text className="text-slate-400 mt-2">Inventory & Logistics</Text>
+        <SafeAreaView className="flex-1 bg-slate-50 justify-center items-center" style={{ backgroundColor: '#f8fafc' }}>
+            <Text className="text-slate-900 text-2xl font-bold">WAREHOUSE</Text>
+            <Text className="text-slate-500 mt-2">Inventory & Logistics</Text>
         </SafeAreaView>
     );
 }

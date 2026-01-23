@@ -9,14 +9,14 @@ const MenuButton = ({ title, subtitle, icon: Icon, route }: { title: string, sub
     return (
         <TouchableOpacity
             onPress={() => router.push(route)}
-            className="flex-row items-center p-5 bg-slate-800 rounded-xl mb-4 border border-slate-700"
+            className="flex-row items-center p-5 bg-white rounded-xl mb-4 border border-slate-200 shadow-sm"
         >
-            <View className="p-3 bg-slate-700 rounded-full mr-4">
+            <View className="p-3 bg-slate-100 rounded-full mr-4">
                 <Icon size={28} color="#94a3b8" />
             </View>
             <View>
-                <Text className="text-white text-xl font-bold">{title}</Text>
-                <Text className="text-slate-400">{subtitle}</Text>
+                <Text className="text-slate-900 text-xl font-bold">{title}</Text>
+                <Text className="text-slate-500">{subtitle}</Text>
             </View>
         </TouchableOpacity>
     );
@@ -24,8 +24,8 @@ const MenuButton = ({ title, subtitle, icon: Icon, route }: { title: string, sub
 
 export default function MenuScreen() {
     return (
-        <SafeAreaView className="flex-1 bg-slate-900 px-5 pt-8">
-            <Text className="text-white text-3xl font-bold mb-8">More Options</Text>
+        <SafeAreaView className="flex-1 bg-slate-50 px-5 pt-8" style={{ backgroundColor: '#f8fafc' }}>
+            <Text className="text-slate-900 text-3xl font-bold mb-8">More Options</Text>
 
             <ScrollView>
                 <MenuButton

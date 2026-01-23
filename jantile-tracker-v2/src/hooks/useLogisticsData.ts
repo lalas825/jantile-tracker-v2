@@ -1,43 +1,28 @@
-import { useState, useEffect } from 'react';
-import { Platform } from 'react-native';
-import { usePowerSync } from '@powersync/react-native';
-import { supabase } from '../lib/supabase';
+import { useState, useEffect, useContext } from 'react';
+import { PowerSyncContext } from '@powersync/react-native';
 
+// Native (iOS/Android) version - uses PowerSync SQLite
+// Updates for Expo Go: Handle missing DB gracefully
 export const useLogisticsData = () => {
-    const db = usePowerSync();
+    // Safely attempt to get DB. If Provider is invalid/missing (Expo Go), context might be null or throw inside the library's hook.
+    // We use useContext directly to avoid the strict check of usePowerSync() hook if possible.
+    const db = useContext(PowerSyncContext);
+
     const [jobs, setJobs] = useState<any[]>([]);
     const [inventory, setInventory] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchData = async () => {
+            // If DB is missing (Expo Go fallback), return empty data
+            if (!db) {
+                setLoading(false);
+                return;
+            }
+
             try {
-                let jobsData: any[] = [];
-                let inventoryData: any[] = [];
-
-                if (Platform.OS === 'web') {
-                    // --- WEB: Fetch from Supabase ---
-                    const { data: jobsResult, error: jobsError } = await supabase
-                        .from('jobs')
-                        .select('*')
-                        .order('name', { ascending: true });
-
-                    if (jobsError) throw jobsError;
-
-                    const { data: inventoryResult, error: inventoryError } = await supabase
-                        .from('inventory')
-                        .select('*')
-                        .order('item_name', { ascending: true });
-
-                    if (inventoryError) throw inventoryError;
-
-                    jobsData = jobsResult || [];
-                    inventoryData = inventoryResult || [];
-                } else {
-                    // --- MOBILE: Fetch from PowerSync (SQLite) ---
-                    jobsData = await db.getAll('SELECT * FROM jobs ORDER BY name ASC');
-                    inventoryData = await db.getAll('SELECT * FROM inventory ORDER BY item_name ASC');
-                }
+                const jobsData = await db.getAll('SELECT * FROM jobs ORDER BY name ASC');
+                const inventoryData = await db.getAll('SELECT * FROM inventory ORDER BY item_name ASC');
 
                 setJobs(jobsData);
                 setInventory(inventoryData);
@@ -49,7 +34,6 @@ export const useLogisticsData = () => {
         };
 
         fetchData();
-
     }, [db]);
 
     return { jobs, inventory, loading };

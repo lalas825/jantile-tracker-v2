@@ -1,28 +1,43 @@
-import { Schema, Column, Table } from '@powersync/react-native';
+import { Schema, Table, Column, ColumnType } from '@powersync/react-native';
 
-export const AppSchema = new Schema({
-    profiles: new Table({
-        role: new Column({ type: Schema.Type.TEXT }),
-        full_name: new Column({ type: Schema.Type.TEXT }),
+export const AppSchema = new Schema([
+    new Table({
+        name: 'profiles',
+        columns: [
+            new Column({ name: 'role', type: ColumnType.TEXT }),
+            new Column({ name: 'full_name', type: ColumnType.TEXT }),
+        ],
     }),
-    jobs: new Table({
-        name: new Column({ type: Schema.Type.TEXT }),
-        status: new Column({ type: Schema.Type.TEXT }),
-        address: new Column({ type: Schema.Type.TEXT }),
+    new Table({
+        name: 'jobs',
+        columns: [
+            new Column({ name: 'name', type: ColumnType.TEXT }),
+            new Column({ name: 'status', type: ColumnType.TEXT }),
+            new Column({ name: 'address', type: ColumnType.TEXT }),
+        ],
     }),
-    tickets: new Table({
-        job_id: new Column({ type: Schema.Type.TEXT }),
-        status: new Column({ type: Schema.Type.TEXT }),
-        type: new Column({ type: Schema.Type.TEXT }),
-        wizard_data: new Column({ type: Schema.Type.TEXT }), // Storing JSON as TEXT
+    new Table({
+        name: 'tickets',
+        columns: [
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'status', type: ColumnType.TEXT }),
+            new Column({ name: 'type', type: ColumnType.TEXT }),
+            new Column({ name: 'wizard_data', type: ColumnType.TEXT }), // JSON as TEXT
+        ],
     }),
-    inventory: new Table({
-        item_name: new Column({ type: Schema.Type.TEXT }),
-        quantity_on_hand: new Column({ type: Schema.Type.INTEGER }),
+    new Table({
+        name: 'inventory',
+        columns: [
+            new Column({ name: 'item_name', type: ColumnType.TEXT }),
+            new Column({ name: 'quantity_on_hand', type: ColumnType.INTEGER }),
+        ],
     }),
-    daily_logs: new Table({
-        job_id: new Column({ type: Schema.Type.TEXT }),
-        date: new Column({ type: Schema.Type.TEXT }),
-        ppe_check: new Column({ type: Schema.Type.INTEGER }), // 0 or 1
+    new Table({
+        name: 'daily_logs',
+        columns: [
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'date', type: ColumnType.TEXT }),
+            new Column({ name: 'ppe_check', type: ColumnType.INTEGER }), // 0 or 1
+        ],
     }),
-});
+]);

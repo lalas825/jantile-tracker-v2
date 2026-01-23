@@ -2,12 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-    body {
-        @apply text-slate-100 bg-slate-900;
-    }
-
-    .text-default {
-        @apply text-slate-100;
-    }
+/* Global Text Override */
+body {
+    color: #0f172a;
+    background-color: #f8fafc;
 }

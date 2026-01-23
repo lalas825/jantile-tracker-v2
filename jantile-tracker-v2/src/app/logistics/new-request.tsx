@@ -31,12 +31,12 @@ function StepButtons() {
     };
 
     return (
-        <View className="flex-row p-4 bg-slate-900 border-t border-slate-800">
+        <View className="flex-row p-4 bg-white border-t border-slate-200">
             <TouchableOpacity
                 onPress={handleBack}
-                className="flex-1 bg-slate-800 p-4 rounded-lg mr-2 items-center"
+                className="flex-1 bg-slate-100 p-4 rounded-lg mr-2 items-center"
             >
-                <Text className="text-slate-300 font-bold">Back</Text>
+                <Text className="text-slate-700 font-bold">Back</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -57,19 +57,19 @@ function Step1Type() {
             onPress={() => setType(value)}
             className={clsx(
                 "w-full p-6 rounded-xl border-2 mb-4 flex-row items-center",
-                type === value ? "border-emerald-500 bg-emerald-900/30" : "border-slate-700 bg-slate-800"
+                type === value ? "border-emerald-500 bg-emerald-50" : "border-slate-200 bg-white shadow-sm"
             )}
         >
-            <View className={clsx("p-3 rounded-full mr-4", type === value ? "bg-emerald-500" : "bg-slate-700")}>
-                <Icon size={24} color="white" />
+            <View className={clsx("p-3 rounded-full mr-4", type === value ? "bg-emerald-500" : "bg-slate-100")}>
+                <Icon size={24} color={type === value ? "white" : "#64748b"} />
             </View>
-            <Text className="text-white text-xl font-bold">{label}</Text>
+            <Text className="text-slate-900 text-xl font-bold">{label}</Text>
         </TouchableOpacity>
     );
 
     return (
         <View className="flex-1 px-5 pt-8">
-            <Text className="text-white text-2xl font-bold mb-6">What fits the bill?</Text>
+            <Text className="text-slate-900 text-2xl font-bold mb-6">What fits the bill?</Text>
             <Card value="delivery" label="Warehouse Request" icon={Box} />
             <Card value="field_return" label="Field Return" icon={RefreshCcw} />
         </View>
@@ -80,21 +80,21 @@ function Step2Job() {
     const { jobId, setJobId } = useWizard();
     const { jobs, loading } = useLogisticsData();
 
-    if (loading) return <View className="p-5"><Text className="text-white">Loading Jobs...</Text></View>;
+    if (loading) return <View className="p-5"><Text className="text-slate-900">Loading Jobs...</Text></View>;
 
     return (
         <View className="flex-1 px-5 pt-8">
-            <Text className="text-white text-2xl font-bold mb-6">Select a Job</Text>
+            <Text className="text-slate-900 text-2xl font-bold mb-6">Select a Job</Text>
             {jobs.map((job: any) => (
                 <TouchableOpacity
                     key={job.id}
                     onPress={() => setJobId(job.id)}
                     className={clsx(
                         "p-4 rounded-xl border mb-3 flex-row justify-between items-center",
-                        jobId === job.id ? "border-emerald-500 bg-emerald-900/30" : "border-slate-700 bg-slate-800"
+                        jobId === job.id ? "border-emerald-500 bg-emerald-50" : "border-slate-200 bg-white shadow-sm"
                     )}
                 >
-                    <Text className="text-white text-lg font-medium">{job.name}</Text>
+                    <Text className="text-slate-900 text-lg font-medium">{job.name}</Text>
                     {jobId === job.id && <Check size={20} color="#34d399" />}
                 </TouchableOpacity>
             ))}
@@ -115,19 +115,19 @@ function Step3Items() {
         setQtyMap(prev => ({ ...prev, [item.id]: '' })); // Reset input
     };
 
-    if (loading) return <View className="p-5"><Text className="text-white">Loading Inventory...</Text></View>;
+    if (loading) return <View className="p-5"><Text className="text-slate-900">Loading Inventory...</Text></View>;
 
     return (
         <View className="flex-1 px-5 pt-4">
-            <Text className="text-white text-2xl font-bold mb-4">Add Items</Text>
+            <Text className="text-slate-900 text-2xl font-bold mb-4">Add Items</Text>
 
             {/* Search Bar */}
-            <View className="bg-slate-800 flex-row items-center p-3 rounded-xl mb-4 border border-slate-700">
+            <View className="bg-white flex-row items-center p-3 rounded-xl mb-4 border border-slate-200 shadow-sm">
                 <Search size={20} color="#94a3b8" />
                 <TextInput
                     placeholder="Search Tile, Grout..."
                     placeholderTextColor="#94a3b8"
-                    className="flex-1 ml-3 text-white text-lg"
+                    className="flex-1 ml-3 text-slate-900 text-lg"
                     value={search}
                     onChangeText={setSearch}
                 />
@@ -137,10 +137,10 @@ function Step3Items() {
                 {filtered.map((item: any) => {
                     const inCart = items.find(i => i.id === item.id);
                     return (
-                        <View key={item.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-3">
+                        <View key={item.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-3">
                             <View className="flex-row justify-between mb-2">
-                                <Text className="text-white font-bold text-lg">{item.item_name}</Text>
-                                <Text className="text-slate-400">On Hand: {item.quantity_on_hand}</Text>
+                                <Text className="text-slate-900 font-bold text-lg">{item.item_name}</Text>
+                                <Text className="text-slate-500">On Hand: {item.quantity_on_hand}</Text>
                             </View>
 
                             <View className="flex-row items-center">
@@ -148,7 +148,7 @@ function Step3Items() {
                                     placeholder="Qty"
                                     placeholderTextColor="#64748b"
                                     keyboardType="numeric"
-                                    className="bg-slate-900 text-white p-3 rounded-lg w-20 text-center mr-3 border border-slate-700"
+                                    className="bg-slate-50 text-slate-900 p-3 rounded-lg w-20 text-center mr-3 border border-slate-200"
                                     value={qtyMap[item.id] || (inCart ? inCart.quantity.toString() : '')}
                                     onChangeText={(val) => setQtyMap(prev => ({ ...prev, [item.id]: val }))}
                                 />
@@ -175,22 +175,22 @@ function Step4Review() {
 
     return (
         <View className="flex-1 px-5 pt-8">
-            <Text className="text-white text-2xl font-bold mb-6">Review & Submit</Text>
+            <Text className="text-slate-900 text-2xl font-bold mb-6">Review & Submit</Text>
 
-            <View className="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-6">
-                <Text className="text-slate-400 text-sm mb-1 uppercase">Type</Text>
-                <Text className="text-white text-lg font-bold mb-4">{typeLabel}</Text>
+            <View className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6">
+                <Text className="text-slate-500 text-sm mb-1 uppercase">Type</Text>
+                <Text className="text-slate-900 text-lg font-bold mb-4">{typeLabel}</Text>
 
-                <Text className="text-slate-400 text-sm mb-1 uppercase">Job</Text>
-                <Text className="text-white text-lg font-bold">{jobName}</Text>
+                <Text className="text-slate-500 text-sm mb-1 uppercase">Job</Text>
+                <Text className="text-slate-900 text-lg font-bold">{jobName}</Text>
             </View>
 
-            <Text className="text-white text-lg font-bold mb-3">Items ({items.length})</Text>
+            <Text className="text-slate-900 text-lg font-bold mb-3">Items ({items.length})</Text>
             <ScrollView className="flex-1">
                 {items.map(item => (
-                    <View key={item.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-2 flex-row justify-between">
-                        <Text className="text-white font-medium">{item.name}</Text>
-                        <Text className="text-emerald-400 font-bold">x{item.quantity}</Text>
+                    <View key={item.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-2 flex-row justify-between">
+                        <Text className="text-slate-900 font-medium">{item.name}</Text>
+                        <Text className="text-emerald-500 font-bold">x{item.quantity}</Text>
                     </View>
                 ))}
             </ScrollView>
@@ -205,11 +205,11 @@ function WizardContent() {
     const progress = step * 25;
 
     return (
-        <SafeAreaView className="flex-1 bg-slate-900">
+        <SafeAreaView className="flex-1 bg-slate-50">
             {/* Header with Progress */}
-            <View className="px-5 py-4 border-b border-slate-800">
-                <Text className="text-white text-xl font-bold mb-3">New Request</Text>
-                <View className="h-1 bg-slate-800 rounded-full w-full overflow-hidden">
+            <View className="px-5 py-4 border-b border-slate-200">
+                <Text className="text-slate-900 text-xl font-bold mb-3">New Request</Text>
+                <View className="h-1 bg-slate-200 rounded-full w-full overflow-hidden">
                     <View className="h-full bg-blue-500" style={{ width: `${progress}%` }} />
                 </View>
             </View>
