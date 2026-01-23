@@ -1,8 +1,21 @@
-import { Tabs, router } from 'expo-router';
+import { Tabs, router, Slot } from 'expo-router';
 import { LayoutDashboard, Briefcase, Truck, Box, Wrench, Menu } from 'lucide-react-native';
-import { TouchableOpacity } from 'react-native';
+import { TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import DesktopNavbar from '../../components/navigation/DesktopNavbar';
 
 export default function TabLayout() {
+    const { width } = useWindowDimensions();
+    const isDesktop = width > 768;
+
+    if (isDesktop) {
+        return (
+            <View className="flex-1 bg-slate-50">
+                <DesktopNavbar />
+                <Slot />
+            </View>
+        );
+    }
+
     return (
         <Tabs
             screenOptions={{
