@@ -1,6 +1,6 @@
 import { Tabs, router, Slot } from 'expo-router';
 import { LayoutDashboard, Briefcase, Truck, Box, Wrench, Menu } from 'lucide-react-native';
-import { TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { TouchableOpacity, useWindowDimensions, View, Image } from 'react-native';
 import DesktopNavbar from '../../components/navigation/DesktopNavbar';
 
 export default function TabLayout() {
@@ -24,13 +24,17 @@ export default function TabLayout() {
                     backgroundColor: '#ffffff', // bg-white
                     borderBottomColor: '#e2e8f0', // border-slate-200
                     borderBottomWidth: 1,
-                    shadowOpacity: 0,
-                    elevation: 0,
                 },
-                headerTintColor: '#0f172a', // Slate-900 title
-                headerTitleStyle: {
-                    fontWeight: 'bold',
-                },
+                headerShadowVisible: true, // Shadow enabled
+                // Replace text title with Logo
+                headerTitle: () => (
+                    <Image
+                        source={require('../../../assets/images/jantile-logo.png')}
+                        style={{ width: 140, height: 35, resizeMode: 'contain' }}
+                    />
+                ),
+                headerTitleAlign: 'center', // Ensure logo is centered
+                headerTintColor: '#0f172a', // Slate-900 (Back button/Menu)
                 headerLeft: () => (
                     <TouchableOpacity
                         onPress={() => router.push('/(tabs)/menu')}
