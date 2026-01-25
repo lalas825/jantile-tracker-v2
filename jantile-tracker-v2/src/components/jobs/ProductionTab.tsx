@@ -330,6 +330,54 @@ export default function ProductionTab() {
         }
     };
 
+    // --- TIME LOGGING HANDLER ---
+    const handleLogTime = (logData: any) => {
+        console.log("LOGGING TIME:", logData); // Debug log
+
+        if (!selectedArea || !job) {
+            console.error("No area or job selected!");
+            return;
+        }
+
+        // Find context IDs again
+        let targetFloorId = '';
+        let targetUnitId = '';
+
+        for (const floor of job.floors) {
+            for (const unit of floor.units) {
+                if (unit.areas.find(a => a.id === selectedArea.id)) {
+                    targetFloorId = floor.id;
+                    targetUnitId = unit.id;
+                    break;
+                }
+            }
+            if (targetFloorId) break;
+        }
+
+        if (targetFloorId && targetUnitId) {
+            const updatedJob = MockJobStore.logTime(
+                job.id,
+                targetFloorId,
+                targetUnitId,
+                selectedArea.id,
+                logData
+            );
+
+            if (updatedJob) {
+                setJob({ ...updatedJob });
+                setIsDrawerVisible(false); // Close the drawer
+
+                if (Platform.OS === 'web') {
+                    window.alert("Time Saved Successfully!");
+                } else {
+                    Alert.alert("Success", "Time log has been saved.");
+                }
+            }
+        } else {
+            Alert.alert("Error", "Could not locate area context.");
+        }
+    };
+
     const selectedArea = getSelectedArea();
 
     if (!job) return <View className="flex-1 items-center justify-center"><Text>Loading...</Text></View>;
@@ -371,6 +419,7 @@ export default function ProductionTab() {
                 onClose={handleDrawerClose}
                 area={selectedArea}
                 onUpdate={handleUpdateArea}
+                onLogTime={handleLogTime}
             />
 
             <StructureModal

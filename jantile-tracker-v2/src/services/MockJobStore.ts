@@ -396,6 +396,41 @@ class MockJobStoreService {
         });
         job.progress = count > 0 ? Math.round(total / count) : 0;
     }
+    // 3. LOGGING
+    logTime(jobId: string, floorId: string, unitId: string, areaId: string, logData: any): Job | null {
+        console.log(`[MockStore] Time Logged: Job=${jobId}, Floor=${floorId}, Unit=${unitId}, Area=${areaId}`, logData);
+
+        const jobIndex = this.jobs.findIndex(j => j.id === jobId);
+        if (jobIndex === -1) return null;
+        const job = { ...this.jobs[jobIndex] };
+
+        const floorIndex = job.floors.findIndex(f => f.id === floorId);
+        if (floorIndex === -1) return null;
+        const floor = { ...job.floors[floorIndex] };
+
+        const unitIndex = floor.units.findIndex(u => u.id === unitId);
+        if (unitIndex === -1) return null;
+        const unit = { ...floor.units[unitIndex] };
+
+        const areaIndex = unit.areas.findIndex(a => a.id === areaId);
+        if (areaIndex === -1) return null;
+
+        // Update Area
+        const area = { ...unit.areas[areaIndex] };
+        area.timeLogs = [...(area.timeLogs || []), logData];
+
+        // Re-assemble
+        unit.areas = [...unit.areas];
+        unit.areas[areaIndex] = area;
+        floor.units = [...floor.units];
+        floor.units[unitIndex] = unit;
+        job.floors = [...job.floors];
+        job.floors[floorIndex] = floor;
+
+        this.jobs[jobIndex] = job;
+        return job;
+    }
+
     // --- STRUCTURE MANAGEMENT END ---
 }
 

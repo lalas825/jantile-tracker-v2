@@ -38,6 +38,10 @@ const AreaCard = ({ area, onPress, canEdit, onEdit, onDelete }: AreaCardProps) =
         ? `${completedCount}/${totalCount} Tasks Complete`
         : 'No Tasks Assigned';
 
+    // Calculate Hours
+    const totalReg = (area.timeLogs || []).reduce((sum, log) => sum + (log.regularHours || 0), 0);
+    const totalOT = (area.timeLogs || []).reduce((sum, log) => sum + (log.otHours || 0), 0);
+
     return (
         <TouchableOpacity
             onPress={() => onPress(area)}
@@ -67,6 +71,20 @@ const AreaCard = ({ area, onPress, canEdit, onEdit, onDelete }: AreaCardProps) =
 
                 {/* Right Side: Scoreboard + Actions */}
                 <View className="flex-row items-center gap-4">
+                    {/* Hours Badges */}
+                    <View className="flex-row items-center gap-2 mr-3">
+                        {totalReg > 0 && (
+                            <View className="bg-slate-100 px-2 py-1 rounded border border-slate-200">
+                                <Text className="text-slate-600 font-bold text-xs">{totalReg} Reg</Text>
+                            </View>
+                        )}
+                        {totalOT > 0 && (
+                            <View className="bg-red-50 px-2 py-1 rounded border border-red-200">
+                                <Text className="text-red-600 font-bold text-xs">{totalOT} OT</Text>
+                            </View>
+                        )}
+                    </View>
+
                     <View className="items-end">
                         <Text className={clsx("text-2xl font-extrabold tracking-tighter", scoreColor)}>
                             {area.progress}%

@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Modal, ScrollView, TextInput, Platform, Dimensions, Alert } from 'react-native';
-import { X, Camera, Image as ImageIcon, CheckCircle2, AlertTriangle, Calendar, Activity, Ban, Circle, Clock, ChevronDown } from 'lucide-react-native';
+import { View, Text, TouchableOpacity, Modal, ScrollView, TextInput, Platform, Dimensions, Alert, Image } from 'react-native';
+import { X, Camera, Image as ImageIcon, CheckCircle2, AlertTriangle, Calendar, Activity, Ban, Circle, Clock, ChevronDown, Plus, Minus, User, Trash2 } from 'lucide-react-native';
 import clsx from 'clsx';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { CREW_MEMBERS } from '../../constants/CrewData';
+import LogTimeTab from './tabs/LogTimeTab';
 
 type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'NA';
 
@@ -17,6 +20,7 @@ export interface AreaData {
     name: string;
     description: string;
     checklist: ChecklistItem[];
+    timeLogs?: { regularHours: number; otHours: number; date: string; workerIds: string[]; description: string }[];
     // derived fields for UI display
     progress: number;
     mudStatus: TaskStatus;
@@ -29,6 +33,7 @@ interface AreaDetailsDrawerProps {
     onClose: () => void;
     area: AreaData | null;
     onUpdate: (newChecklist: ChecklistItem[]) => void;
+    onLogTime?: (logData: any) => void;
 }
 
 const TABS = ['Checklist', 'Photos', 'Issues', 'Log Time'];
@@ -66,10 +71,17 @@ const StatusButton = ({ status, onPress }: { status: TaskStatus, onPress: () => 
     }
 };
 
-export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate }: AreaDetailsDrawerProps) {
+export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, onLogTime }: AreaDetailsDrawerProps) {
     const [activeTab, setActiveTab] = useState('Checklist');
     const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
     const [progress, setProgress] = useState(0);
+
+    // Log Time State - Moved to LogTimeTab component
+    // const [selectedCrew, setSelectedCrew] = useState<string[]>([]);
+    // const [regularHours, setRegularHours] = useState('');
+    // const [otHours, setOtHours] = useState('');
+    // const [timeNotes, setTimeNotes] = useState('');
+
     const { width } = Dimensions.get('window');
     const isDesktop = width > 768;
 
@@ -283,34 +295,17 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate }
                         {/* 4. LOG TIME TAB */}
                         {activeTab === 'Log Time' && (
                             <View>
-                                <View className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-6">
-                                    <Text className="text-slate-900 font-bold text-lg mb-1">Log Hours for Today</Text>
-                                    <Text className="text-slate-500 text-xs mb-4">Record time spent specifically on {area?.name}.</Text>
-
-                                    <View className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
-                                        <Text className="text-slate-500 text-xs font-bold uppercase mb-2">Hours Spent</Text>
-                                        <TextInput
-                                            className="text-slate-900 text-3xl font-extrabold"
-                                            placeholder="0.0"
-                                            keyboardType="numeric"
-                                            defaultValue=""
-                                        />
-                                    </View>
-
-                                    <View className="bg-white border border-slate-200 rounded-xl p-4">
-                                        <Text className="text-slate-500 text-xs font-bold uppercase mb-2">Notes</Text>
-                                        <TextInput
-                                            className="text-slate-900 text-sm h-20 text-top"
-                                            placeholder="What did you work on?"
-                                            multiline
-                                            textAlignVertical="top"
-                                        />
-                                    </View>
-                                </View>
-
-                                <TouchableOpacity className="bg-blue-600 py-3.5 rounded-xl items-center shadow-sm active:bg-blue-700">
-                                    <Text className="text-white font-bold text-base">Submit Time Log</Text>
-                                </TouchableOpacity>
+                                <LogTimeTab
+                                    areaId={area?.id}
+                                    onSave={(data) => {
+                                        if (onLogTime) {
+                                            onLogTime(data);
+                                        } else {
+                                            console.warn("No onLogTime handler provided");
+                                            Alert.alert("Dev Warning", "No handler connected for logging time.");
+                                        }
+                                    }}
+                                />
                             </View>
                         )}
 
