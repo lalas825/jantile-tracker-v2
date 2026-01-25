@@ -1,4 +1,5 @@
 import { ChecklistItem, AreaData } from '../components/jobs/AreaDetailsDrawer';
+import { CHECKLIST_PRESETS } from '../constants/JobTemplates';
 
 // --- Type Definitions (Mirrored for Store) ---
 export interface Unit {
@@ -191,6 +192,211 @@ class MockJobStoreService {
         this.jobs[jobIndex] = job;
         return job;
     }
+
+    // --- STRUCTURE MANAGEMENT START ---
+
+    // 1. FLOOR OPERATIONS
+    addFloor(jobId: string, name: string): Job | null {
+        const jobIndex = this.jobs.findIndex(j => j.id === jobId);
+        if (jobIndex === -1) return null;
+
+        const job = { ...this.jobs[jobIndex] };
+        const newFloor: Floor = {
+            id: `f${Date.now()}`, // simple ID gen
+            name: name,
+            progress: 0,
+            units: []
+        };
+
+        job.floors = [...job.floors, newFloor];
+        this.jobs[jobIndex] = job;
+        this.recalculateJobProgress(jobId);
+        return this.jobs[jobIndex];
+    }
+
+    updateFloorName(jobId: string, floorId: string, newName: string): Job | null {
+        const jobIndex = this.jobs.findIndex(j => j.id === jobId);
+        if (jobIndex === -1) return null;
+
+        const job = { ...this.jobs[jobIndex] };
+        const floorIndex = job.floors.findIndex(f => f.id === floorId);
+        if (floorIndex === -1) return null;
+
+        const floor = { ...job.floors[floorIndex], name: newName };
+        job.floors = [...job.floors];
+        job.floors[floorIndex] = floor;
+
+        this.jobs[jobIndex] = job;
+        return job;
+    }
+
+    deleteFloor(jobId: string, floorId: string): Job | null {
+        const jobIndex = this.jobs.findIndex(j => j.id === jobId);
+        if (jobIndex === -1) return null;
+
+        const job = { ...this.jobs[jobIndex] };
+        job.floors = job.floors.filter(f => f.id !== floorId);
+
+        this.jobs[jobIndex] = job;
+        this.recalculateJobProgress(jobId);
+        return this.jobs[jobIndex];
+    }
+
+    // 2. UNIT/AREA OPERATIONS
+    // Note: To keep structure simple for the user request, 
+    // "Add Unit" will essentially check if a Unit exists, if not create it, then add Area.
+    // Or simpler: We just add "Units" which contain "Areas". 
+    // The request said "Add Unit/Area". Let's assume we are adding an Area to a Unit Group.
+    // However, the UI has "Add Unit to Floor". 
+    // Let's make "Add Unit" create a Unit wrapper AND the first Area inside it.
+
+    addUnit(jobId: string, floorId: string, unitName: string, areaName: string, description: string): Job | null {
+        const jobIndex = this.jobs.findIndex(j => j.id === jobId);
+        if (jobIndex === -1) return null;
+
+        const job = { ...this.jobs[jobIndex] };
+        const floorIndex = job.floors.findIndex(f => f.id === floorId);
+        if (floorIndex === -1) return null;
+
+        const floor = { ...job.floors[floorIndex] };
+
+        // New Area Logic
+        // 1. Determine Checklist based on Name
+        const normalizedName = areaName.toLowerCase().trim();
+        let initialChecklist = JSON.parse(JSON.stringify(DEFAULT_CHECKLIST));
+
+        if (CHECKLIST_PRESETS[normalizedName]) {
+            const presetTasks = CHECKLIST_PRESETS[normalizedName];
+            initialChecklist = presetTasks.map((label, index) => ({
+                id: `task_${Date.now()}_${index}`,
+                label: label,
+                status: 'NOT_STARTED'
+            }));
+        }
+
+        const newArea: AreaData = {
+            id: `a${Date.now()}`,
+            name: areaName,
+            description: description,
+            checklist: initialChecklist,
+            progress: 0,
+            mudStatus: 'NOT_STARTED',
+            tileStatus: 'NOT_STARTED',
+            groutStatus: 'NOT_STARTED'
+        };
+
+        // Check if unit with this name exists in this floor
+        // (Simplification: Just creating a new unit wrapper for now as per "Add Unit" button logic)
+        const newUnit: Unit = {
+            id: `u${Date.now()}`,
+            name: unitName,
+            areas: [newArea]
+        };
+
+        floor.units = [...floor.units, newUnit];
+        job.floors = [...job.floors];
+        job.floors[floorIndex] = floor;
+
+        this.jobs[jobIndex] = job;
+        this.recalculateJobProgress(jobId); // Unit added with 0 progress might drag down avg
+        return this.jobs[jobIndex];
+    }
+
+    // Helper: Add Area to Existing Unit (if we wanted that granularity, but for now specific requirement was generalized)
+    // We will assume "Edit" on Area Card lets you rename the Area.
+
+    updateArea(jobId: string, floorId: string, unitId: string, areaId: string, newName: string, newDescription: string): Job | null {
+        const jobIndex = this.jobs.findIndex(j => j.id === jobId);
+        if (jobIndex === -1) return null;
+
+        const job = { ...this.jobs[jobIndex] };
+        const floorIndex = job.floors.findIndex(f => f.id === floorId);
+        if (floorIndex === -1) return null;
+        const floor = { ...job.floors[floorIndex] };
+
+        const unitIndex = floor.units.findIndex(u => u.id === unitId);
+        if (unitIndex === -1) return null;
+        const unit = { ...floor.units[unitIndex] };
+
+        const areaIndex = unit.areas.findIndex(a => a.id === areaId);
+        if (areaIndex === -1) return null;
+
+        const area = { ...unit.areas[areaIndex], name: newName, description: newDescription };
+
+        unit.areas = [...unit.areas];
+        unit.areas[areaIndex] = area;
+        floor.units = [...floor.units];
+        floor.units[unitIndex] = unit;
+        job.floors = [...job.floors];
+        job.floors[floorIndex] = floor;
+
+        this.jobs[jobIndex] = job;
+        return job;
+    }
+
+    deleteArea(jobId: string, floorId: string, unitId: string, areaId: string): Job | null {
+        const jobIndex = this.jobs.findIndex(j => j.id === jobId);
+        if (jobIndex === -1) return null;
+
+        const job = { ...this.jobs[jobIndex] };
+        const floorIndex = job.floors.findIndex(f => f.id === floorId);
+        if (floorIndex === -1) return null;
+        const floor = { ...job.floors[floorIndex] };
+
+        const unitIndex = floor.units.findIndex(u => u.id === unitId);
+        if (unitIndex === -1) return null;
+        const unit = { ...floor.units[unitIndex] };
+
+        // Remove Area
+        unit.areas = unit.areas.filter(a => a.id !== areaId);
+
+        // If unit empty, remove unit? Let's say yes for cleanup
+        if (unit.areas.length === 0) {
+            floor.units = floor.units.filter(u => u.id !== unitId);
+        } else {
+            floor.units = [...floor.units];
+            floor.units[unitIndex] = unit;
+        }
+
+        // Check if floor needs update
+        job.floors = [...job.floors];
+        job.floors[floorIndex] = floor;
+
+        // Recalculate Progresses
+        this.recalculateFloorProgress(floor); // Mutates floor progress
+        this.jobs[jobIndex] = job;
+        this.recalculateJobProgress(jobId);
+
+        return this.jobs[jobIndex];
+    }
+
+    // --- HELPERS ---
+    private recalculateFloorProgress(floor: Floor) {
+        let total = 0;
+        let count = 0;
+        floor.units.forEach(u => {
+            u.areas.forEach(a => {
+                total += a.progress;
+                count++;
+            });
+        });
+        floor.progress = count > 0 ? Math.round(total / count) : 0;
+    }
+
+    private recalculateJobProgress(jobId: string) {
+        const job = this.jobs.find(j => j.id === jobId);
+        if (!job) return;
+
+        let total = 0;
+        let count = 0;
+        // Average of floors
+        job.floors.forEach(f => {
+            total += f.progress;
+            count++;
+        });
+        job.progress = count > 0 ? Math.round(total / count) : 0;
+    }
+    // --- STRUCTURE MANAGEMENT END ---
 }
 
 export const MockJobStore = new MockJobStoreService();
