@@ -12,6 +12,12 @@ import { MockJobStore, Floor, Job } from '../../services/MockJobStore';
 
 // --- Type Definitions ---
 // Using Imported types from Store where possible, but locally defined props might need matching
+import UnitLevelAccordion from './UnitLevelAccordion';
+import AreaCard from './AreaCard';
+
+// UnitAccordionProps removed as it is now handling internally in the component or via imports
+
+// Local UnitAccordion definition removed in favor of imported component
 
 // --- Helper Components ---
 const StatusPill = ({ label, status }: { label: string, status: string }) => {
@@ -33,95 +39,7 @@ const StatusPill = ({ label, status }: { label: string, status: string }) => {
     );
 };
 
-const AreaCard = ({ area, onPress, canEdit, onEdit, onDelete }: {
-    area: AreaData,
-    onPress: (area: AreaData) => void,
-    canEdit: boolean,
-    onEdit: () => void,
-    onDelete: () => void
-}) => {
-    // Traffic Light Logic
-    let containerStyle = "border-slate-200 bg-white";
-    let scoreColor = "text-slate-400";
-    let barColor = "bg-slate-400";
-
-    if (area.progress === 100) {
-        containerStyle = "border-emerald-500 bg-emerald-50";
-        scoreColor = "text-emerald-600";
-        barColor = "bg-emerald-500";
-    } else if (area.progress > 0) {
-        containerStyle = "border-amber-400 bg-amber-50";
-        scoreColor = "text-amber-600";
-        barColor = "bg-amber-500";
-    }
-
-    // Task Summary Logic
-    const completedCount = area.checklist.filter(i => i.status === 'COMPLETED').length;
-    const totalCount = area.checklist.filter(i => i.status !== 'NA').length;
-    const taskSummary = totalCount > 0
-        ? `${completedCount}/${totalCount} Tasks Complete`
-        : 'No Tasks Assigned';
-
-    return (
-        <TouchableOpacity
-            onPress={() => onPress(area)}
-            className={clsx(
-                "p-4 mb-3 rounded-xl border shadow-sm active:opacity-80 transition-all",
-                containerStyle
-            )}
-        >
-            <View className="flex-row justify-between items-start">
-                {/* Left Side: Info */}
-                <View className="flex-1 mr-4">
-                    <View className="flex-row items-center justify-between mr-2">
-                        <Text className="text-lg font-bold text-slate-900 leading-tight flex-1">{area.name}</Text>
-                        {/* Edit/Delete Icons for Area */}
-                        {canEdit && (
-                            <View className="flex-row items-center gap-3 ml-2">
-                                <TouchableOpacity
-                                    onPress={(e) => { e.stopPropagation(); onEdit(); }}
-                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                >
-                                    <Pencil size={16} color="#64748b" />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={(e) => { e.stopPropagation(); onDelete(); }}
-                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                >
-                                    <Trash2 size={16} color="#ef4444" />
-                                </TouchableOpacity>
-                            </View>
-                        )}
-                    </View>
-
-                    <Text className="text-sm text-slate-500 font-medium mt-0.5">{area.description}</Text>
-
-                    {/* Task Summary Text */}
-                    <Text className={clsx(
-                        "text-sm font-semibold mt-2",
-                        area.progress === 100 ? "text-emerald-700" :
-                            area.progress > 0 ? "text-amber-700" : "text-slate-600"
-                    )}>
-                        {taskSummary}
-                    </Text>
-                </View>
-
-                {/* Right Side: Scoreboard */}
-                <View className="items-end">
-                    <Text className={clsx("text-2xl font-extrabold tracking-tighter", scoreColor)}>
-                        {area.progress}%
-                    </Text>
-                    <View className="w-32 h-3 bg-white/60 rounded-full overflow-hidden mt-1 border border-black/5">
-                        <View
-                            className={clsx("h-full rounded-full", barColor)}
-                            style={{ width: `${area.progress}%` }}
-                        />
-                    </View>
-                </View>
-            </View>
-        </TouchableOpacity>
-    );
-};
+// AreaCard local definition removed in favor of imported component
 
 type FloorAccordionProps = {
     floor: Floor;
@@ -156,37 +74,40 @@ const FloorAccordion = ({
                     <View className="flex-row items-center flex-1">
                         {expanded ? <ChevronDown size={20} color="#475569" className="mr-2" /> : <ChevronRight size={20} color="#475569" className="mr-2" />}
                         <Text className="text-slate-900 font-bold text-sm mr-2">{floor.name}</Text>
+                    </View>
+
+                    {/* Right Side: Progress + Actions */}
+                    <View className="flex-row items-center gap-4">
+                        {/* Floor Progress Bar */}
+                        <View className="flex-row items-center">
+                            <View className="w-24 h-4 bg-slate-300 rounded-full overflow-hidden mr-3 border border-slate-400/20">
+                                <View
+                                    className="h-full bg-green-600 rounded-full"
+                                    style={{ width: `${floor.progress}%` }}
+                                />
+                            </View>
+                            <Text className="text-slate-700 text-lg font-bold w-12 text-right">{floor.progress}%</Text>
+                        </View>
 
                         {/* Floor Actions */}
                         {canEdit && (
-                            <View className="flex-row items-center gap-2">
+                            <View className="flex-row items-center gap-2 border-l border-slate-300 pl-4 h-6">
                                 <TouchableOpacity
                                     onPress={(e) => { e.stopPropagation(); onEditFloor(floor); }}
                                     className="p-1"
                                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                 >
-                                    <Pencil size={14} color="#64748b" />
+                                    <Pencil size={16} color="#64748b" />
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     onPress={(e) => { e.stopPropagation(); onDeleteFloor(floor); }}
                                     className="p-1"
                                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                 >
-                                    <Trash2 size={14} color="#ef4444" />
+                                    <Trash2 size={16} color="#ef4444" />
                                 </TouchableOpacity>
                             </View>
                         )}
-                    </View>
-
-                    {/* Floor Progress Bar */}
-                    <View className="flex-row items-center">
-                        <View className="w-24 h-4 bg-slate-300 rounded-full overflow-hidden mr-3 border border-slate-400/20">
-                            <View
-                                className="h-full bg-green-600 rounded-full"
-                                style={{ width: `${floor.progress}%` }}
-                            />
-                        </View>
-                        <Text className="text-slate-700 text-lg font-bold w-12 text-right">{floor.progress}%</Text>
                     </View>
                 </View>
             </TouchableOpacity>
@@ -194,22 +115,20 @@ const FloorAccordion = ({
             {expanded && (
                 <View className="mt-2 pl-2">
                     {floor.units.map((unit) => (
-                        <View key={unit.id} className="mb-4">
-                            <Text className="text-slate-500 font-bold text-xs uppercase tracking-wider mb-2 ml-1">
-                                {unit.name}
-                            </Text>
-                            {unit.areas.map(area => (
-                                <AreaCard
-                                    key={area.id}
-                                    area={area}
-                                    onPress={onAreaPress}
-                                    canEdit={canEdit}
-                                    onEdit={() => onEditArea(floor.id, unit.id, area)}
-                                    onDelete={() => onDeleteArea(floor.id, unit.id, area)}
-                                />
-                            ))}
-                        </View>
+                        <UnitLevelAccordion
+                            key={unit.id}
+                            unit={unit}
+                            onAreaPress={onAreaPress}
+                            canEdit={canEdit}
+                            onEditUnit={(u) => console.log('Edit Unit', u)} // Placeholder
+                            onDeleteUnit={(u) => console.log('Delete Unit', u)} // Placeholder
+                            onAddArea={(unitId) => console.log("Open Add Area for Unit:", unitId)}
+                            onEditArea={onEditArea}
+                            onDeleteArea={onDeleteArea}
+                            floorId={floor.id}
+                        />
                     ))}
+                    {/* Add Unit Button - Still needed for adding NEW units */}
                     {/* Add Unit Button */}
                     {canEdit && (
                         <TouchableOpacity
