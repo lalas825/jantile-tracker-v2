@@ -44,6 +44,7 @@ export default function TabLayout() {
                     </TouchableOpacity>
                 ),
                 tabBarStyle: {
+                    display: 'none', // Hide bottom tabs for Drawer-Only navigation
                     backgroundColor: '#ffffff',
                     borderTopColor: '#e2e8f0',
                     borderTopWidth: 1,
