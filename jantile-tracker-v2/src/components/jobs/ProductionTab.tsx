@@ -378,6 +378,85 @@ export default function ProductionTab() {
         }
     };
 
+    // --- PHOTO HANDLER ---
+    const handlePhotoAdd = (uri: string) => {
+        if (!selectedArea || !job) return;
+
+        // Find context (Duplicate logic from logTime - could refactor to helper)
+        let targetFloorId = '';
+        let targetUnitId = '';
+
+        for (const floor of job.floors) {
+            for (const unit of floor.units) {
+                if (unit.areas.find(a => a.id === selectedArea.id)) {
+                    targetFloorId = floor.id;
+                    targetUnitId = unit.id;
+                    break;
+                }
+            }
+            if (targetFloorId) break;
+        }
+
+        if (targetFloorId) {
+            const updatedJob = MockJobStore.addPhoto(job.id, targetFloorId, targetUnitId, selectedArea.id, uri);
+            if (updatedJob) setJob({ ...updatedJob });
+        }
+    };
+
+    // --- ISSUE HANDLER ---
+    const handleIssueReport = (issueData: any) => {
+        if (!selectedArea || !job) return;
+
+        let targetFloorId = '';
+        let targetUnitId = '';
+
+        for (const floor of job.floors) {
+            for (const unit of floor.units) {
+                if (unit.areas.find(a => a.id === selectedArea.id)) {
+                    targetFloorId = floor.id;
+                    targetUnitId = unit.id;
+                    break;
+                }
+            }
+            if (targetFloorId) break;
+        }
+
+        if (targetFloorId) {
+            const fullIssue = {
+                id: `issue_${Date.now()}`,
+                date: new Date().toISOString(),
+                status: 'OPEN',
+                ...issueData
+            };
+            const updatedJob = MockJobStore.addIssue(job.id, targetFloorId, targetUnitId, selectedArea.id, fullIssue);
+            if (updatedJob) setJob({ ...updatedJob });
+        }
+    };
+
+    // --- PHOTO DELETE HANDLER ---
+    const handlePhotoDelete = (uri: string) => {
+        if (!selectedArea || !job) return;
+
+        let targetFloorId = '';
+        let targetUnitId = '';
+
+        for (const floor of job.floors) {
+            for (const unit of floor.units) {
+                if (unit.areas.find(a => a.id === selectedArea.id)) {
+                    targetFloorId = floor.id;
+                    targetUnitId = unit.id;
+                    break;
+                }
+            }
+            if (targetFloorId) break;
+        }
+
+        if (targetFloorId) {
+            const updatedJob = MockJobStore.deletePhoto(job.id, targetFloorId, targetUnitId, selectedArea.id, uri);
+            if (updatedJob) setJob({ ...updatedJob });
+        }
+    };
+
     const selectedArea = getSelectedArea();
 
     if (!job) return <View className="flex-1 items-center justify-center"><Text>Loading...</Text></View>;
@@ -420,6 +499,9 @@ export default function ProductionTab() {
                 area={selectedArea}
                 onUpdate={handleUpdateArea}
                 onLogTime={handleLogTime}
+                onAddPhoto={handlePhotoAdd}
+                onDeletePhoto={handlePhotoDelete}
+                onReportIssue={handleIssueReport}
             />
 
             <StructureModal

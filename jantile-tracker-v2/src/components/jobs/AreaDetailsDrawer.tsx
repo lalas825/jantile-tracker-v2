@@ -6,6 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CREW_MEMBERS } from '../../constants/CrewData';
 import LogTimeTab from './tabs/LogTimeTab';
+import PhotosTab from './tabs/PhotosTab';
+import IssuesTab from './tabs/IssuesTab';
 
 type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'NA';
 
@@ -15,11 +17,22 @@ export interface ChecklistItem {
     status: TaskStatus;
 }
 
+export interface Issue {
+    id: string;
+    type: string;
+    description: string;
+    photo?: string;
+    date: string;
+    status: 'OPEN' | 'RESOLVED';
+}
+
 export interface AreaData {
     id: string;
     name: string;
     description: string;
     checklist: ChecklistItem[];
+    photos?: string[];
+    issues?: Issue[];
     timeLogs?: { regularHours: number; otHours: number; date: string; workerIds: string[]; description: string }[];
     // derived fields for UI display
     progress: number;
@@ -34,6 +47,9 @@ interface AreaDetailsDrawerProps {
     area: AreaData | null;
     onUpdate: (newChecklist: ChecklistItem[]) => void;
     onLogTime?: (logData: any) => void;
+    onAddPhoto?: (uri: string) => void;
+    onDeletePhoto?: (uri: string) => void;
+    onReportIssue?: (issue: any) => void;
 }
 
 const TABS = ['Checklist', 'Photos', 'Issues', 'Log Time'];
@@ -71,7 +87,7 @@ const StatusButton = ({ status, onPress }: { status: TaskStatus, onPress: () => 
     }
 };
 
-export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, onLogTime }: AreaDetailsDrawerProps) {
+export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, onLogTime, onAddPhoto, onDeletePhoto, onReportIssue }: AreaDetailsDrawerProps) {
     const [activeTab, setActiveTab] = useState('Checklist');
     const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
     const [progress, setProgress] = useState(0);
@@ -220,76 +236,28 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
 
                         {/* 2. PHOTOS TAB */}
                         {activeTab === 'Photos' && (
-                            <View>
-                                <View className="flex-row space-x-4 mb-6">
-                                    <TouchableOpacity
-                                        className="flex-1 flex-row items-center justify-center bg-blue-600 py-3 rounded-xl shadow-sm active:bg-blue-700"
-                                        onPress={() => console.log('Take Photo')}
-                                    >
-                                        <Camera size={18} color="white" className="mr-2" />
-                                        <Text className="text-white font-bold text-sm">Take Photo</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        className="flex-1 flex-row items-center justify-center bg-white border border-blue-200 py-3 rounded-xl shadow-sm active:bg-blue-50"
-                                        onPress={() => console.log('Upload')}
-                                    >
-                                        <ImageIcon size={18} color="#1d4ed8" className="mr-2" />
-                                        <Text className="text-blue-700 font-bold text-sm">Upload</Text>
-                                    </TouchableOpacity>
-                                </View>
-
-                                <Text className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">Today</Text>
-                                <View className="flex-row flex-wrap -mx-2">
-                                    {[1, 2, 3, 4, 5, 6].map(i => (
-                                        <TouchableOpacity key={i} className="w-1/3 px-2 mb-4" onPress={() => console.log(`Photo ${i} Action`)}>
-                                            <View className="aspect-square bg-slate-100 rounded-lg border border-slate-200 items-center justify-center overflow-hidden">
-                                                <ImageIcon size={24} color="#cbd5e1" />
-                                            </View>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            </View>
+                            <PhotosTab
+                                photos={area?.photos}
+                                onAddPhoto={(uri: string) => {
+                                    if (onAddPhoto) onAddPhoto(uri);
+                                    else Alert.alert("Dev Warning", "No handler for adding photos");
+                                }}
+                                onDeletePhoto={(uri: string) => {
+                                    if (onDeletePhoto) onDeletePhoto(uri);
+                                    else Alert.alert("Dev Warning", "No handler for deleting photos");
+                                }}
+                            />
                         )}
 
                         {/* 3. ISSUES TAB */}
                         {activeTab === 'Issues' && (
-                            <View>
-                                <View className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-6 flex-row items-start">
-                                    <AlertTriangle size={20} color="#d97706" className="mr-3 mt-0.5" />
-                                    <View className="flex-1">
-                                        <Text className="text-amber-800 font-bold text-sm mb-1">Report an Issue</Text>
-                                        <Text className="text-amber-700 text-xs leading-5">
-                                            Flagging an issue will notify the Project Manager and may pause production for this area.
-                                        </Text>
-                                    </View>
-                                </View>
-
-                                <Text className="text-slate-700 font-bold mb-2 text-sm">Issue Type</Text>
-                                <View className="bg-white border border-slate-200 rounded-xl mb-4 overflow-hidden">
-                                    <View className="p-3 flex-row justify-between items-center">
-                                        <Text className="text-slate-700">Material Shortage</Text>
-                                        <ChevronDown size={16} color="#64748b" />
-                                    </View>
-                                </View>
-
-                                <Text className="text-slate-700 font-bold mb-2 text-sm">Description</Text>
-                                <TextInput
-                                    className="bg-white border border-slate-200 rounded-xl p-3 text-sm text-slate-800 h-32 text-top mb-4"
-                                    multiline
-                                    placeholder="Describe the issue in detail..."
-                                    placeholderTextColor="#94a3b8"
-                                    textAlignVertical="top"
-                                />
-
-                                <TouchableOpacity className="flex-row items-center justify-center border border-slate-300 border-dashed rounded-xl p-4 mb-6">
-                                    <Camera size={20} color="#64748b" className="mr-2" />
-                                    <Text className="text-slate-500 font-semibold">Attach Photo Evidence</Text>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity className="bg-red-600 py-3.5 rounded-xl items-center shadow-sm active:bg-red-700">
-                                    <Text className="text-white font-bold text-base">Submit Issue Report</Text>
-                                </TouchableOpacity>
-                            </View>
+                            <IssuesTab
+                                issues={area?.issues}
+                                onReport={(issue) => {
+                                    if (onReportIssue) onReportIssue(issue);
+                                    else Alert.alert("Dev Warning", "No handler for reporting issues");
+                                }}
+                            />
                         )}
 
                         {/* 4. LOG TIME TAB */}
@@ -297,7 +265,7 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
                             <View>
                                 <LogTimeTab
                                     areaId={area?.id}
-                                    onSave={(data) => {
+                                    onSave={(data: any) => {
                                         if (onLogTime) {
                                             onLogTime(data);
                                         } else {

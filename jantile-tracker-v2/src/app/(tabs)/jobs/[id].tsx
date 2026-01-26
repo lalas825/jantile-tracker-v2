@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
 import { RefreshCw } from 'lucide-react-native';
 import clsx from 'clsx';
@@ -33,11 +34,11 @@ export default function JobHubScreen() {
     if (!job) return <View className="flex-1 bg-white items-center justify-center"><Text>Loading Job...</Text></View>;
 
     return (
-        <SafeAreaView className="flex-1 bg-slate-50">
+        <SafeAreaView edges={['top']} className="flex-1 bg-white">
             <Stack.Screen options={{ headerShown: false }} />
 
             {/* 1. Header Section */}
-            <View className="bg-white px-4 pt-4 pb-4 border-b border-slate-200">
+            <View className="bg-white px-4 pb-4 border-b border-slate-200">
                 <View className="flex-row justify-between items-start">
                     <View className="flex-1 mr-4">
                         <Text className="text-2xl font-bold text-slate-900 leading-tight">
