@@ -40,7 +40,7 @@ export default function JobHubScreen() {
             {/* 1. Header Section */}
             <View className="bg-white px-4 pb-4 border-b border-slate-200">
                 <View className="flex-row justify-between items-start">
-                    <View className="flex-1 mr-4">
+                    <View className="flex-1 mr-4 mt-4">
                         <Text className="text-2xl font-bold text-slate-900 leading-tight">
                             {job.name} <Text className="text-slate-400 font-normal">#{job.id}</Text>
                         </Text>
