@@ -524,6 +524,74 @@ class MockJobStoreService {
         this.jobs[jobIndex] = job;
         return job;
     }
+
+    updateIssueStatus(jobId: string, floorId: string, unitId: string, areaId: string, issueId: string, status: 'OPEN' | 'RESOLVED'): Job | null {
+        const jobIndex = this.jobs.findIndex(j => j.id === jobId);
+        if (jobIndex === -1) return null;
+        const job = { ...this.jobs[jobIndex] };
+
+        const floorIndex = job.floors.findIndex(f => f.id === floorId);
+        if (floorIndex === -1) return null;
+        const floor = { ...job.floors[floorIndex] };
+
+        const unitIndex = floor.units.findIndex(u => u.id === unitId);
+        if (unitIndex === -1) return null;
+        const unit = { ...floor.units[unitIndex] };
+
+        const areaIndex = unit.areas.findIndex(a => a.id === areaId);
+        if (areaIndex === -1) return null;
+
+        const area = { ...unit.areas[areaIndex] };
+        if (area.issues) {
+            const issueIndex = area.issues.findIndex(i => i.id === issueId);
+            if (issueIndex !== -1) {
+                area.issues = [...area.issues];
+                area.issues[issueIndex] = { ...area.issues[issueIndex], status: status };
+            }
+        }
+
+        unit.areas = [...unit.areas];
+        unit.areas[areaIndex] = area;
+        floor.units = [...floor.units];
+        floor.units[unitIndex] = unit;
+        job.floors = [...job.floors];
+        job.floors[floorIndex] = floor;
+
+        this.jobs[jobIndex] = job;
+        return job;
+    }
+
+    deleteIssue(jobId: string, floorId: string, unitId: string, areaId: string, issueId: string): Job | null {
+        const jobIndex = this.jobs.findIndex(j => j.id === jobId);
+        if (jobIndex === -1) return null;
+        const job = { ...this.jobs[jobIndex] };
+
+        const floorIndex = job.floors.findIndex(f => f.id === floorId);
+        if (floorIndex === -1) return null;
+        const floor = { ...job.floors[floorIndex] };
+
+        const unitIndex = floor.units.findIndex(u => u.id === unitId);
+        if (unitIndex === -1) return null;
+        const unit = { ...floor.units[unitIndex] };
+
+        const areaIndex = unit.areas.findIndex(a => a.id === areaId);
+        if (areaIndex === -1) return null;
+
+        const area = { ...unit.areas[areaIndex] };
+        if (area.issues) {
+            area.issues = area.issues.filter(i => i.id !== issueId);
+        }
+
+        unit.areas = [...unit.areas];
+        unit.areas[areaIndex] = area;
+        floor.units = [...floor.units];
+        floor.units[unitIndex] = unit;
+        job.floors = [...job.floors];
+        job.floors[floorIndex] = floor;
+
+        this.jobs[jobIndex] = job;
+        return job;
+    }
 }
 
 export const MockJobStore = new MockJobStoreService();

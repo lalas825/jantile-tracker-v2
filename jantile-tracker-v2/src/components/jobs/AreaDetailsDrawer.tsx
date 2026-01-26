@@ -50,6 +50,8 @@ interface AreaDetailsDrawerProps {
     onAddPhoto?: (uri: string) => void;
     onDeletePhoto?: (uri: string) => void;
     onReportIssue?: (issue: any) => void;
+    onResolveIssue?: (issueId: string) => void;
+    onDeleteIssue?: (issueId: string) => void;
 }
 
 const TABS = ['Checklist', 'Photos', 'Issues', 'Log Time'];
@@ -87,7 +89,7 @@ const StatusButton = ({ status, onPress }: { status: TaskStatus, onPress: () => 
     }
 };
 
-export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, onLogTime, onAddPhoto, onDeletePhoto, onReportIssue }: AreaDetailsDrawerProps) {
+export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, onLogTime, onAddPhoto, onDeletePhoto, onReportIssue, onResolveIssue, onDeleteIssue }: AreaDetailsDrawerProps) {
     const [activeTab, setActiveTab] = useState('Checklist');
     const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
     const [progress, setProgress] = useState(0);
@@ -256,6 +258,12 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
                                 onReport={(issue) => {
                                     if (onReportIssue) onReportIssue(issue);
                                     else Alert.alert("Dev Warning", "No handler for reporting issues");
+                                }}
+                                onResolve={(id) => {
+                                    if (onResolveIssue) onResolveIssue(id);
+                                }}
+                                onDelete={(id) => {
+                                    if (onDeleteIssue) onDeleteIssue(id);
                                 }}
                             />
                         )}

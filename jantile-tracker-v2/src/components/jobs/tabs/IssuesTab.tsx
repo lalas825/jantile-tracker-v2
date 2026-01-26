@@ -7,11 +7,13 @@ import { Issue } from '../AreaDetailsDrawer';
 type IssuesTabProps = {
     issues?: Issue[];
     onReport: (issue: Omit<Issue, 'id' | 'status' | 'date'>) => void;
+    onResolve: (id: string) => void;
+    onDelete: (id: string) => void;
 };
 
 const ISSUE_TYPES = ['Material Shortage', 'Design Discrepancy', 'Damage Report', 'Work Stoppage', 'Other'];
 
-export default function IssuesTab({ issues = [], onReport }: IssuesTabProps) {
+export default function IssuesTab({ issues = [], onReport, onResolve, onDelete }: IssuesTabProps) {
 
     // Form State
     const [selectedType, setSelectedType] = useState(ISSUE_TYPES[0]);
@@ -129,7 +131,34 @@ export default function IssuesTab({ issues = [], onReport }: IssuesTabProps) {
                             )}
                             <View className="mt-3 pt-3 border-t border-slate-100 flex-row items-center">
                                 <View className={`w-2 h-2 rounded-full mr-2 ${issue.status === 'OPEN' ? 'bg-red-500' : 'bg-green-500'}`} />
-                                <Text className="text-xs font-semibold text-slate-600">{issue.status}</Text>
+                                <Text className="text-xs font-semibold text-slate-600 flex-1">{issue.status}</Text>
+
+                                {issue.status === 'OPEN' && (
+                                    <TouchableOpacity
+                                        onPress={() => onResolve(issue.id)}
+                                        className="bg-green-100 px-3 py-1.5 rounded mr-2"
+                                    >
+                                        <Text className="text-green-700 text-xs font-bold">Mark Resolved</Text>
+                                    </TouchableOpacity>
+                                )}
+
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        if (Platform.OS === 'web') {
+                                            if (window.confirm("Delete this issue report?")) onDelete(issue.id);
+                                        } else {
+                                            Alert.alert("Delete Issue?", "This cannot be undone", [
+                                                { text: "Cancel", style: "cancel" },
+                                                { text: "Delete", style: "destructive", onPress: () => onDelete(issue.id) }
+                                            ]);
+                                        }
+                                    }}
+                                    className="p-1.5"
+                                >
+                                    <View className="bg-slate-100 p-1 rounded-full">
+                                        <X size={14} color="#94a3b8" />
+                                    </View>
+                                </TouchableOpacity>
                             </View>
                         </View>
                     ))}

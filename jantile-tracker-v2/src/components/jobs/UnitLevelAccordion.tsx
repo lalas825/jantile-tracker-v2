@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { ChevronDown, ChevronRight, Pencil, Trash2, Plus } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Pencil, Trash2, Plus, Clock } from 'lucide-react-native';
 import { Unit } from '../../services/MockJobStore';
 import { AreaData } from './AreaDetailsDrawer';
 import AreaCard from './AreaCard';
@@ -34,6 +34,11 @@ const UnitLevelAccordion = ({
     const totalProgress = unit.areas.reduce((acc, area) => acc + area.progress, 0);
     const unitProgress = unit.areas.length > 0 ? Math.round(totalProgress / unit.areas.length) : 0;
 
+    // Calculate Unit Hours
+    const unitReg = unit.areas.reduce((acc, area) => acc + (area.timeLogs || []).reduce((s, l) => s + (l.regularHours || 0), 0), 0);
+    const unitOT = unit.areas.reduce((acc, area) => acc + (area.timeLogs || []).reduce((s, l) => s + (l.otHours || 0), 0), 0);
+    const hasHours = unitReg > 0 || unitOT > 0;
+
     return (
         <View className="mb-3">
             <TouchableOpacity
@@ -43,6 +48,16 @@ const UnitLevelAccordion = ({
                 <View className="flex-row items-center flex-1">
                     {isExpanded ? <ChevronDown size={18} color="#64748b" className="mr-2" /> : <ChevronRight size={18} color="#64748b" className="mr-2" />}
                     <Text className="text-slate-800 font-bold text-sm mr-2">{unit.name}</Text>
+
+                    {/* Hours Badge */}
+                    {hasHours && (
+                        <View className="bg-blue-50 border border-blue-100 px-2 py-0.5 rounded flex-row items-center">
+                            <Clock size={10} color="#3b82f6" className="mr-1" />
+                            <Text className="text-[10px] font-bold text-blue-700">
+                                {unitReg}h {unitOT > 0 && `(+${unitOT} OT)`}
+                            </Text>
+                        </View>
+                    )}
                 </View>
 
                 {/* Right Side: Progress + Actions */}

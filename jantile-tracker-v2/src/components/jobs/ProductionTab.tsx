@@ -64,6 +64,11 @@ const FloorAccordion = ({
 }: FloorAccordionProps) => {
     const [expanded, setExpanded] = useState(true); // Default open for ease
 
+    // Calculate Floor Hours
+    const floorReg = floor.units.reduce((acc, unit) => acc + unit.areas.reduce((a, area) => a + (area.timeLogs || []).reduce((s, l) => s + (l.regularHours || 0), 0), 0), 0);
+    const floorOT = floor.units.reduce((acc, unit) => acc + unit.areas.reduce((a, area) => a + (area.timeLogs || []).reduce((s, l) => s + (l.otHours || 0), 0), 0), 0);
+    const hasHours = floorReg > 0 || floorOT > 0;
+
     return (
         <View className="mb-4">
             <TouchableOpacity
@@ -74,6 +79,15 @@ const FloorAccordion = ({
                     <View className="flex-row items-center flex-1">
                         {expanded ? <ChevronDown size={20} color="#475569" className="mr-2" /> : <ChevronRight size={20} color="#475569" className="mr-2" />}
                         <Text className="text-slate-900 font-bold text-sm mr-2">{floor.name}</Text>
+                        {/* Hours Badge */}
+                        {hasHours && (
+                            <View className="bg-slate-200 border border-slate-300 px-2 py-0.5 rounded flex-row items-center">
+                                <Clock size={12} color="#475569" className="mr-1" />
+                                <Text className="text-xs font-bold text-slate-700">
+                                    {floorReg}h {floorOT > 0 && `(+${floorOT} OT)`}
+                                </Text>
+                            </View>
+                        )}
                     </View>
 
                     {/* Right Side: Progress + Actions */}
@@ -433,6 +447,57 @@ export default function ProductionTab() {
         }
     };
 
+
+
+    // --- ISSUE STATUS HANDLER ---
+    const handleIssueResolve = (issueId: string) => {
+        if (!selectedArea || !job) return;
+
+        // Context lookup
+        let targetFloorId = '';
+        let targetUnitId = '';
+
+        for (const floor of job.floors) {
+            for (const unit of floor.units) {
+                if (unit.areas.find(a => a.id === selectedArea.id)) {
+                    targetFloorId = floor.id;
+                    targetUnitId = unit.id;
+                    break;
+                }
+            }
+            if (targetFloorId) break;
+        }
+
+        if (targetFloorId) {
+            const updatedJob = MockJobStore.updateIssueStatus(job.id, targetFloorId, targetUnitId, selectedArea.id, issueId, 'RESOLVED');
+            if (updatedJob) setJob({ ...updatedJob });
+        }
+    };
+
+    const handleIssueDelete = (issueId: string) => {
+        if (!selectedArea || !job) return;
+
+        // Context lookup
+        let targetFloorId = '';
+        let targetUnitId = '';
+
+        for (const floor of job.floors) {
+            for (const unit of floor.units) {
+                if (unit.areas.find(a => a.id === selectedArea.id)) {
+                    targetFloorId = floor.id;
+                    targetUnitId = unit.id;
+                    break;
+                }
+            }
+            if (targetFloorId) break;
+        }
+
+        if (targetFloorId) {
+            const updatedJob = MockJobStore.deleteIssue(job.id, targetFloorId, targetUnitId, selectedArea.id, issueId);
+            if (updatedJob) setJob({ ...updatedJob });
+        }
+    };
+
     // --- PHOTO DELETE HANDLER ---
     const handlePhotoDelete = (uri: string) => {
         if (!selectedArea || !job) return;
@@ -502,6 +567,8 @@ export default function ProductionTab() {
                 onAddPhoto={handlePhotoAdd}
                 onDeletePhoto={handlePhotoDelete}
                 onReportIssue={handleIssueReport}
+                onResolveIssue={handleIssueResolve}
+                onDeleteIssue={handleIssueDelete}
             />
 
             <StructureModal
