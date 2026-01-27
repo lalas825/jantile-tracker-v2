@@ -15,10 +15,15 @@ export interface Floor {
     units: Unit[];
 }
 
+
+
 export interface Job {
     id: string;
     name: string;
-    address: string;
+    location: string;
+    generalContractor?: string;
+    totalUnits?: string;
+    foremanEmail?: string;
     progress: number;
     floors: Floor[];
 }
@@ -37,7 +42,10 @@ const INITIAL_JOBS: Job[] = [
     {
         id: '101', // Matching usual ID
         name: 'JFK Terminal 1',
-        address: 'John F. Kennedy International Airport, Queens, NY',
+        location: 'John F. Kennedy International Airport, Queens, NY',
+        generalContractor: 'Tishman Construction',
+        totalUnits: '45',
+        foremanEmail: 'foreman@jfk.com',
         progress: 0,
         floors: [
             {
@@ -102,7 +110,10 @@ const INITIAL_JOBS: Job[] = [
     {
         id: '102',
         name: '72 Park Ave',
-        address: '72 Park Avenue, New York, NY',
+        location: '72 Park Avenue, New York, NY',
+        generalContractor: 'Structure Tone',
+        totalUnits: '120',
+        foremanEmail: 'site.super@72park.com',
         progress: 45,
         floors: []
     }
@@ -118,6 +129,38 @@ class MockJobStoreService {
 
     getJob(id: string): Job | undefined {
         return this.jobs.find(j => j.id === id);
+    }
+
+    // 1. ADD NEW JOB (Updated)
+    addJob(name: string, location: string, gc: string, units: string, email: string): void {
+        const newJob: Job = {
+            id: Math.floor(Math.random() * 10000).toString(),
+            name,
+            location,
+            generalContractor: gc,
+            totalUnits: units,
+            foremanEmail: email,
+            progress: 0,
+            floors: []
+        };
+        this.jobs.unshift(newJob);
+    }
+
+    // 2. UPDATE JOB (Updated)
+    updateJob(id: string, name: string, location: string, gc: string, units: string, email: string): void {
+        const job = this.getJob(id);
+        if (job) {
+            job.name = name;
+            job.location = location;
+            job.generalContractor = gc;
+            job.totalUnits = units;
+            job.foremanEmail = email;
+        }
+    }
+
+    // 3. DELETE JOB
+    deleteJob(id: string): void {
+        this.jobs = this.jobs.filter(j => j.id !== id);
     }
 
     updateAreaChecklist(jobId: string, floorId: string, unitId: string, areaId: string, newChecklist: ChecklistItem[]): Job | null {
