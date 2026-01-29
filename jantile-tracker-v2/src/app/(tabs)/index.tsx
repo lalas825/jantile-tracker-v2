@@ -4,7 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, G } from 'react-native-svg';
-import { MockJobStore } from '../../services/MockJobStore';
+import { SupabaseService } from '../../services/SupabaseService';
+import { useWindowDimensions } from 'react-native';
 
 // --- CHART COMPONENT ---
 const DonutChart = ({ percentage, radius = 40, strokeWidth = 10, color = "#3b82f6" }: any) => {
@@ -54,35 +55,35 @@ export default function Dashboard() {
     const [portfolio, setPortfolio] = useState({ totalHours: 0, totalIssues: 0, avgProgress: 0, activeJobs: 0 });
     const [refreshing, setRefreshing] = useState(false);
 
-    const loadData = () => {
-        const allJobs = MockJobStore.getAllJobs();
-        setJobs(allJobs);
+    const loadData = async () => {
+        try {
+            const activeJobs = await SupabaseService.getActiveJobs();
 
-        let totalReg = 0, totalOT = 0, totalIssues = 0, totalProgress = 0;
+            // Map Supabase jobs to Dashboard format
+            // Note: Real data for progress/issues is not yet available in getActiveJobs, defaulting to 0
+            const mappedJobs = activeJobs.map(job => ({
+                id: job.id,
+                name: job.name,
+                location: 'Location Pending', // Placeholder
+                status: job.status,
+                progress: 0,
+                floors: []
+            }));
 
-        allJobs.forEach(job => {
-            totalProgress += job.progress || 0;
-            job.floors.forEach((f: any) => {
-                f.units.forEach((u: any) => {
-                    u.areas.forEach((a: any) => {
-                        (a.timeLogs || []).forEach((l: any) => {
-                            totalReg += l.regularHours || 0;
-                            totalOT += l.otHours || 0;
-                        });
-                        (a.issues || []).forEach((i: any) => {
-                            if (i.status === 'OPEN') totalIssues++;
-                        });
-                    });
-                });
+            setJobs(mappedJobs);
+
+            // Recalculate portfolio stats (will be 0 for now since we lack deep data)
+            let totalReg = 0, totalOT = 0, totalIssues = 0, totalProgress = 0;
+
+            setPortfolio({
+                totalHours: 0,
+                totalIssues: 0,
+                avgProgress: 0,
+                activeJobs: activeJobs.length
             });
-        });
-
-        setPortfolio({
-            totalHours: totalReg + totalOT,
-            totalIssues: totalIssues,
-            avgProgress: allJobs.length > 0 ? Math.round(totalProgress / allJobs.length) : 0,
-            activeJobs: allJobs.length
-        });
+        } catch (error) {
+            console.error("Failed to load dashboard data", error);
+        }
         setRefreshing(false);
     };
 
@@ -180,41 +181,50 @@ export default function Dashboard() {
                     </View>
                 </View>
 
-                {/* 3. ACTIVE PROJECTS LIST */}
-                <Text className="text-slate-800 font-bold text-lg mb-4">Active Projects</Text>
-                {jobs.map((job) => (
-                    <TouchableOpacity
-                        key={job.id}
-                        activeOpacity={0.9}
-                        onPress={() => router.push(`/jobs/${job.id}`)}
-                        className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 mb-4"
-                    >
-                        <View className="flex-row justify-between items-start mb-4">
-                            <View>
-                                <Text className="text-lg font-bold text-slate-800">{job.name}</Text>
-                                <Text className="text-slate-500 text-xs">{job.location}</Text>
-                            </View>
-                            <View className="bg-blue-50 px-2 py-1 rounded">
-                                <Text className="text-blue-600 text-xs font-bold">#{job.id}</Text>
-                            </View>
-                        </View>
+                {/* 3. QUICK ACCESS GRID */}
+                <Text className="text-slate-800 font-bold text-lg mb-4">Quick Access</Text>
 
-                        {/* Project Progress Bar */}
-                        <View className="mb-2">
-                            <View className="flex-row justify-between mb-1">
-                                <Text className="text-xs font-bold text-slate-500">Completion</Text>
-                                <Text className="text-xs font-bold text-slate-900">{job.progress}%</Text>
-                            </View>
-                            <View className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <View className="h-full bg-blue-600" style={{ width: `${job.progress}%` }} />
-                            </View>
+                <View className="flex-row flex-wrap" style={{ marginHorizontal: -8 }}>
+                    {[
+                        { title: 'Projects/Jobs', icon: 'briefcase', color: '#3b82f6', route: '/jobs', bg: 'bg-blue-50' },
+                        { title: 'Polishers Hub', icon: 'construct', color: '#f97316', route: '/polishers', bg: 'bg-orange-50' },
+                        { title: 'Manpower', icon: 'people', color: '#8b5cf6', route: '/manpower', bg: 'bg-violet-50' },
+                        { title: 'Warehouse', icon: 'cube', color: '#10b981', route: '/warehouse', bg: 'bg-emerald-50' },
+                        { title: 'Field Ops', icon: 'map', color: '#6366f1', route: '/field', bg: 'bg-indigo-50' },
+                        { title: 'Shop', icon: 'hammer', color: '#f59e0b', route: '/shop', bg: 'bg-amber-50' },
+                        { title: 'Reports', icon: 'bar-chart', color: '#f43f5e', route: '/reports', bg: 'bg-rose-50' },
+                        { title: 'Team Access', icon: 'key', color: '#64748b', route: '/team-access', bg: 'bg-slate-50' },
+                    ].map((item, idx) => (
+                        <View
+                            key={idx}
+                            style={{
+                                width: useWindowDimensions().width > 768 ? '25%' : '50%',
+                                padding: 8
+                            }}
+                        >
+                            <TouchableOpacity
+                                activeOpacity={0.7}
+                                onPress={() => router.push(item.route as any)}
+                                className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex-1 hover:border-blue-400 group h-40 justify-between"
+                            >
+                                <View className="flex-row justify-between items-start">
+                                    <View className={item.bg + " p-3 rounded-xl"}>
+                                        <Ionicons name={item.icon as any} size={28} color={item.color} />
+                                    </View>
+                                    <Ionicons name="arrow-forward-circle-outline" size={20} color="#cbd5e1" />
+                                </View>
+                                <View>
+                                    <Text className="text-slate-900 font-bold text-base leading-tight">
+                                        {item.title}
+                                    </Text>
+                                    <Text className="text-slate-400 font-medium text-[10px] uppercase tracking-wider mt-1">
+                                        Open Module
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
                         </View>
-
-                        <View className="flex-row justify-end mt-2">
-                            <Text className="text-xs text-blue-600 font-bold">Open Project →</Text>
-                        </View>
-                    </TouchableOpacity>
-                ))}
+                    ))}
+                </View>
             </ScrollView>
         </SafeAreaView>
     );

@@ -4,34 +4,12 @@ import {
 } from 'react-native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { Stack } from 'expo-router';
-import { MockJobStore } from '../../services/MockJobStore';
+import { SupabaseService, UICrewMember } from '../../services/SupabaseService';
 
 // --- CONFIGURATION ---
 const ROLES = [
     'Tile Foreman', 'Tile Mechanic', 'Tile Helper', 'Tender',
     'Marble Foreman', 'Marble Mechanic', 'Marble Helper', 'Marble Polisher'
-];
-
-// --- TYPES ---
-interface CrewMember {
-    id: string;
-    name: string;
-    role: string;
-    status: 'Active' | 'Inactive';
-    phone?: string;
-    email?: string;
-    address?: string;
-    assignedJobIds: string[];
-}
-
-// --- MOCK DATA ---
-const INITIAL_CREW: CrewMember[] = [
-    { id: '1', name: 'Ardian Dodaj', role: 'Tile Foreman', status: 'Active', phone: '555-0101', email: 'ardian@jantile.com', assignedJobIds: ['101'] },
-    { id: '2', name: 'David Zolaya', role: 'Tile Mechanic', status: 'Active', phone: '555-0102', email: 'david@jantile.com', assignedJobIds: ['101'] },
-    { id: '3', name: 'Irving Bravo', role: 'Marble Polisher', status: 'Active', phone: '555-0103', email: 'irving@jantile.com', assignedJobIds: [] },
-    { id: '4', name: 'Juan Paulino', role: 'Marble Polisher', status: 'Active', phone: '555-0104', email: 'juan@jantile.com', assignedJobIds: ['201'] },
-    { id: '5', name: 'Jose Barros', role: 'Marble Polisher', status: 'Active', phone: '555-0105', email: 'jose@jantile.com', assignedJobIds: ['201'] },
-    { id: '6', name: 'Cesar Ushca', role: 'Marble Polisher', status: 'Active', phone: '555-0106', email: 'cesar@jantile.com', assignedJobIds: [] },
 ];
 
 export default function ManpowerScreen() {
@@ -40,7 +18,7 @@ export default function ManpowerScreen() {
     const isDesktop = width >= 1024;
 
     // --- STATE ---
-    const [crew, setCrew] = useState<CrewMember[]>(INITIAL_CREW);
+    const [crew, setCrew] = useState<UICrewMember[]>([]);
     const [jobs, setJobs] = useState<any[]>([]);
 
     // Filters
@@ -67,11 +45,25 @@ export default function ManpowerScreen() {
     const [showRolePicker, setShowRolePicker] = useState(false);
 
     useEffect(() => {
-        setJobs(MockJobStore.getAllJobs());
+        loadData();
     }, []);
 
+    const loadData = async () => {
+        try {
+            const [workersData, jobsData] = await Promise.all([
+                SupabaseService.getWorkers(),
+                SupabaseService.getActiveJobs()
+            ]);
+            setCrew(workersData);
+            setJobs(jobsData);
+        } catch (error) {
+            console.error("Error loading manpower data:", error);
+            Alert.alert("Error", "Failed to load updated roster.");
+        }
+    };
+
     // --- ACTIONS ---
-    const handleOpenModal = (member?: CrewMember) => {
+    const handleOpenModal = (member?: UICrewMember) => {
         if (member) {
             setEditingId(member.id);
             setFormName(member.name);
@@ -94,23 +86,48 @@ export default function ManpowerScreen() {
         setModalVisible(true);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!formName.trim()) {
             Alert.alert("Missing Name", "Please enter a name for the crew member.");
             return;
         }
-        const memberData = {
-            name: formName, role: formRole, status: formStatus,
-            phone: formPhone, email: formEmail, address: formAddress,
-            assignedJobIds: formAssignedJobs
+
+        // Optimistic Update can be tricky with saving to DB if we don't have ID.
+        // But for better UX let's show loading or just wait.
+        // Or we can do optimistic update if we trust success.
+
+        const memberData: Partial<UICrewMember> = {
+            id: editingId || undefined, // undefined relies on DB gen if new? Actually we might need to handle ID.
+            name: formName,
+            role: formRole,
+            status: formStatus,
+            phone: formPhone,
+            email: formEmail,
+            address: formAddress,
+            assignedJobIds: formAssignedJobs,
+            avatar: '' // Will use helper in service or existing
+            // Note: Service handles avatar generation if missing for new ones?
+            // Service `getWorkers` generates initials. `saveWorker` upserts.
+            // If new, we don't have ID. If Supabase generates ID, we need to return it.
+            // But `polishers.tsx` mock data had IDs like '1', '2'.
+            // If using Supabase, IDs are usually UUIDs.
         };
-        if (editingId) {
-            setCrew(crew.map(c => c.id === editingId ? { ...c, ...memberData } : c));
-        } else {
-            const newMember: CrewMember = { id: Math.random().toString(), ...memberData };
-            setCrew([newMember, ...crew]);
+
+        // If it's new, we need to handle it.
+        // For now, let's assume we can rely on reload, or we should optimize.
+        // The service `saveWorker` is `upsert`. If no ID, `upsert` might fail if PK is missing?
+        // Actually Supabase `upsert` expects the PK to be present for update.
+        // If we want to INSERT, we omit PK (if auto-gen) and use `insert`.
+        // My `saveWorker` implementation uses `upsert` and removes undefined keys.
+        // If `id` is undefined, Supabase will try to insert. If `id` is PK and auto-gen (identity/uuid), it works.
+
+        try {
+            await SupabaseService.saveWorker(memberData as any);
+            await loadData(); // Reload to get partial updates / fresh IDs
+            setModalVisible(false);
+        } catch (error) {
+            Alert.alert("Error", "Failed to save crew member.");
         }
-        setModalVisible(false);
     };
 
     const toggleJobAssignment = (jobId: string) => {
@@ -133,7 +150,7 @@ export default function ManpowerScreen() {
     });
 
     // --- RENDERERS ---
-    const renderCard = (member: CrewMember) => (
+    const renderCard = (member: UICrewMember) => (
         <TouchableOpacity
             key={member.id}
             onPress={() => handleOpenModal(member)}

@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, Modal, ScrollView, TextInput, Platform, D
 import { X, Camera, Image as ImageIcon, CheckCircle2, AlertTriangle, Calendar, Activity, Ban, Circle, Clock, ChevronDown, Plus, Minus, User, Trash2 } from 'lucide-react-native';
 import clsx from 'clsx';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { SupabaseService } from '../../services/SupabaseService';
+import { CHECKLIST_PRESETS } from '../../constants/JobTemplates';
 
 import { CREW_MEMBERS } from '../../constants/CrewData';
 import LogTimeTab from './tabs/LogTimeTab';
@@ -31,7 +33,8 @@ export interface AreaData {
     name: string;
     description: string;
     checklist: ChecklistItem[];
-    photos?: string[];
+    area_photos?: { id: string; url: string; storage_path: string }[];
+    photos?: string[]; // Legacy UI support
     issues?: Issue[];
     timeLogs?: { regularHours: number; otHours: number; date: string; workerIds: string[]; description: string }[];
     // derived fields for UI display
@@ -94,20 +97,121 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
     const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
     const [progress, setProgress] = useState(0);
 
-    // Log Time State - Moved to LogTimeTab component
-    // const [selectedCrew, setSelectedCrew] = useState<string[]>([]);
-    // const [regularHours, setRegularHours] = useState('');
-    // const [otHours, setOtHours] = useState('');
-    // const [timeNotes, setTimeNotes] = useState('');
-
     const { width } = Dimensions.get('window');
     const isDesktop = width > 768;
+    const [loading, setLoading] = useState(false);
 
     // Hydrate Data on Open or when area updates
     useEffect(() => {
-        if (isVisible && area) {
-            setChecklist(area.checklist);
-        }
+        const loadChecklist = async () => {
+            console.log("DEBUG: loadChecklist START", { isVisible, areaId: area?.id });
+            if (!isVisible || !area) return;
+
+            // 1. INSTANT RENDER (Optimistic)
+            // Prioritize removing the spinner immediately if we know the checklist type.
+            const areaNameLower = area.name.toLowerCase();
+            let preset = CHECKLIST_PRESETS[areaNameLower];
+
+            // Fallbacks
+            if (!preset) {
+                if (areaNameLower.includes('bathroom') || areaNameLower.includes('bath')) preset = CHECKLIST_PRESETS['master bathroom'];
+                else if (areaNameLower.includes('kitchen')) preset = CHECKLIST_PRESETS['kitchen'];
+                else if (areaNameLower.includes('powder')) preset = CHECKLIST_PRESETS['powder room'];
+                else if (areaNameLower.includes('laundry')) preset = CHECKLIST_PRESETS['laundry'];
+            }
+
+            if (preset) {
+                // Render preset immediately with temp IDs
+                const optimisticItems = preset.map((text, idx) => ({
+                    id: `temp_${idx}`,
+                    label: text,
+                    status: 'NOT_STARTED' as TaskStatus
+                }));
+                setChecklist(optimisticItems);
+                // DO NOT start spinner if we are showing content!
+            } else {
+                setLoading(true); // Only show spinner if absolutely nothing to show
+            }
+
+            // 2. FETCH REAL DATA & SYNC (Background)
+            try {
+                console.log("Fetching items for:", area.id);
+                const items = await SupabaseService.getChecklistItems(area.id);
+
+                if (items && items.length > 0) {
+                    // DB has data.
+                    const realUiItems = items.map((item: any) => ({
+                        id: item.id,
+                        label: item.text,
+                        status: (item.status || (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED')) as TaskStatus
+                    }));
+
+                    // MERGE LOGIC: Apply any pending user changes from 'temp' items to these new real items
+                    setChecklist(currentLists => {
+                        // If no temp items, just use real.
+                        if (!currentLists.some(i => i.id.startsWith('temp_'))) return realUiItems;
+
+                        // Map real items to preserve any user changes made to temp items
+                        return realUiItems.map((real, index) => {
+                            const tempMatch = currentLists[index];
+                            if (tempMatch && tempMatch.id.startsWith('temp_') && tempMatch.status !== 'NOT_STARTED') {
+                                // User modified this temp item!
+                                console.log("Merging user change to real item:", real.label, tempMatch.status);
+
+                                // TRIGGER DELAYED SAVE
+                                SupabaseService.updateChecklistItem(real.id, {
+                                    status: tempMatch.status
+                                });
+
+                                return { ...real, status: tempMatch.status };
+                            }
+                            return real;
+                        });
+                    });
+
+                } else {
+                    // DB is empty.
+                    if (preset) {
+                        console.log("DB Empty. Background saving preset...");
+                        // Save preset to DB
+                        for (const task of preset) {
+                            await SupabaseService.addChecklistItem(area.id, task);
+                        }
+
+                        // Re-fetch to get real IDs
+                        const realItems = await SupabaseService.getChecklistItems(area.id);
+                        const realUiItems = realItems.map((item: any) => ({
+                            id: item.id,
+                            label: item.text,
+                            status: (item.status || (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED')) as TaskStatus
+                        }));
+
+                        // Same merge logic for the newly created items
+                        setChecklist(currentLists => {
+                            if (!currentLists.some(i => i.id.startsWith('temp_'))) return realUiItems;
+                            return realUiItems.map((real, index) => {
+                                const tempMatch = currentLists[index];
+                                if (tempMatch && tempMatch.id.startsWith('temp_') && tempMatch.status !== 'NOT_STARTED') {
+                                    console.log("Merging user change to NEW real item:", real.label, tempMatch.status);
+                                    SupabaseService.updateChecklistItem(real.id, {
+                                        status: tempMatch.status
+                                    });
+                                    return { ...real, status: tempMatch.status };
+                                }
+                                return real;
+                            });
+                        });
+                    } else {
+                        setChecklist([]);
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load/sync checklist", e);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadChecklist();
     }, [isVisible, area]);
 
     // Calculate Progress dynamically
@@ -118,21 +222,35 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
         setProgress(calculatedProgress);
     }, [checklist]);
 
-    const cycleStatus = (id: string) => {
-        const updatedChecklist = checklist.map(item => {
-            if (item.id !== id) return item;
+    const cycleStatus = async (id: string) => {
+        const item = checklist.find(i => i.id === id);
+        if (!item) return;
 
-            let nextStatus: TaskStatus = 'NOT_STARTED';
-            if (item.status === 'NOT_STARTED') nextStatus = 'IN_PROGRESS';
-            else if (item.status === 'IN_PROGRESS') nextStatus = 'COMPLETED';
-            else if (item.status === 'COMPLETED') nextStatus = 'NA';
-            else if (item.status === 'NA') nextStatus = 'NOT_STARTED';
+        let nextStatus: TaskStatus = 'NOT_STARTED';
+        if (item.status === 'NOT_STARTED') nextStatus = 'IN_PROGRESS';
+        else if (item.status === 'IN_PROGRESS') nextStatus = 'COMPLETED';
+        else if (item.status === 'COMPLETED') nextStatus = 'NA';
+        else if (item.status === 'NA') nextStatus = 'NOT_STARTED';
 
-            return { ...item, status: nextStatus };
-        });
-
+        // Optimistic Update (Always allowed, even for temp IDs)
+        const updatedChecklist = checklist.map(i => i.id === id ? { ...i, status: nextStatus } : i);
         setChecklist(updatedChecklist);
-        onUpdate(updatedChecklist); // Live Sync: Trigger parent update immediately
+        onUpdate(updatedChecklist);
+
+        // Save to DB
+        // SKIP if it's a temp ID. The useEffect merge logic will catch this later.
+        if (id.startsWith('temp_')) {
+            console.log("Local update only for temp item. Sync will handle persistence.");
+            return;
+        }
+
+        try {
+            await SupabaseService.updateChecklistItem(id, {
+                status: nextStatus
+            });
+        } catch (e) {
+            console.error("Failed to save status", e);
+        }
     };
 
     return (
@@ -145,10 +263,10 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
             <View className={clsx("flex-1 bg-black/50 justify-end", isDesktop ? "items-end" : "")}>
                 {/* Drawer Container */}
                 <View className={clsx(
-                    "bg-white shadow-2xl overflow-hidden flex-1",
+                    "bg-white shadow-2xl overflow-hidden h-full",
                     isDesktop
-                        ? "w-[500px] h-full rounded-l-2xl"
-                        : "w-full h-[90%] rounded-t-3xl"
+                        ? "w-[600px] xl:w-[800px] rounded-l-2xl"
+                        : "w-full rounded-t-3xl"
                 )}>
 
                     {/* Header */}
@@ -207,6 +325,41 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
                         {activeTab === 'Checklist' && (
                             <View>
                                 <Text className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-4">Tasks & Milestones</Text>
+                                {checklist.length === 0 && (
+                                    <View className="py-8 items-center justify-center bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                                        {loading ? (
+                                            <Text className="text-slate-400">Loading checklist...</Text>
+                                        ) : (
+                                            <View className="items-center">
+                                                <Text className="text-slate-400 mb-2">No items found</Text>
+                                                <TouchableOpacity
+                                                    onPress={async () => {
+                                                        if (area) {
+                                                            setLoading(true);
+                                                            // Manual trigger for default backup
+                                                            let preset = CHECKLIST_PRESETS['master bathroom'];
+                                                            for (const task of preset) {
+                                                                await SupabaseService.addChecklistItem(area.id, task);
+                                                            }
+                                                            // Reload
+                                                            const items = await SupabaseService.getChecklistItems(area.id);
+                                                            const uiItems = items.map((item: any) => ({
+                                                                id: item.id,
+                                                                label: item.text,
+                                                                status: (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED') as TaskStatus
+                                                            }));
+                                                            setChecklist(uiItems);
+                                                            setLoading(false);
+                                                        }
+                                                    }}
+                                                    className="px-4 py-2 bg-white border border-slate-200 rounded text-slate-600 font-bold text-xs"
+                                                >
+                                                    <Text>Populate Standard Tasks</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        )}
+                                    </View>
+                                )}
                                 {checklist.map(item => (
                                     <View
                                         key={item.id}
@@ -239,7 +392,7 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
                         {/* 2. PHOTOS TAB */}
                         {activeTab === 'Photos' && (
                             <PhotosTab
-                                photos={area?.photos}
+                                photos={(area as any)?.area_photos?.map((p: any) => p.url) || []}
                                 onAddPhoto={(uri: string) => {
                                     if (onAddPhoto) onAddPhoto(uri);
                                     else Alert.alert("Dev Warning", "No handler for adding photos");
@@ -286,8 +439,8 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
                         )}
 
                     </ScrollView>
-                </View>
-            </View>
-        </Modal>
+                </View >
+            </View >
+        </Modal >
     );
 }

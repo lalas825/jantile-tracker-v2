@@ -5,12 +5,14 @@ import { CHECKLIST_PRESETS } from '../constants/JobTemplates';
 export interface Unit {
     id: string;
     name: string;
+    description?: string;
     areas: AreaData[];
 }
 
 export interface Floor {
     id: string;
     name: string;
+    description?: string;
     progress: number; // 0-100
     units: Unit[];
 }

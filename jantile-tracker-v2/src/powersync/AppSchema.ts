@@ -40,4 +40,42 @@ export const AppSchema = new Schema([
             new Column({ name: 'ppe_check', type: ColumnType.INTEGER }), // 0 or 1
         ],
     }),
+    new Table({
+        name: 'floors',
+        columns: [
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'name', type: ColumnType.TEXT }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+        ]
+    }),
+    new Table({
+        name: 'units',
+        columns: [
+            new Column({ name: 'floor_id', type: ColumnType.TEXT }),
+            new Column({ name: 'name', type: ColumnType.TEXT }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+        ]
+    }),
+    new Table({
+        name: 'areas',
+        columns: [
+            new Column({ name: 'unit_id', type: ColumnType.TEXT }),
+            new Column({ name: 'name', type: ColumnType.TEXT }),
+            new Column({ name: 'description', type: ColumnType.TEXT }),
+            new Column({ name: 'status', type: ColumnType.TEXT }),
+            new Column({ name: 'progress', type: ColumnType.INTEGER }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+            new Column({ name: 'progress', type: ColumnType.INTEGER }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+        ]
+    }),
+    new Table({
+        name: 'checklist_items',
+        columns: [
+            new Column({ name: 'area_id', type: ColumnType.TEXT }),
+            new Column({ name: 'text', type: ColumnType.TEXT }),
+            new Column({ name: 'completed', type: ColumnType.INTEGER }),
+            new Column({ name: 'status', type: ColumnType.TEXT }),
+        ]
+    }),
 ]);

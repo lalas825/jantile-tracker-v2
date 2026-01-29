@@ -1,582 +1,297 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Platform } from 'react-native';
-import { ChevronDown, ChevronRight, CheckCircle2, Clock, Plus, Pencil, Trash2 } from 'lucide-react-native';
-import { Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, Alert, Platform } from 'react-native';
+import { ChevronDown, ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react-native';
 import clsx from 'clsx';
-import AreaDetailsDrawer, { AreaData, ChecklistItem } from './AreaDetailsDrawer';
+import { useRouter } from 'expo-router';
+import { SupabaseService } from '../../services/SupabaseService';
+// We import types from MockJobStore for now as SupabaseService types might need adjustment or we can just use them if they match.
+// Ideally we should move types to a shared types file or SupabaseService.
+import { Floor, Unit, Job } from '../../services/MockJobStore';
 import StructureModal from '../modals/StructureModal';
-// Define types locally since they were removed from the modal file
-type StructureModalMode = 'add-floor' | 'edit-floor' | 'add-unit' | 'edit-area';
+import AreaDetailsDrawer from './AreaDetailsDrawer';
+import StructureModule from '../StructureModule';
+
+type StructureModalMode = 'add-floor' | 'edit-floor' | 'add-unit' | 'edit-unit' | 'edit-area' | 'add-area';
 type StructureModalData = { name: string; unitName?: string; description?: string; areaName?: string };
-import { MockJobStore, Floor, Job } from '../../services/MockJobStore';
 
-// --- Type Definitions ---
-// Using Imported types from Store where possible, but locally defined props might need matching
-import UnitLevelAccordion from './UnitLevelAccordion';
-import AreaCard from './AreaCard';
-
-// UnitAccordionProps removed as it is now handling internally in the component or via imports
-
-// Local UnitAccordion definition removed in favor of imported component
-
-// --- Helper Components ---
-const StatusPill = ({ label, status }: { label: string, status: string }) => {
-    if (status === 'NOT_STARTED' || status === 'PENDING') return null;
-
-    return (
-        <View className={clsx(
-            "flex-row items-center px-1.5 py-0.5 rounded-full mr-2 mb-1",
-            status === 'COMPLETED' || status === 'Done' ? "bg-green-100 border border-green-200" : "bg-blue-100 border border-blue-200"
-        )}>
-            <Text className={clsx(
-                "text-[10px] font-bold mr-1",
-                status === 'COMPLETED' || status === 'Done' ? "text-green-700" : "text-blue-700"
-            )}>
-                {label}
-            </Text>
-            {status === 'COMPLETED' || status === 'Done' ? <CheckCircle2 size={10} color="#15803d" /> : <Clock size={10} color="#1d4ed8" />}
-        </View>
-    );
+const confirmDelete = (title: string, message: string, onConfirm: () => void) => {
+    if (Platform.OS === 'web') {
+        if (window.confirm(`${title}\n${message}`)) {
+            onConfirm();
+        }
+    } else {
+        Alert.alert(title, message, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: onConfirm }
+        ]);
+    }
 };
 
-// AreaCard local definition removed in favor of imported component
-
-type FloorAccordionProps = {
-    floor: Floor;
-    onAreaPress: (area: AreaData) => void;
-    canEdit: boolean;
-    onEditFloor: (floor: Floor) => void;
-    onDeleteFloor: (floor: Floor) => void;
-    onAddUnit: (floorId: string) => void;
-    onEditArea: (floorId: string, unitId: string, area: AreaData) => void;
-    onDeleteArea: (floorId: string, unitId: string, area: AreaData) => void;
-};
-
-const FloorAccordion = ({
-    floor,
-    onAreaPress,
-    canEdit,
-    onEditFloor,
-    onDeleteFloor,
-    onAddUnit,
-    onEditArea,
-    onDeleteArea
-}: FloorAccordionProps) => {
-    const [expanded, setExpanded] = useState(true); // Default open for ease
-
-    // Calculate Floor Hours
-    const floorReg = floor.units.reduce((acc, unit) => acc + unit.areas.reduce((a, area) => a + (area.timeLogs || []).reduce((s, l) => s + (l.regularHours || 0), 0), 0), 0);
-    const floorOT = floor.units.reduce((acc, unit) => acc + unit.areas.reduce((a, area) => a + (area.timeLogs || []).reduce((s, l) => s + (l.otHours || 0), 0), 0), 0);
-    const hasHours = floorReg > 0 || floorOT > 0;
-
-    return (
-        <View className="mb-4">
-            <TouchableOpacity
-                onPress={() => setExpanded(!expanded)}
-                className="bg-slate-100 p-3 rounded-lg border border-slate-200"
-            >
-                <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center flex-1">
-                        {expanded ? <ChevronDown size={20} color="#475569" className="mr-2" /> : <ChevronRight size={20} color="#475569" className="mr-2" />}
-                        <Text className="text-slate-900 font-bold text-sm mr-2">{floor.name}</Text>
-                        {/* Hours Badge */}
-                        {hasHours && (
-                            <View className="bg-slate-200 border border-slate-300 px-2 py-0.5 rounded flex-row items-center">
-                                <Clock size={12} color="#475569" className="mr-1" />
-                                <Text className="text-xs font-bold text-slate-700">
-                                    {floorReg}h {floorOT > 0 && `(+${floorOT} OT)`}
-                                </Text>
-                            </View>
-                        )}
-                    </View>
-
-                    {/* Right Side: Progress + Actions */}
-                    <View className="flex-row items-center gap-4">
-                        {/* Floor Progress Bar */}
-                        <View className="flex-row items-center">
-                            <View className="w-24 h-4 bg-slate-300 rounded-full overflow-hidden mr-3 border border-slate-400/20">
-                                <View
-                                    className="h-full bg-green-600 rounded-full"
-                                    style={{ width: `${floor.progress}%` }}
-                                />
-                            </View>
-                            <Text className="text-slate-700 text-lg font-bold w-12 text-right">{floor.progress}%</Text>
-                        </View>
-
-                        {/* Floor Actions */}
-                        {canEdit && (
-                            <View className="flex-row items-center gap-2 border-l border-slate-300 pl-4 h-6">
-                                <TouchableOpacity
-                                    onPress={(e) => { e.stopPropagation(); onEditFloor(floor); }}
-                                    className="p-1"
-                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                >
-                                    <Pencil size={16} color="#64748b" />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={(e) => { e.stopPropagation(); onDeleteFloor(floor); }}
-                                    className="p-1"
-                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                >
-                                    <Trash2 size={16} color="#ef4444" />
-                                </TouchableOpacity>
-                            </View>
-                        )}
-                    </View>
-                </View>
-            </TouchableOpacity>
-
-            {expanded && (
-                <View className="mt-2 pl-2">
-                    {floor.units.map((unit) => (
-                        <UnitLevelAccordion
-                            key={unit.id}
-                            unit={unit}
-                            onAreaPress={onAreaPress}
-                            canEdit={canEdit}
-                            onEditUnit={(u) => console.log('Edit Unit', u)} // Placeholder
-                            onDeleteUnit={(u) => console.log('Delete Unit', u)} // Placeholder
-                            onAddArea={(unitId) => console.log("Open Add Area for Unit:", unitId)}
-                            onEditArea={onEditArea}
-                            onDeleteArea={onDeleteArea}
-                            floorId={floor.id}
-                        />
-                    ))}
-                    {/* Add Unit Button - Still needed for adding NEW units */}
-                    {/* Add Unit Button */}
-                    {canEdit && (
-                        <TouchableOpacity
-                            onPress={() => onAddUnit(floor.id)}
-                            className="flex-row items-center justify-center h-12 mt-2 bg-slate-50 border-2 border-dashed border-slate-300 rounded-lg active:bg-slate-100"
-                        >
-                            <Plus size={18} color="#64748b" className="mr-2" />
-                            <Text className="text-slate-500 font-semibold text-sm">Add Unit to {floor.name}</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-            )}
-        </View>
-    );
-};
-
-export default function ProductionTab() {
-    const [job, setJob] = useState<Job | null>(null);
-    const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
-    const [isDrawerVisible, setIsDrawerVisible] = useState(false);
-
-    // Structure Modal State
+export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: Job) => void }) {
     const [modalVisible, setModalVisible] = useState(false);
     const [modalMode, setModalMode] = useState<StructureModalMode>('add-floor');
-    const [modalTarget, setModalTarget] = useState<{ floorId?: string, unitId?: string, areaId?: string, initialData?: StructureModalData } | null>(null);
+    const [modalTarget, setModalTarget] = useState<{ floorId?: string, unitId?: string, areaId?: string } | null>(null);
+    const [existingData, setExistingData] = useState<StructureModalData | null>(null);
 
-    const canEdit = true;
-    const JOB_ID = '101'; // Hardcoded for this view context
+    // Drawer State
+    const [drawerVisible, setDrawerVisible] = useState(false);
+    const [selectedArea, setSelectedArea] = useState<any>(null);
 
-    useEffect(() => {
-        // Initial Fetch
-        const fetchedJob = MockJobStore.getJob(JOB_ID);
-        if (fetchedJob) {
-            setJob(fetchedJob);
-        }
-    }, [JOB_ID]);
-
-    // Helper to find selected area object safely
-    const getSelectedArea = () => {
-        if (!job) return null;
-        for (const floor of job.floors) {
-            for (const unit of floor.units) {
-                const found = unit.areas.find(a => a.id === selectedAreaId);
-                if (found) return found;
+    const reloadJob = async () => {
+        if (!job?.id) return;
+        try {
+            const updatedJob = await SupabaseService.getJob(job.id);
+            if (updatedJob) {
+                setJob(updatedJob as unknown as Job);
             }
+        } catch (err) {
+            console.error("Failed to reload job:", err);
         }
-        return null;
     };
 
-    const handleAreaOpen = (area: AreaData) => {
-        setSelectedAreaId(area.id);
-        setIsDrawerVisible(true);
-    };
-
-    const handleDrawerClose = () => {
-        setIsDrawerVisible(false);
-        setSelectedAreaId(null);
-    };
-
-    // --- CRUD HANDLERS ---
-
-    const confirmDelete = (title: string, message: string, onConfirm: () => void) => {
-        if (Platform.OS === 'web') {
-            // Use browser native confirm
-            if (window.confirm(`${title}\n${message}`)) {
-                onConfirm();
-            }
-        } else {
-            // Use Native Alert
-            Alert.alert(title, message, [
-                { text: "Cancel", style: "cancel" },
-                { text: "Delete", style: "destructive", onPress: onConfirm }
-            ]);
-        }
+    const handleAreaOpen = (area: any) => {
+        setSelectedArea(area);
+        setDrawerVisible(true);
     };
 
     const handleAddFloor = () => {
         setModalMode('add-floor');
         setModalTarget(null);
+        setExistingData(null);
         setModalVisible(true);
     };
 
     const handleEditFloor = (floor: Floor) => {
         setModalMode('edit-floor');
-        setModalTarget({ floorId: floor.id, initialData: { name: floor.name } });
+        setModalTarget({ floorId: floor.id });
+        setExistingData({ name: floor.name });
         setModalVisible(true);
     };
 
-    const handleDeleteFloor = (floor: Floor) => {
-        confirmDelete(
-            "Delete Floor",
-            `Are you sure you want to delete "${floor.name}"? This action cannot be undone.`,
-            () => {
-                const updatedJob = MockJobStore.deleteFloor(JOB_ID, floor.id);
-                if (updatedJob) setJob({ ...updatedJob });
+    const handleDeleteFloor = (floorId: string) => {
+        confirmDelete("Delete Floor?", "This will delete the floor and all its units/areas.", async () => {
+            try {
+                await SupabaseService.deleteFloor(floorId);
+                reloadJob();
+            } catch (error) {
+                alert('Error deleting floor');
             }
-        );
+        });
     };
 
     const handleAddUnit = (floorId: string) => {
         setModalMode('add-unit');
         setModalTarget({ floorId });
+        setExistingData(null);
         setModalVisible(true);
     };
 
-    const handleEditArea = (floorId: string, unitId: string, area: AreaData) => {
-        setModalMode('edit-area');
-        setModalTarget({
-            floorId,
-            unitId,
-            areaId: area.id,
-            initialData: {
-                name: 'Current Unit', // Placeholder for unit name since we are editing area
-                areaName: area.name,
-                description: area.description
+    const handleEditUnit = (floorId: string, unitId: string) => {
+        const floor = job?.floors?.find(f => f.id === floorId);
+        const unit = floor?.units?.find(u => u.id === unitId);
+        if (!unit) return;
+
+        setModalMode('edit-unit');
+        setModalTarget({ floorId, unitId });
+        setExistingData({ name: unit.name });
+        setModalVisible(true);
+    };
+
+    const handleDeleteUnit = (floorId: string, unitId: string) => {
+        confirmDelete("Delete Unit?", "This will delete the unit and all its areas.", async () => {
+            try {
+                await SupabaseService.deleteUnit(unitId);
+                reloadJob();
+            } catch (error) {
+                alert('Error deleting unit');
             }
         });
+    };
+
+    const handleAddArea = (floorId: string, unitId: string) => {
+        setModalMode('add-area');
+        setModalTarget({ floorId, unitId });
+        setExistingData(null);
         setModalVisible(true);
     };
 
-    const handleDeleteArea = (floorId: string, unitId: string, area: AreaData) => {
-        confirmDelete(
-            "Delete Area",
-            `Are you sure you want to delete "${area.name}"?`,
-            () => {
-                const updatedJob = MockJobStore.deleteArea(JOB_ID, floorId, unitId, area.id);
-                if (updatedJob) setJob({ ...updatedJob });
-            }
-        );
+    const handleEditArea = (floorId: string, unitId: string, area: any) => {
+        setModalMode('edit-area');
+        setModalTarget({ floorId, unitId, areaId: area.id });
+        setExistingData({ name: area.name, areaName: area.name, description: area.description });
+        setModalVisible(true);
     };
 
-    const handleStructureSubmit = (data: any) => {
+    const handleDeleteArea = (floorId: string, unitId: string, areaId: string) => {
+        confirmDelete("Delete Area?", "This action cannot be undone.", async () => {
+            try {
+                await SupabaseService.deleteArea(areaId);
+                await reloadJob();
+            } catch (error) {
+                alert('Error deleting area');
+            }
+        });
+    };
+
+    const handleStructureSubmit = async (data: any) => {
         if (!job) return;
-        let updatedJob: Job | null = null;
-
-        if (modalMode === 'add-floor') {
-            updatedJob = MockJobStore.addFloor(JOB_ID, data.name);
-        } else if (modalMode === 'edit-floor' && modalTarget?.floorId) {
-            updatedJob = MockJobStore.updateFloorName(JOB_ID, modalTarget.floorId, data.name);
-        } else if (modalMode === 'add-unit' && modalTarget?.floorId) {
-            updatedJob = MockJobStore.addUnit(
-                JOB_ID,
-                modalTarget.floorId,
-                data.name || 'New Unit',
-                data.areaName || 'Main Area',
-                data.description || ''
-            );
-        } else if (modalMode === 'edit-area' && modalTarget?.floorId && modalTarget?.unitId && modalTarget?.areaId) {
-            updatedJob = MockJobStore.updateArea(
-                JOB_ID,
-                modalTarget.floorId,
-                modalTarget.unitId,
-                modalTarget.areaId,
-                data.areaName,
-                data.description || ''
-            );
+        try {
+            if (modalMode === 'add-floor') {
+                await SupabaseService.addFloor(job.id, data.name);
+            } else if (modalMode === 'edit-floor' && modalTarget?.floorId) {
+                await SupabaseService.updateFloorName(modalTarget.floorId, data.name, data.description);
+            } else if (modalMode === 'add-unit' && modalTarget?.floorId) {
+                await SupabaseService.addUnit(modalTarget.floorId, data.name || 'New Unit');
+            } else if (modalMode === 'edit-unit' && modalTarget?.unitId) {
+                await SupabaseService.updateUnitName(modalTarget.unitId, data.name, data.description);
+            } else if (modalMode === 'add-area' && modalTarget?.unitId) {
+                await SupabaseService.addArea(modalTarget.unitId, data.name || 'New Area', data.description || '');
+            } else if (modalMode === 'edit-area' && modalTarget?.areaId) {
+                await SupabaseService.updateArea(modalTarget.areaId, {
+                    name: data.name,
+                    description: data.description
+                });
+            }
+            await reloadJob();
+            setModalVisible(false);
+        } catch (error: any) {
+            console.error(error);
+            alert('Error saving structure: ' + error.message);
         }
-
-        if (updatedJob) setJob({ ...updatedJob });
-        setModalVisible(false);
     };
 
     const getModalProps = () => {
         switch (modalMode) {
             case 'add-floor': return { mode: 'create', type: 'floor' };
-            case 'edit-floor': return { mode: 'edit', type: 'floor' };
+            case 'edit-floor': return { mode: 'edit', type: 'floor', initialData: existingData };
             case 'add-unit': return { mode: 'create', type: 'unit' };
-            case 'edit-area': return { mode: 'edit', type: 'unit' };
+            case 'edit-unit': return { mode: 'edit', type: 'unit', initialData: existingData };
+            case 'add-area': return { mode: 'create', type: 'area' };
+            case 'edit-area': return { mode: 'edit', type: 'area', initialData: existingData };
             default: return { mode: 'create', type: 'floor' };
         }
     };
 
-    // --- THE MATH ENGINE & PERSISTENCE ---
-    const handleUpdateArea = (newChecklist: ChecklistItem[]) => {
-        if (!selectedAreaId || !job) return;
-
-        // Find location of area to pass to store
-        // In a real app we might store IDs in the selectedArea object or look it up faster
-        let targetFloorId = '';
-        let targetUnitId = '';
-
-        // Lookup IDs
-        for (const floor of job.floors) {
-            for (const unit of floor.units) {
-                if (unit.areas.find(a => a.id === selectedAreaId)) {
-                    targetFloorId = floor.id;
-                    targetUnitId = unit.id;
-                    break;
-                }
-            }
-            if (targetFloorId) break;
-        }
-
-        if (targetFloorId && targetUnitId) {
-            const updatedJob = MockJobStore.updateAreaChecklist(job.id, targetFloorId, targetUnitId, selectedAreaId, newChecklist);
-            if (updatedJob) {
-                setJob(updatedJob); // Force UI Update with new calculations
-            }
-        }
-    };
-
-    // --- TIME LOGGING HANDLER ---
-    const handleLogTime = (logData: any) => {
-        console.log("LOGGING TIME:", logData); // Debug log
-
-        if (!selectedArea || !job) {
-            console.error("No area or job selected!");
-            return;
-        }
-
-        // Find context IDs again
-        let targetFloorId = '';
-        let targetUnitId = '';
-
-        for (const floor of job.floors) {
-            for (const unit of floor.units) {
-                if (unit.areas.find(a => a.id === selectedArea.id)) {
-                    targetFloorId = floor.id;
-                    targetUnitId = unit.id;
-                    break;
-                }
-            }
-            if (targetFloorId) break;
-        }
-
-        if (targetFloorId && targetUnitId) {
-            const updatedJob = MockJobStore.logTime(
-                job.id,
-                targetFloorId,
-                targetUnitId,
-                selectedArea.id,
-                logData
-            );
-
-            if (updatedJob) {
-                setJob({ ...updatedJob });
-                setIsDrawerVisible(false); // Close the drawer
-
-                if (Platform.OS === 'web') {
-                    window.alert("Time Saved Successfully!");
-                } else {
-                    Alert.alert("Success", "Time log has been saved.");
-                }
-            }
-        } else {
-            Alert.alert("Error", "Could not locate area context.");
-        }
-    };
-
-    // --- PHOTO HANDLER ---
-    const handlePhotoAdd = (uri: string) => {
-        if (!selectedArea || !job) return;
-
-        // Find context (Duplicate logic from logTime - could refactor to helper)
-        let targetFloorId = '';
-        let targetUnitId = '';
-
-        for (const floor of job.floors) {
-            for (const unit of floor.units) {
-                if (unit.areas.find(a => a.id === selectedArea.id)) {
-                    targetFloorId = floor.id;
-                    targetUnitId = unit.id;
-                    break;
-                }
-            }
-            if (targetFloorId) break;
-        }
-
-        if (targetFloorId) {
-            const updatedJob = MockJobStore.addPhoto(job.id, targetFloorId, targetUnitId, selectedArea.id, uri);
-            if (updatedJob) setJob({ ...updatedJob });
-        }
-    };
-
-    // --- ISSUE HANDLER ---
-    const handleIssueReport = (issueData: any) => {
-        if (!selectedArea || !job) return;
-
-        let targetFloorId = '';
-        let targetUnitId = '';
-
-        for (const floor of job.floors) {
-            for (const unit of floor.units) {
-                if (unit.areas.find(a => a.id === selectedArea.id)) {
-                    targetFloorId = floor.id;
-                    targetUnitId = unit.id;
-                    break;
-                }
-            }
-            if (targetFloorId) break;
-        }
-
-        if (targetFloorId) {
-            const fullIssue = {
-                id: `issue_${Date.now()}`,
-                date: new Date().toISOString(),
-                status: 'OPEN',
-                ...issueData
-            };
-            const updatedJob = MockJobStore.addIssue(job.id, targetFloorId, targetUnitId, selectedArea.id, fullIssue);
-            if (updatedJob) setJob({ ...updatedJob });
-        }
-    };
-
-
-
-    // --- ISSUE STATUS HANDLER ---
-    const handleIssueResolve = (issueId: string) => {
-        if (!selectedArea || !job) return;
-
-        // Context lookup
-        let targetFloorId = '';
-        let targetUnitId = '';
-
-        for (const floor of job.floors) {
-            for (const unit of floor.units) {
-                if (unit.areas.find(a => a.id === selectedArea.id)) {
-                    targetFloorId = floor.id;
-                    targetUnitId = unit.id;
-                    break;
-                }
-            }
-            if (targetFloorId) break;
-        }
-
-        if (targetFloorId) {
-            const updatedJob = MockJobStore.updateIssueStatus(job.id, targetFloorId, targetUnitId, selectedArea.id, issueId, 'RESOLVED');
-            if (updatedJob) setJob({ ...updatedJob });
-        }
-    };
-
-    const handleIssueDelete = (issueId: string) => {
-        if (!selectedArea || !job) return;
-
-        // Context lookup
-        let targetFloorId = '';
-        let targetUnitId = '';
-
-        for (const floor of job.floors) {
-            for (const unit of floor.units) {
-                if (unit.areas.find(a => a.id === selectedArea.id)) {
-                    targetFloorId = floor.id;
-                    targetUnitId = unit.id;
-                    break;
-                }
-            }
-            if (targetFloorId) break;
-        }
-
-        if (targetFloorId) {
-            const updatedJob = MockJobStore.deleteIssue(job.id, targetFloorId, targetUnitId, selectedArea.id, issueId);
-            if (updatedJob) setJob({ ...updatedJob });
-        }
-    };
-
-    // --- PHOTO DELETE HANDLER ---
-    const handlePhotoDelete = (uri: string) => {
-        if (!selectedArea || !job) return;
-
-        let targetFloorId = '';
-        let targetUnitId = '';
-
-        for (const floor of job.floors) {
-            for (const unit of floor.units) {
-                if (unit.areas.find(a => a.id === selectedArea.id)) {
-                    targetFloorId = floor.id;
-                    targetUnitId = unit.id;
-                    break;
-                }
-            }
-            if (targetFloorId) break;
-        }
-
-        if (targetFloorId) {
-            const updatedJob = MockJobStore.deletePhoto(job.id, targetFloorId, targetUnitId, selectedArea.id, uri);
-            if (updatedJob) setJob({ ...updatedJob });
-        }
-    };
-
-    const selectedArea = getSelectedArea();
-
-    if (!job) return <View className="flex-1 items-center justify-center"><Text>Loading...</Text></View>;
-
     return (
-        <View className="flex-1 px-4 pt-4 bg-slate-50">
-            <FlatList
-                data={job.floors}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                    <FloorAccordion
-                        floor={item}
-                        onAreaPress={handleAreaOpen}
-                        canEdit={canEdit}
-                        onEditFloor={handleEditFloor}
-                        onDeleteFloor={handleDeleteFloor}
-                        onAddUnit={handleAddUnit}
-                        onEditArea={handleEditArea}
-                        onDeleteArea={handleDeleteArea}
-                    />
-                )}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 20 }}
-                ListFooterComponent={
-                    canEdit ? (
-                        <TouchableOpacity
-                            onPress={handleAddFloor}
-                            className="flex-row items-center justify-center h-14 mt-4 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl active:bg-slate-100"
-                        >
-                            <Plus size={20} color="#64748b" className="mr-2" />
-                            <Text className="text-slate-500 font-semibold text-base">Add New Floor</Text>
-                        </TouchableOpacity>
-                    ) : null
-                }
+        <View className="flex-1 px-6 pt-6 pb-20">
+            <View className="mb-8 flex-row items-center justify-between">
+                <View>
+                    <Text className="text-2xl font-black text-slate-900 tracking-tight">Production Overview</Text>
+                    <Text className="text-slate-500 font-medium mt-1">Manage floors, units, and areas</Text>
+                </View>
+            </View>
+
+            <StructureModule
+                floors={job?.floors || []}
+                onEditFloor={handleEditFloor}
+                onDeleteFloor={handleDeleteFloor}
+                onAddUnit={handleAddUnit}
+                onEditUnit={handleEditUnit}
+                onDeleteUnit={handleDeleteUnit}
+                onAddArea={handleAddArea}
+                onEditArea={handleEditArea}
+                onDeleteArea={handleDeleteArea}
+                onAreaPress={handleAreaOpen}
             />
 
-            <AreaDetailsDrawer
-                isVisible={isDrawerVisible}
-                onClose={handleDrawerClose}
-                area={selectedArea}
-                onUpdate={handleUpdateArea}
-                onLogTime={handleLogTime}
-                onAddPhoto={handlePhotoAdd}
-                onDeletePhoto={handlePhotoDelete}
-                onReportIssue={handleIssueReport}
-                onResolveIssue={handleIssueResolve}
-                onDeleteIssue={handleIssueDelete}
-            />
+            {(!job?.floors || job.floors.length === 0) && (
+                <View className="items-center justify-center py-24 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                    <Text className="text-slate-400 text-lg font-bold">No floors added yet</Text>
+                </View>
+            )}
+
+            <TouchableOpacity
+                className="flex-row items-center justify-center py-5 border-2 border-dashed border-slate-300 rounded-2xl active:bg-slate-50 mt-8 mb-10"
+                onPress={handleAddFloor}
+            >
+                <Plus size={20} color="#64748b" />
+                <Text className="text-slate-600 font-bold ml-2 text-base">Add New Floor</Text>
+            </TouchableOpacity>
 
             <StructureModal
                 isVisible={modalVisible}
                 onClose={() => setModalVisible(false)}
-                {...getModalProps()}
-                initialData={modalTarget?.initialData}
                 onSubmit={handleStructureSubmit}
+                {...getModalProps() as any}
+            />
+
+            <AreaDetailsDrawer
+                isVisible={drawerVisible}
+                onClose={() => setDrawerVisible(false)}
+                area={selectedArea}
+                onUpdate={async (newChecklist: any[]) => {
+                    if (selectedArea) {
+                        // Calculate new progress
+                        const totalItems = newChecklist.filter((i: any) => i.status !== 'NA').length;
+                        const completedItems = newChecklist.filter((i: any) => i.status === 'COMPLETED').length;
+                        const progress = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+
+                        console.log("Saving Area Progress:", progress);
+
+                        // Optimistic Update of Job State for UI
+                        if (job) {
+                            const newFloors = job.floors?.map((floor: any) => ({
+                                ...floor,
+                                units: floor.units?.map((unit: any) => ({
+                                    ...unit,
+                                    areas: unit.areas?.map((a: any) =>
+                                        a.id === selectedArea.id ? { ...a, progress } : a
+                                    )
+                                }))
+                            }));
+                            setJob({ ...job, floors: newFloors } as Job);
+                        }
+
+                        // Persist to DB
+                        try {
+                            await SupabaseService.updateArea(selectedArea.id, { progress });
+                        } catch (e) {
+                            console.error("Failed to save area progress", e);
+                        }
+                    }
+                }}
+                onAddPhoto={async (uri: string) => {
+                    if (!selectedArea) return;
+                    try {
+                        await SupabaseService.uploadAreaPhoto(selectedArea.id, uri);
+                        await reloadJob();
+                        // Update selected area to show new photo immediately
+                        const updatedJob = await SupabaseService.getJob(job.id);
+                        if (updatedJob) {
+                            const newArea = (updatedJob as any).floors
+                                ?.flatMap((f: any) => f.units)
+                                ?.flatMap((u: any) => u.areas)
+                                ?.find((a: any) => a.id === selectedArea.id);
+                            if (newArea) setSelectedArea(newArea);
+                        }
+                    } catch (e: any) {
+                        console.error("Upload failed", e);
+                        alert("Upload failed: " + e.message);
+                    }
+                }}
+                onDeletePhoto={async (uri: string) => {
+                    if (!selectedArea) return;
+                    // Find the photo ID and storage path from the URI (or searching in selectedArea.area_photos)
+                    const photo = (selectedArea.area_photos || []).find((p: any) => p.url === uri);
+                    if (!photo) return;
+
+                    try {
+                        await SupabaseService.deleteAreaPhoto(photo.id, photo.storage_path);
+                        await reloadJob();
+                        // Update selected area
+                        const updatedJob = await SupabaseService.getJob(job.id);
+                        if (updatedJob) {
+                            const newArea = (updatedJob as any).floors
+                                ?.flatMap((f: any) => f.units)
+                                ?.flatMap((u: any) => u.areas)
+                                ?.find((a: any) => a.id === selectedArea.id);
+                            if (newArea) setSelectedArea(newArea);
+                        }
+                    } catch (e: any) {
+                        console.error("Delete failed", e);
+                        alert("Delete failed: " + e.message);
+                    }
+                }}
             />
         </View>
     );

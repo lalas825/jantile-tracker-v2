@@ -2,36 +2,69 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Modal, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { QUICK_PICKS } from '../../constants/JobTemplates';
 
-export default function StructureModal({ isVisible, mode, type, initialData, onSubmit, onClose }) {
+interface StructureModalProps {
+    isVisible: boolean;
+    mode: 'add-floor' | 'edit-floor' | 'add-unit' | 'edit-unit' | 'add-area' | 'edit-area';
+    type: 'floor' | 'unit' | 'area';
+    initialData?: { name?: string; description?: string; areaName?: string };
+    onSubmit: (data: any) => void;
+    onClose: () => void;
+}
+
+export default function StructureModal({
+    isVisible,
+    mode,
+    type,
+    initialData,
+    onSubmit,
+    onClose,
+}: StructureModalProps) {
+    const isEdit = mode.startsWith('edit');
+
     const [name, setName] = useState('');
-    const [areaName, setAreaName] = useState('');
     const [description, setDescription] = useState('');
 
-    // RESET LOGIC: When modal opens, strictly check Mode
+    // RESET LOGIC
     useEffect(() => {
         if (isVisible) {
-            if (mode === 'edit' && initialData) {
+            if (isEdit && initialData) {
                 // EDIT MODE: Load existing data
                 setName(initialData.name || '');
-                setAreaName(initialData.areaName || '');
                 setDescription(initialData.description || '');
             } else {
                 // CREATE MODE: Wipe everything clean
                 setName('');
-                setAreaName('');
                 setDescription('');
             }
         }
-    }, [isVisible, mode, initialData]); // Dependencies ensure this runs every time
+    }, [isVisible, mode, initialData]);
 
     const handleSave = () => {
-        onSubmit({ name, areaName, description });
+        // Send 'name' as the primary identifier for all types
+        onSubmit({ name, description });
     };
 
     // Dynamic Title Logic
     const getTitle = () => {
-        if (mode === 'edit') return `Edit ${type === 'floor' ? 'Floor' : 'Area'}`;
-        return `Add New ${type === 'floor' ? 'Floor' : 'Unit'}`;
+        if (isEdit) return `Edit ${type === 'floor' ? 'Floor' : type === 'unit' ? 'Unit' : 'Area'} `;
+        if (type === 'floor') return 'Add New Floor';
+        if (type === 'unit') return 'Add New Unit';
+        if (type === 'area') return 'Add New Area';
+        return 'Add Item';
+    };
+
+    const getLabel = () => {
+        if (type === 'floor') return 'Floor Name';
+        if (type === 'unit') return 'Unit Name';
+        if (type === 'area') return 'Area Name';
+        return 'Name';
+    };
+
+    const getPlaceholder = () => {
+        if (type === 'floor') return 'e.g. Floor Level 04';
+        if (type === 'unit') return 'e.g. Unit 205';
+        if (type === 'area') return 'e.g. Master Bathroom';
+        return 'Enter name...';
     };
 
     if (!isVisible) return null;
@@ -50,46 +83,40 @@ export default function StructureModal({ isVisible, mode, type, initialData, onS
 
                     {/* Form */}
                     <View style={styles.form}>
-                        {/* Field 1: The Main Name (Floor Name or Unit Name) */}
-                        <Text style={styles.label}>{type === 'floor' ? 'Floor Name' : 'Unit Name'}</Text>
+                        {/* Field 1: The Main Name (Floor, Unit, or Area Name) */}
+                        <Text style={styles.label}>{getLabel()}</Text>
                         <TextInput
                             style={styles.input}
-                            placeholder={type === 'floor' ? "e.g. Floor Level 04" : "e.g. Unit 205"}
+                            placeholder={getPlaceholder()}
                             value={name}
                             onChangeText={setName}
                             autoFocus={true}
                         />
 
-                        {/* Field 2 & 3: Only for Units/Areas */}
-                        {type !== 'floor' && (
+                        {/* Quick Picks - Only for Areas */}
+                        {type === 'area' && (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row mt-2 max-h-12">
+                                {QUICK_PICKS.map((pick) => (
+                                    <TouchableOpacity
+                                        key={pick}
+                                        onPress={() => setName(pick)}
+                                        style={[
+                                            styles.chip,
+                                            name === pick && styles.chipActive
+                                        ]}
+                                    >
+                                        <Text style={[
+                                            styles.chipText,
+                                            name === pick && styles.chipTextActive
+                                        ]}>{pick}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        )}
+
+                        {/* Description - Only for Areas */}
+                        {(type === 'unit' || type === 'area' || type === 'floor') && (
                             <>
-                                <Text style={styles.label}>Area Name</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="e.g. Master Bathroom"
-                                    value={areaName}
-                                    onChangeText={setAreaName}
-                                />
-
-                                {/* Quick Picks - Horizontal Scroll */}
-                                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row mb-4 max-h-10 mt-2">
-                                    {QUICK_PICKS.map((pick) => (
-                                        <TouchableOpacity
-                                            key={pick}
-                                            onPress={() => setAreaName(pick)}
-                                            style={[
-                                                styles.chip,
-                                                areaName === pick && styles.chipActive
-                                            ]}
-                                        >
-                                            <Text style={[
-                                                styles.chipText,
-                                                areaName === pick && styles.chipTextActive
-                                            ]}>{pick}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
-
                                 <Text style={styles.label}>Description (Optional)</Text>
                                 <TextInput
                                     style={styles.input}
@@ -107,7 +134,7 @@ export default function StructureModal({ isVisible, mode, type, initialData, onS
                             <Text style={styles.cancelText}>Cancel</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-                            <Text style={styles.saveText}>{mode === 'create' ? 'Create' : 'Save Changes'}</Text>
+                            <Text style={styles.saveText}>{isEdit ? 'Save Changes' : 'Create'}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>

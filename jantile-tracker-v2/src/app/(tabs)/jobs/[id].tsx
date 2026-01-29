@@ -2,10 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, SafeAreaView, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { MockJobStore } from '../../../services/MockJobStore';
+import { SupabaseService } from '../../../services/SupabaseService';
 import ProductionTab from '../../../components/jobs/ProductionTab';
 
-// 1. DEFINE THE NEW MENU STRUCTURE
 const TABS = [
     { id: 'PRODUCTION', label: 'Production', icon: 'layers' },
     { id: 'OFFICE', label: 'Office', icon: 'briefcase' },
@@ -26,12 +25,14 @@ export default function JobDetailsScreen() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Simulate fetching data
-        const fetchedJob = MockJobStore.getJob(id as string);
-        if (fetchedJob) {
-            setJob(fetchedJob);
-        }
-        setLoading(false);
+        const fetchJob = async () => {
+            const fetchedJob = await SupabaseService.getJob(id as string);
+            if (fetchedJob) {
+                setJob(fetchedJob);
+            }
+            setLoading(false);
+        };
+        fetchJob();
     }, [id]);
 
     if (loading) {
@@ -83,23 +84,35 @@ export default function JobDetailsScreen() {
     return (
         <SafeAreaView className="flex-1 bg-white">
             {/* HEADER */}
-            <View className="px-4 py-3 border-b border-slate-100 bg-white flex-row items-center justify-between">
-                <View className="flex-row items-center gap-3">
-                    <TouchableOpacity onPress={() => router.back()} className="p-2 bg-slate-50 rounded-full">
+            <View className="px-6 py-4 border-b border-slate-100 bg-white flex-row items-center justify-between">
+                <View className="flex-row items-center gap-4">
+                    <TouchableOpacity
+                        onPress={() => router.push('/jobs')}
+                        className="p-2.5 bg-slate-50 rounded-xl active:bg-slate-100"
+                    >
                         <Ionicons name="arrow-back" size={20} color="#334155" />
                     </TouchableOpacity>
                     <View>
                         <View className="flex-row items-center gap-2">
-                            <Text className="text-xl font-bold text-slate-900">{job.name}</Text>
-                            <View className="bg-blue-100 px-2 py-0.5 rounded">
-                                <Text className="text-blue-700 text-[10px] font-bold">#{job.id}</Text>
-                            </View>
+                            <Text className="text-2xl font-black text-slate-900 tracking-tight">{job.name}</Text>
                         </View>
-                        <Text className="text-slate-500 text-xs">{job.location}</Text>
+                        <View className="flex-row items-center gap-2 mt-0.5">
+                            <Text className="text-slate-500 text-xs font-bold">{job.general_contractor || 'No GC'}</Text>
+                            <Text className="text-slate-300 text-xs">•</Text>
+                            <Text className="text-slate-500 text-xs">{job.address || 'No Address'}</Text>
+                            {job.floors && (
+                                <>
+                                    <Text className="text-slate-300 text-xs">•</Text>
+                                    <Text className="text-slate-500 text-xs font-semibold">
+                                        {job.floors.length} Floors
+                                    </Text>
+                                </>
+                            )}
+                        </View>
                     </View>
                 </View>
 
-                <TouchableOpacity className="p-2">
+                <TouchableOpacity className="p-2 bg-slate-50 rounded-full active:bg-slate-100">
                     <Ionicons name="ellipsis-horizontal" size={20} color="#64748b" />
                 </TouchableOpacity>
             </View>
