@@ -2,10 +2,16 @@ import { Schema, Table, Column, ColumnType } from '@powersync/react-native';
 
 export const AppSchema = new Schema([
     new Table({
-        name: 'profiles',
+        name: 'workers',
         columns: [
+            new Column({ name: 'name', type: ColumnType.TEXT }),
             new Column({ name: 'role', type: ColumnType.TEXT }),
-            new Column({ name: 'full_name', type: ColumnType.TEXT }),
+            new Column({ name: 'status', type: ColumnType.TEXT }),
+            new Column({ name: 'phone', type: ColumnType.TEXT }),
+            new Column({ name: 'email', type: ColumnType.TEXT }),
+            new Column({ name: 'address', type: ColumnType.TEXT }),
+            new Column({ name: 'assigned_job_ids', type: ColumnType.TEXT }), // Stored as JSON string locally
+            new Column({ name: 'avatar', type: ColumnType.TEXT }),
         ],
     }),
     new Table({
@@ -33,11 +39,21 @@ export const AppSchema = new Schema([
         ],
     }),
     new Table({
-        name: 'daily_logs',
+        name: 'production_logs',
         columns: [
-            new Column({ name: 'job_id', type: ColumnType.TEXT }),
             new Column({ name: 'date', type: ColumnType.TEXT }),
-            new Column({ name: 'ppe_check', type: ColumnType.INTEGER }), // 0 or 1
+            new Column({ name: 'worker_id', type: ColumnType.TEXT }),
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'job_name', type: ColumnType.TEXT }),
+            new Column({ name: 'pl_number', type: ColumnType.TEXT }),
+            new Column({ name: 'unit', type: ColumnType.TEXT }),
+            new Column({ name: 'reg_hours', type: ColumnType.TEXT }),
+            new Column({ name: 'ot_hours', type: ColumnType.TEXT }),
+            new Column({ name: 'ticket_number', type: ColumnType.TEXT }),
+            new Column({ name: 'is_jantile', type: ColumnType.INTEGER }),
+            new Column({ name: 'is_ticket', type: ColumnType.INTEGER }),
+            new Column({ name: 'status_color', type: ColumnType.TEXT }),
+            new Column({ name: 'notes', type: ColumnType.TEXT }),
         ],
     }),
     new Table({

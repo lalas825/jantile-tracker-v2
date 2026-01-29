@@ -5,6 +5,7 @@ import {
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { Stack } from 'expo-router';
 import { SupabaseService, UICrewMember } from '../../services/SupabaseService';
+import { useQuery } from '@powersync/react-native';
 
 // --- CONFIGURATION ---
 const ROLES = [
@@ -18,9 +19,6 @@ export default function ManpowerScreen() {
     const isDesktop = width >= 1024;
 
     // --- STATE ---
-    const [crew, setCrew] = useState<UICrewMember[]>([]);
-    const [jobs, setJobs] = useState<any[]>([]);
-
     // Filters
     const [searchQuery, setSearchQuery] = useState('');
     const [roleFilter, setRoleFilter] = useState('All Roles');
@@ -44,23 +42,32 @@ export default function ManpowerScreen() {
     const [formAssignedJobs, setFormAssignedJobs] = useState<string[]>([]);
     const [showRolePicker, setShowRolePicker] = useState(false);
 
-    useEffect(() => {
-        loadData();
-    }, []);
+    // --- PowerSync Reactive Data ---
+    const { data: psCrew = [] } = useQuery('SELECT * FROM workers ORDER BY name ASC');
+    const { data: psJobs = [] } = useQuery('SELECT * FROM jobs WHERE status = "active" ORDER BY name ASC');
 
-    const loadData = async () => {
-        try {
-            const [workersData, jobsData] = await Promise.all([
-                SupabaseService.getWorkers(),
-                SupabaseService.getActiveJobs()
-            ]);
-            setCrew(workersData);
-            setJobs(jobsData);
-        } catch (error) {
-            console.error("Error loading manpower data:", error);
-            Alert.alert("Error", "Failed to load updated roster.");
-        }
-    };
+    const [crew, setCrew] = useState<UICrewMember[]>([]);
+    const [jobs, setJobs] = useState<any[]>([]);
+
+    useEffect(() => {
+        // Map PowerSync records to UICrewMember interface
+        const mappedCrew: UICrewMember[] = psCrew.map((w: any) => ({
+            id: w.id,
+            name: w.name,
+            role: w.role,
+            status: w.status,
+            phone: w.phone,
+            email: w.email,
+            address: w.address,
+            assignedJobIds: w.assigned_job_ids ? JSON.parse(w.assigned_job_ids) : [],
+            avatar: w.avatar || w.name.substring(0, 2).toUpperCase()
+        }));
+        setCrew(mappedCrew);
+    }, [psCrew]);
+
+    useEffect(() => {
+        setJobs(psJobs);
+    }, [psJobs]);
 
     // --- ACTIONS ---
     const handleOpenModal = (member?: UICrewMember) => {
@@ -123,7 +130,7 @@ export default function ManpowerScreen() {
 
         try {
             await SupabaseService.saveWorker(memberData as any);
-            await loadData(); // Reload to get partial updates / fresh IDs
+            // No need to reload manually, PowerSync useQuery will react to the change
             setModalVisible(false);
         } catch (error) {
             Alert.alert("Error", "Failed to save crew member.");

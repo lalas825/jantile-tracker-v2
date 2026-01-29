@@ -8,6 +8,8 @@ import * as Print from 'expo-print';
 import { SupabaseService, UIWorkerWithLogs, UIJobLog, UICrewMember, formatDate } from '../../services/SupabaseService';
 import ProductionRow from '../../components/ProductionRow';
 import * as Crypto from 'expo-crypto';
+import { usePolishersData } from '../../hooks/usePolishersData';
+import { usePowerSyncQuery } from '@powersync/react-native';
 
 // --- CONFIGURATION (PROFESSIONAL PASTELS) ---
 const COLORS = [
@@ -55,9 +57,15 @@ export default function PolishersScreen() {
     const [dateRange, setDateRange] = useState({ start: new Date(), end: new Date() });
     const [searchQuery, setSearchQuery] = useState('');
     const [colorFilter, setColorFilter] = useState<string | null>(null);
-    const [workers, setWorkers] = useState<UIWorkerWithLogs[]>([]);
-    const [roster, setRoster] = useState<UICrewMember[]>([]);
-    const [activeJobs, setActiveJobs] = useState<any[]>([]);
+
+    // PowerSync Reactive Data
+    const { workers: psWorkers, roster: psRoster } = usePolishersData(
+        formatDate(dateRange.start),
+        formatDate(dateRange.end)
+    );
+
+    const activeJobsResult = usePowerSyncQuery('SELECT * FROM jobs WHERE status = "active" ORDER BY name ASC');
+    const activeJobs = activeJobsResult || [];
 
     // Modals
     const [customPickerVisible, setCustomPickerVisible] = useState(false);
@@ -76,68 +84,12 @@ export default function PolishersScreen() {
     // Use local date string to prevent timezone shifts (UTC vs Local)
     // NOW USING CENTRAL HELPERS from SupabaseService
 
+    // Use local state only for optimistic UI if needed, otherwise rely on PS hooks
+    const [workers, setWorkers] = useState<UIWorkerWithLogs[]>([]);
+
     useEffect(() => {
-        loadData();
-    }, [dateRange.start, dateRange.end]);
-
-    const runDiagnostics = async () => {
-        try {
-            const { data: { session }, error: authError } = await SupabaseService.supabase.auth.getSession();
-            const authStatus = session ? `User: ${session.user.id}` : `Anon (Error: ${authError?.message || 'None'})`;
-
-            const isoDate = formatDate(dateRange.start);
-            const { count, error: countError } = await SupabaseService.supabase
-                .from('production_logs')
-                .select('*', { count: 'exact', head: true })
-                .eq('date', isoDate);
-
-            const names = roster.map(r => r.name).join(', ');
-            setDebugInfo(`Auth: ${authStatus}\nDate: ${isoDate}\nDB Logs Found: ${count}\nPolishers in Roster: ${roster.length}\n${names ? `Names: ${names}` : 'No Marble Polishers found.'}`);
-        } catch (e: any) {
-            setDebugInfo(`Crash: ${e.message}`);
-        }
-    };
-
-    const loadData = async () => {
-        try {
-            // 1. Fetch ALL data (Local variable to avoid stale state)
-            const isoDate = formatDate(dateRange.start);
-            const isoEndDate = formatDate(dateRange.end);
-            const [allWorkers, jobs, dateLogs] = await Promise.all([
-                SupabaseService.getWorkers(),
-                SupabaseService.getActiveJobs(),
-                SupabaseService.getProductionLogs(isoDate, isoEndDate)
-            ]);
-
-            // 2. Strict Role Filter for "Marble Polisher"
-            const validPolishers = allWorkers.filter(w =>
-                w.role && w.role.trim().toLowerCase() === 'marble polisher'
-            );
-            const validIds = new Set(validPolishers.map(p => p.id));
-
-            setRoster(validPolishers);
-            setActiveJobs(jobs);
-
-            // 3. Participation-Based Dashboard
-            // Only show workers who are currently polishers AND have logs
-            const participants: UIWorkerWithLogs[] = [];
-            dateLogs.forEach(logWorker => {
-                if (validIds.has(logWorker.id)) {
-                    participants.push(logWorker);
-                }
-            });
-
-            setWorkers(participants);
-
-            // 4. Diagnostics
-            const auth = (await SupabaseService.supabase.auth.getSession()).data.session?.user.id || 'Anon';
-            const roleReport = allWorkers.map(w => `${w.name.split(' ')[0]}:${w.role}`).join(', ');
-            setDebugInfo(`User: ${auth}\nDate: ${isoDate}\nMarble Polishers: ${validPolishers.length}\nParticipants: ${participants.length}\nRoles: ${roleReport}`);
-        } catch (error) {
-            console.error("Load Error:", error);
-            Alert.alert("Error", "Failed to load data.");
-        }
-    };
+        setWorkers(psWorkers);
+    }, [psWorkers]);
 
     const formatDateStr = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
@@ -228,7 +180,7 @@ export default function PolishersScreen() {
     const toggleExpand = (id: string) => setWorkers(workers.map(w => w.id === id ? { ...w, isExpanded: !w.isExpanded } : w));
     const getAvailablePolishers = () => {
         const existingIds = new Set(workers.map(w => w.id));
-        return roster.filter(m => !existingIds.has(m.id));
+        return psRoster.filter(m => !existingIds.has(m.id));
     };
 
     const handleAddWorker = (member: UICrewMember) => {
@@ -312,60 +264,13 @@ export default function PolishersScreen() {
 
             {showDebug && (
                 <View className="mx-4 mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <Text className="font-bold text-yellow-800 mb-2">Diagnostic Info</Text>
-                    <Text className="text-xs font-mono text-slate-700 leading-5 mb-3">{debugInfo}</Text>
+                    <Text className="font-bold text-yellow-800 mb-2">Sync Status</Text>
+                    <Text className="text-xs font-mono text-slate-700 leading-5 mb-3">{debugInfo || 'Connected to PowerSync'}</Text>
                     <View className="flex-row gap-2 mb-3">
-                        <TouchableOpacity onPress={runDiagnostics} className="bg-yellow-200 px-3 py-1 rounded">
-                            <Text className="text-xs font-bold text-yellow-900">Run Diagnostics</Text>
-                        </TouchableOpacity>
                         <TouchableOpacity onPress={async () => {
                             const { error } = await SupabaseService.supabase.auth.signOut();
-                            if (!error) loadData();
                         }} className="bg-red-200 px-3 py-1 rounded">
                             <Text className="text-xs font-bold text-red-900">Sign Out</Text>
-                        </TouchableOpacity>
-                    </View>
-                    <Text className="font-bold text-yellow-800 mb-1">Dev Login (Fix RLS)</Text>
-                    <View className="gap-2">
-                        <TextInput placeholder="Email" value={devEmail} onChangeText={setDevEmail} className="p-2 border border-yellow-300 rounded bg-white text-xs h-10" autoCapitalize="none" />
-                        <TextInput placeholder="Password" value={devPassword} onChangeText={setDevPassword} secureTextEntry className="p-2 border border-yellow-300 rounded bg-white text-xs h-10" />
-                        <TouchableOpacity
-                            onPress={async () => {
-                                console.log("Login button pressed");
-                                const email = devEmail.trim();
-                                const password = devPassword.trim();
-
-                                if (!email || !password) {
-                                    const msg = "Enter email & password";
-                                    if (Platform.OS === 'web') window.alert(msg); else Alert.alert("Error", msg);
-                                    return;
-                                }
-
-                                setIsLoggingIn(true);
-                                try {
-                                    const { data, error } = await SupabaseService.supabase.auth.signInWithPassword({ email, password });
-                                    if (error) {
-                                        console.error("Login Error:", error);
-                                        const msg = "Login Failed: " + error.message;
-                                        if (Platform.OS === 'web') window.alert(msg); else Alert.alert("Error", msg);
-                                    } else {
-                                        console.log("Login Success:", data);
-                                        const msg = "Success! Logged in. Reloading data...";
-                                        if (Platform.OS === 'web') window.alert(msg); else Alert.alert("Success", msg);
-                                        await loadData();
-                                    }
-                                } catch (err: any) {
-                                    console.error("Unexpected Login Error:", err);
-                                    const msg = "Crash: " + err.message;
-                                    if (Platform.OS === 'web') window.alert(msg); else Alert.alert("Error", msg);
-                                } finally {
-                                    setIsLoggingIn(false);
-                                }
-                            }}
-                            className={`px-3 py-2 rounded items-center ${isLoggingIn ? 'bg-green-400' : 'bg-green-600'}`}
-                            disabled={isLoggingIn}
-                        >
-                            <Text className="text-xs font-bold text-white">{isLoggingIn ? 'Logging in...' : 'Login & Reload'}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
