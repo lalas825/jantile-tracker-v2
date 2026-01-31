@@ -1,11 +1,11 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, StatusBar, Image } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, StatusBar, Image , useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, G } from 'react-native-svg';
 import { SupabaseService } from '../../services/SupabaseService';
-import { useWindowDimensions } from 'react-native';
+
 
 // --- CHART COMPONENT ---
 const DonutChart = ({ percentage, radius = 40, strokeWidth = 10, color = "#3b82f6" }: any) => {

@@ -704,8 +704,8 @@ export const SupabaseService = {
                 worker_id: workerId
             };
 
-            // Fix: DO NOT send job_name to Supabase until columns are added
-            if (colName && colName !== 'job_name') updates[colName] = colVal;
+            // job_name is now available in schema
+            if (colName) updates[colName] = colVal;
 
             const { error } = await supabase.from('production_logs').upsert(updates);
             if (error) {
@@ -715,37 +715,46 @@ export const SupabaseService = {
         }
 
         try {
-            // REVERTED to 2-step process because SQLite ON CONFLICT fails on PowerSync views
-            let updateQuery = `UPDATE production_logs SET date = ?, worker_id = ?`;
-            let updateParams = [dateStr, workerId];
-
+            // 1. Try Update first (Safer for PowerSync views than REPLACE)
+            const updateCols = ['date = ?', 'worker_id = ?'];
+            const updateParams = [dateStr, workerId];
             if (colName) {
-                updateQuery += `, ${colName} = ?`;
+                updateCols.push(`${colName} = ?`);
                 updateParams.push(colVal);
             }
-            updateQuery += ` WHERE id = ?`;
             updateParams.push(logId);
 
-            const result = await db.execute(updateQuery, updateParams);
+            const result = await db.execute(
+                `UPDATE production_logs SET ${updateCols.join(', ')} WHERE id = ?`,
+                updateParams
+            );
 
+            // 2. If nothing updated, try Insert
             if (result.rowsAffected === 0) {
-                const cols = ['id', 'date', 'worker_id'];
-                const vals = ['?', '?', '?'];
+                const insertCols = ['id', 'date', 'worker_id'];
+                const insertVals = ['?', '?', '?'];
                 const insertParams = [logId, dateStr, workerId];
-
                 if (colName) {
-                    cols.push(colName);
-                    vals.push('?');
+                    insertCols.push(colName);
+                    insertVals.push('?');
                     insertParams.push(colVal);
                 }
-
-                await db.execute(
-                    `INSERT INTO production_logs (${cols.join(', ')}) VALUES (${vals.join(', ')})`,
-                    insertParams
-                );
+                const sql = `INSERT INTO production_logs (${insertCols.join(', ')}) VALUES (${insertVals.join(', ')})`;
+                await db.execute(sql, insertParams);
             }
+
             console.log(`Successfully saved ${field} for log ${logId}`);
         } catch (e: any) {
+            // 3. Final catch for race conditions (row created between Update and Insert)
+            if (e.message?.includes('UNIQUE constraint failed')) {
+                if (colName) {
+                    await db.execute(
+                        `UPDATE production_logs SET ${colName} = ? WHERE id = ?`,
+                        [colVal, logId]
+                    );
+                }
+                return;
+            }
             console.error(`Local Save Error (${field}):`, e);
             throw e;
         }
@@ -869,7 +878,7 @@ export const SupabaseService = {
         if (useSupabase) {
             // WEB / DIRECT UPLOAD
             try {
-                // 1. Fetch file as blob
+                // Read as buffer for consistency
                 const response = await fetch(uri);
                 const blob = await response.blob();
                 const filename = `${randomUUID()}.jpg`;

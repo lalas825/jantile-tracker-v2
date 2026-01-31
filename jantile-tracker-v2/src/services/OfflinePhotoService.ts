@@ -1,9 +1,11 @@
-// OfflinePhotoService.ts
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import { db } from '../powersync/db';
 import { supabase } from '../config/supabase';
+
+// Use legacy export as recommended by Expo 54 error message
+const FS = FileSystem as any;
 
 // Helper to avoid implicit any
 interface OfflinePhotoItem {
@@ -22,22 +24,22 @@ export const OfflinePhotoService = {
         if (Platform.OS === 'web') return tempUri;
         const photoId = randomUUID();
         const filename = `${photoId}.jpg`;
-        // Use documentDirectory if available, fallback or cast if needed. 
-        // Expo FileSystem types usually include it.
-        const localDir = `${FileSystem.documentDirectory}photos/`;
+        // Use documentDirectory if available
+        const localDir = `${FS.documentDirectory}photos/`;
         const localPath = `${localDir}${filename}`;
 
         // Ensure directory exists
-        const dirInfo = await FileSystem.getInfoAsync(localDir);
+        const dirInfo = await FS.getInfoAsync(localDir);
         if (!dirInfo.exists) {
-            await FileSystem.makeDirectoryAsync(localDir, { intermediates: true });
+            await FS.makeDirectoryAsync(localDir, { intermediates: true });
         }
 
         // Copy from temp (camera) to permanent storage
-        await FileSystem.copyAsync({
+        await FS.copyAsync({
             from: tempUri,
             to: localPath
         });
+        console.log('📸 OfflinePhotoService: Photo stored permanent at:', localPath);
 
         // Add to Sync Queue (PowerSync Local Table)
         await db.execute(
@@ -52,8 +54,11 @@ export const OfflinePhotoService = {
     // Call this periodically or on connection restore
     async processQueue() {
         if (Platform.OS === 'web') return;
+        console.log('📸 OfflinePhotoService: Checking queue...');
+
         // Get all queued items
         const result = await db.getAll(`SELECT * FROM offline_photos WHERE status = 'queued' OR status = 'failed'`);
+        console.log(`📸 OfflinePhotoService: Found ${result.length} items to sync.`);
         if (result.length === 0) return;
 
         for (const row of result) {
@@ -63,24 +68,24 @@ export const OfflinePhotoService = {
                 await db.execute(`UPDATE offline_photos SET status = 'uploading' WHERE id = ?`, [item.id]);
 
                 // Read file
-                const fileInfo = await FileSystem.getInfoAsync(item.local_uri);
+                const fileInfo = await FS.getInfoAsync(item.local_uri);
                 if (!fileInfo.exists) {
-                    console.error('File not found:', item.local_uri);
+                    console.error('❌ File not found:', item.local_uri);
                     // Mark as fatal error or delete?
                     await db.execute(`DELETE FROM offline_photos WHERE id = ?`, [item.id]);
                     continue;
                 }
 
-                // Upload to Supabase (We need Blob)
-                // Expo fetch supports file:/// uris to get blobs
-                const response = await fetch(item.local_uri);
-                const blob = await response.blob();
+                // robust binary read
+                const base64 = await FS.readAsStringAsync(item.local_uri, { encoding: FS.EncodingType?.Base64 || 'base64' });
+                const { Buffer } = require('buffer');
+                const binaryBody = Buffer.from(base64, 'base64');
 
                 const storagePath = `photos/${item.area_id}/${item.filename}`;
 
                 const { error } = await supabase.storage
                     .from('area-photos')
-                    .upload(storagePath, blob, {
+                    .upload(storagePath, binaryBody, {
                         contentType: 'image/jpeg',
                         upsert: true
                     });
@@ -101,12 +106,12 @@ export const OfflinePhotoService = {
                 // Remove from queue
                 await db.execute(`DELETE FROM offline_photos WHERE id = ?`, [item.id]);
 
-                // Cleanup local file? 
-                // Maybe keep it for cache? For now, we delete to save space since we have URL.
-                await FileSystem.deleteAsync(item.local_uri, { idempotent: true });
+                // Cleanup local file
+                await FS.deleteAsync(item.local_uri, { idempotent: true });
+                console.log('✅ Photo synced successfully:', item.id);
 
-            } catch (e) {
-                console.error('Photo sync failed for', item.id, e);
+            } catch (e: any) {
+                console.error('❌ Photo sync failed for', item.id, e.message || e);
                 await db.execute(`UPDATE offline_photos SET status = 'failed' WHERE id = ?`, [item.id]);
             }
         }

@@ -42,27 +42,31 @@ export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         let isLoopActive = true;
 
+        console.log("PowerSyncWrapper: Starting init check. Session:", !!session);
+
         const initDb = async () => {
             try {
+                console.log("PowerSyncWrapper: Initializing DB...");
                 await db.init();
+                console.log("PowerSyncWrapper: DB Init Success.");
 
                 if (!isLoopActive) return;
 
                 // CONNECT TO BACKEND
                 const connector = new SupabaseConnector();
-
                 await db.connect(connector);
+                console.log("PowerSyncWrapper: Connected to backend.");
 
                 setDbInstance(db);
                 setIsReady(true);
             } catch (e: any) {
                 console.error('CRITICAL PowerSync init error:', e);
-                // Fallback to mock DB to allow UI to render, BUT pass the error so it's visible
+                // Fallback to mock DB to allow UI to render
                 const failedDb = {
                     ...mockDb,
                     currentStatus: {
                         ...mockDb.currentStatus,
-                        lastDisconnectError: e.message || e // Pass the error object/string here
+                        lastDisconnectError: e.message || e
                     }
                 };
                 setDbInstance(failedDb);
@@ -73,7 +77,7 @@ export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
         if (session) {
             initDb();
         } else {
-            // alert("Waiting for session to log in...");
+            console.log("PowerSyncWrapper: No session, allowing render for login.");
             setIsReady(true); // Let it render so they can log in
         }
 
