@@ -913,7 +913,6 @@ export const SupabaseService = {
 
                 return { url: publicUrl, storage_path: storagePath };
             } catch (e: any) {
-                console.error("Web Upload Error:", e);
                 throw new Error("Upload failed: " + e.message);
             }
         }
@@ -924,6 +923,28 @@ export const SupabaseService = {
         // Return matching structure so UI can display it
         // UI expects { url, storage_path }
         return { url: localPath, storage_path: 'pending_upload' };
+    },
+
+    async getAreaPhotos(areaId: string) {
+        if (useSupabase) {
+            const { data, error } = await supabase
+                .from('area_photos')
+                .select('*')
+                .eq('area_id', areaId)
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return data || [];
+        }
+
+        // Native PowerSync
+        const photos = await db.getAll(`SELECT * FROM area_photos WHERE area_id = ? ORDER BY created_at DESC`, [areaId]);
+        const offlinePhotos = await db.getAll(`SELECT * FROM offline_photos WHERE area_id = ?`, [areaId]);
+
+        return [...photos, ...offlinePhotos].map(p => ({
+            id: p.id,
+            url: p.url || p.local_uri,
+            storage_path: p.storage_path || p.filename
+        }));
     },
 
     async deleteAreaPhoto(photoId: string, storagePath: string) {

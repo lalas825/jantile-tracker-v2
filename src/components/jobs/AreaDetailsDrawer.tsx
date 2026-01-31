@@ -100,17 +100,21 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
     const { width } = Dimensions.get('window');
     const isDesktop = width > 768;
     const [loading, setLoading] = useState(false);
+    const [areaPhotos, setAreaPhotos] = useState<{ id: string; url: string; storage_path: string }[]>([]);
 
     // Hydrate Data on Open or when area updates
     useEffect(() => {
-        const loadChecklist = async () => {
-            console.log("DEBUG: loadChecklist START", { isVisible, areaId: area?.id });
+        const loadAreaData = async () => {
+            console.log("DEBUG: loadAreaData START", { isVisible, areaId: area?.id });
             if (!isVisible || !area) return;
 
             // 1. INSTANT RENDER (Optimistic)
             // Prioritize removing the spinner immediately if we know the checklist type.
             const areaNameLower = area.name.toLowerCase();
             let preset = CHECKLIST_PRESETS[areaNameLower];
+
+            // Set initial photos from prop (might be stale but better than empty)
+            if (area.area_photos) setAreaPhotos(area.area_photos);
 
             // Fallbacks
             if (!preset) {
@@ -135,7 +139,12 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
 
             // 2. FETCH REAL DATA & SYNC (Background)
             try {
-                console.log("Fetching items for:", area.id);
+                console.log("Fetching items and photos for:", area.id);
+
+                // Fetch photos first (usually faster, and we want to see web uploads)
+                const photos = await SupabaseService.getAreaPhotos(area.id);
+                setAreaPhotos(photos);
+
                 const items = await SupabaseService.getChecklistItems(area.id);
 
                 if (items && items.length > 0) {
@@ -211,7 +220,7 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
                 setLoading(false);
             }
         };
-        loadChecklist();
+        loadAreaData();
     }, [isVisible, area]);
 
     // Calculate Progress dynamically
@@ -392,13 +401,27 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
                         {/* 2. PHOTOS TAB */}
                         {activeTab === 'Photos' && (
                             <PhotosTab
-                                photos={(area as any)?.area_photos?.map((p: any) => p.url) || []}
-                                onAddPhoto={(uri: string) => {
-                                    if (onAddPhoto) onAddPhoto(uri);
+                                photos={areaPhotos.map((p: any) => p.url) || []}
+                                onAddPhoto={async (uri: string) => {
+                                    if (onAddPhoto) {
+                                        await onAddPhoto(uri);
+                                        // Refresh local photos after upload
+                                        if (area) {
+                                            const fresh = await SupabaseService.getAreaPhotos(area.id);
+                                            setAreaPhotos(fresh);
+                                        }
+                                    }
                                     else Alert.alert("Dev Warning", "No handler for adding photos");
                                 }}
-                                onDeletePhoto={(uri: string) => {
-                                    if (onDeletePhoto) onDeletePhoto(uri);
+                                onDeletePhoto={async (uri: string) => {
+                                    if (onDeletePhoto) {
+                                        await onDeletePhoto(uri);
+                                        // Refresh local photos after delete
+                                        if (area) {
+                                            const fresh = await SupabaseService.getAreaPhotos(area.id);
+                                            setAreaPhotos(fresh);
+                                        }
+                                    }
                                     else Alert.alert("Dev Warning", "No handler for deleting photos");
                                 }}
                             />

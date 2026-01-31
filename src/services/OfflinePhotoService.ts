@@ -42,10 +42,21 @@ export const OfflinePhotoService = {
         console.log('📸 OfflinePhotoService: Photo stored permanent at:', localPath);
 
         // Add to Sync Queue (PowerSync Local Table)
-        await db.execute(
-            `INSERT INTO offline_photos (id, area_id, local_uri, filename, status, created_at) VALUES (?, ?, ?, ?, 'queued', datetime('now'))`,
-            [photoId, areaId, localPath, filename]
-        );
+        console.log('📸 OfflinePhotoService: Inserting into offline_photos table...', { photoId, areaId, localPath });
+        try {
+            await db.execute(
+                `INSERT INTO offline_photos (id, area_id, local_uri, filename, status, created_at) VALUES (?, ?, ?, ?, 'queued', datetime('now'))`,
+                [photoId, areaId, localPath, filename]
+            );
+            console.log('✅ OfflinePhotoService: Successfully queued photo in DB.');
+
+            // Trigger sync immediately instead of waiting for interval
+            console.log('📸 OfflinePhotoService: Triggering immediate sync...');
+            OfflinePhotoService.processQueue().catch(e => console.error('❌ Sync failed:', e));
+        } catch (dbErr) {
+            console.error('❌ OfflinePhotoService: Failed to insert into offline_photos:', dbErr);
+            throw dbErr;
+        }
 
         return localPath; // Return local path for UI to display immediately
     },
@@ -54,66 +65,94 @@ export const OfflinePhotoService = {
     // Call this periodically or on connection restore
     async processQueue() {
         if (Platform.OS === 'web') return;
-        console.log('📸 OfflinePhotoService: Checking queue...');
+        console.log('📸 [DEBUG] OfflinePhotoService: processQueue START');
 
-        // Get all queued items
-        const result = await db.getAll(`SELECT * FROM offline_photos WHERE status = 'queued' OR status = 'failed'`);
-        console.log(`📸 OfflinePhotoService: Found ${result.length} items to sync.`);
-        if (result.length === 0) return;
+        try {
+            // Get all queued items
+            const allItems = await db.getAll(`SELECT * FROM offline_photos`);
+            console.log(`📸 [DEBUG] Total rows in offline_photos table: ${allItems.length}`);
 
-        for (const row of result) {
-            const item = row as OfflinePhotoItem;
-            try {
-                // Update status to uploading
-                await db.execute(`UPDATE offline_photos SET status = 'uploading' WHERE id = ?`, [item.id]);
+            const result = await db.getAll(`SELECT * FROM offline_photos WHERE status = 'queued' OR status = 'failed'`);
+            console.log(`📸 [DEBUG] Found ${result.length} items with status 'queued' or 'failed'.`);
 
-                // Read file
-                const fileInfo = await FS.getInfoAsync(item.local_uri);
-                if (!fileInfo.exists) {
-                    console.error('❌ File not found:', item.local_uri);
-                    // Mark as fatal error or delete?
-                    await db.execute(`DELETE FROM offline_photos WHERE id = ?`, [item.id]);
-                    continue;
-                }
-
-                // robust binary read
-                const base64 = await FS.readAsStringAsync(item.local_uri, { encoding: FS.EncodingType?.Base64 || 'base64' });
-                const { Buffer } = require('buffer');
-                const binaryBody = Buffer.from(base64, 'base64');
-
-                const storagePath = `photos/${item.area_id}/${item.filename}`;
-
-                const { error } = await supabase.storage
-                    .from('area-photos')
-                    .upload(storagePath, binaryBody, {
-                        contentType: 'image/jpeg',
-                        upsert: true
-                    });
-
-                if (error) throw error;
-
-                // Get Public URL
-                const { data: { publicUrl } } = supabase.storage
-                    .from('area-photos')
-                    .getPublicUrl(storagePath);
-
-                // Insert into REAL photos table (synced)
-                await db.execute(
-                    `INSERT INTO area_photos (id, area_id, url, storage_path) VALUES (?, ?, ?, ?)`,
-                    [item.id, item.area_id, publicUrl, storagePath]
-                );
-
-                // Remove from queue
-                await db.execute(`DELETE FROM offline_photos WHERE id = ?`, [item.id]);
-
-                // Cleanup local file
-                await FS.deleteAsync(item.local_uri, { idempotent: true });
-                console.log('✅ Photo synced successfully:', item.id);
-
-            } catch (e: any) {
-                console.error('❌ Photo sync failed for', item.id, e.message || e);
-                await db.execute(`UPDATE offline_photos SET status = 'failed' WHERE id = ?`, [item.id]);
+            if (result.length === 0) {
+                console.log('📸 [DEBUG] OfflinePhotoService: Nothing to sync. END.');
+                return;
             }
+
+            for (const row of result) {
+                const item = row as OfflinePhotoItem;
+                console.log(`📸 [DEBUG] Processing item: ${item.id} for area: ${item.area_id}`);
+
+                try {
+                    // Update status to uploading
+                    await db.execute(`UPDATE offline_photos SET status = 'uploading' WHERE id = ?`, [item.id]);
+
+                    // Read file
+                    const fileInfo = await FS.getInfoAsync(item.local_uri);
+                    if (!fileInfo.exists) {
+                        console.error('❌ File not found:', item.local_uri);
+                        // Mark as fatal error or delete?
+                        await db.execute(`DELETE FROM offline_photos WHERE id = ?`, [item.id]);
+                        continue;
+                    }
+
+                    // robust binary read
+                    const base64 = await FS.readAsStringAsync(item.local_uri, { encoding: FS.EncodingType?.Base64 || 'base64' });
+                    const { Buffer } = require('buffer');
+                    const binaryBody = Buffer.from(base64, 'base64');
+
+                    const storagePath = `photos/${item.area_id}/${item.filename}`;
+
+                    const { error } = await supabase.storage
+                        .from('area-photos')
+                        .upload(storagePath, binaryBody, {
+                            contentType: 'image/jpeg',
+                            upsert: true
+                        });
+
+                    if (error) throw error;
+
+                    // Get Public URL
+                    const { data: { publicUrl } } = supabase.storage
+                        .from('area-photos')
+                        .getPublicUrl(storagePath);
+
+                    // Insert into Supabase REAL photos table (FOR WEB/OTHERS)
+                    const { error: dbUpstreamError } = await supabase
+                        .from('area_photos')
+                        .insert({
+                            id: item.id,
+                            area_id: item.area_id,
+                            url: publicUrl,
+                            storage_path: storagePath
+                        });
+
+                    if (dbUpstreamError) {
+                        console.error('❌ Failed to push photo metadata to Supabase:', dbUpstreamError);
+                        throw dbUpstreamError;
+                    }
+
+                    // Insert into REAL photos table (local PowerSync/SQLite)
+                    await db.execute(
+                        `INSERT INTO area_photos (id, area_id, url, storage_path) VALUES (?, ?, ?, ?)`,
+                        [item.id, item.area_id, publicUrl, storagePath]
+                    );
+
+                    // Remove from queue
+                    await db.execute(`DELETE FROM offline_photos WHERE id = ?`, [item.id]);
+
+                    // Cleanup local file
+                    await FS.deleteAsync(item.local_uri, { idempotent: true });
+                    console.log('✅ Photo synced successfully:', item.id);
+
+                } catch (e: any) {
+                    console.error('❌ Photo sync failed for', item.id, e.message || e);
+                    await db.execute(`UPDATE offline_photos SET status = 'failed' WHERE id = ?`, [item.id]);
+                }
+            }
+        } catch (globalErr: any) {
+            console.error('📸 [DEBUG] Global Process Queue Error:', globalErr);
         }
     }
 };
