@@ -9,20 +9,20 @@ import { SupabaseService, UIWorkerWithLogs, UIJobLog, UICrewMember, formatDate }
 import ProductionRow from '../../components/ProductionRow';
 import * as Crypto from 'expo-crypto';
 import { usePolishersData } from '../../hooks/usePolishersData';
-import { usePowerSyncQuery } from '@powersync/react-native';
+import { useQuery as usePowerSyncQuery } from '@powersync/react';
 
-// --- CONFIGURATION (PROFESSIONAL PASTELS) ---
+// --- CONFIGURATION (REFINED COLORS - LAYERED PASTELS) ---
 const COLORS = [
-    { id: 'white', code: '#ffffff', border: '#e2e8f0', dot: '#ffffff' },
-    { id: 'green', code: '#dcfce7', border: '#86efac', dot: '#dcfce7' },
-    { id: 'yellow', code: '#fef9c3', border: '#fde047', dot: '#fef9c3' },
-    { id: 'red', code: '#fee2e2', border: '#fca5a5', dot: '#fee2e2' },
-    { id: 'purple', code: '#f3e8ff', border: '#d8b4fe', dot: '#f3e8ff' },
-    { id: 'blue', code: '#dbeafe', border: '#93c5fd', dot: '#dbeafe' },
-    { id: 'orange', code: '#ffedd5', border: '#fdba74', dot: '#ffedd5' },
-    { id: 'pink', code: '#fce7f3', border: '#f9a8d4', dot: '#fce7f3' },
-    { id: 'teal', code: '#ccfbf1', border: '#5eead4', dot: '#ccfbf1' },
-    { id: 'gray', code: '#f1f5f9', border: '#cbd5e1', dot: '#f1f5f9' },
+    { id: 'white', code: '#ffffff', border: '#e2e8f0', inputBg: '#f8fafc', dot: '#ffffff' },
+    { id: 'green', code: '#dcfce7', border: '#bbf7d0', inputBg: '#f0fdf4', dot: '#86efac' },
+    { id: 'yellow', code: '#fef9c3', border: '#fef08a', inputBg: '#fefce8', dot: '#fde047' },
+    { id: 'red', code: '#fee2e2', border: '#fecaca', inputBg: '#fef2f2', dot: '#fca5a5' },
+    { id: 'purple', code: '#f3e8ff', border: '#e9d5ff', inputBg: '#faf5ff', dot: '#d8b4fe' },
+    { id: 'blue', code: '#dbeafe', border: '#bfdbfe', inputBg: '#eff6ff', dot: '#93c5fd' },
+    { id: 'orange', code: '#ffedd5', border: '#fed7aa', inputBg: '#fff7ed', dot: '#fdba74' },
+    { id: 'pink', code: '#fce7f3', border: '#fbcfe8', inputBg: '#fdf2f8', dot: '#f9a8d4' },
+    { id: 'teal', code: '#ccfbf1', border: '#99f6e4', inputBg: '#f0fdfa', dot: '#5eead4' },
+    { id: 'gray', code: '#f1f5f9', border: '#e2e8f0', inputBg: '#f8fafc', dot: '#cbd5e1' },
 ];
 
 const ColorDot = ({ colorId, active, onPress }: any) => {
@@ -36,14 +36,12 @@ const ColorDot = ({ colorId, active, onPress }: any) => {
                 height: 24,
                 borderRadius: 12,
                 backgroundColor: c.dot,
-                borderWidth: active ? 2 : 1,
+                borderWidth: 1,
                 borderColor: active ? '#0f172a' : 'rgba(0,0,0,0.1)',
                 alignItems: 'center',
                 justifyContent: 'center'
             }}
-        >
-            {active && <Ionicons name="checkmark" size={14} color={colorId === 'yellow' || colorId === 'white' ? 'black' : 'white'} />}
-        </TouchableOpacity>
+        />
     );
 }
 
@@ -64,8 +62,17 @@ export default function PolishersScreen() {
         formatDate(dateRange.end)
     );
 
-    const activeJobsResult = usePowerSyncQuery('SELECT * FROM jobs WHERE status = "active" ORDER BY name ASC');
-    const activeJobs = activeJobsResult || [];
+    const activeJobsResult = usePowerSyncQuery('SELECT * FROM jobs WHERE LOWER(status) = "active" ORDER BY name ASC');
+    const [webJobs, setWebJobs] = useState<any[]>([]);
+    const [selectedLogForJob, setSelectedLogForJob] = useState<{ workerId: string, logId: string } | null>(null);
+
+    useEffect(() => {
+        if (Platform.OS === 'web') {
+            SupabaseService.getActiveJobs().then(setWebJobs).catch(console.error);
+        }
+    }, []);
+
+    const activeJobs = Platform.OS === 'web' ? webJobs : ((activeJobsResult && Array.isArray(activeJobsResult.data)) ? activeJobsResult.data : []);
 
     // Modals
     const [customPickerVisible, setCustomPickerVisible] = useState(false);
@@ -143,14 +150,25 @@ export default function PolishersScreen() {
     };
 
     const updateLog = async (workerId: string, logId: string, field: keyof UIJobLog, value: any) => {
+        let updates: any = { [field]: value };
+
+        // If changing jobId, also find and update jobName for cross-platform sync
+        if (field === 'jobId') {
+            const selectedJob = activeJobs.find(j => j.id === value);
+            if (selectedJob) {
+                updates.jobName = selectedJob.name;
+            }
+        }
+
         setWorkers(prevWorkers => prevWorkers.map(w => w.id !== workerId ? w : {
-            ...w, logs: w.logs.map(l => (l.id !== logId ? l : { ...l, [field]: value }))
+            ...w, logs: w.logs.map(l => (l.id !== logId ? l : { ...l, ...updates }))
         }));
 
-        // DB SAVE (Now passing logId)
+        // DB SAVE
         try {
             await SupabaseService.upsertLog(logId, dateRange.start, workerId, field, value);
         } catch (e: any) {
+            console.error("Save Error:", e);
             Alert.alert("Save Error", `Could not save: ${e.message}`);
         }
     };
@@ -180,7 +198,7 @@ export default function PolishersScreen() {
     const toggleExpand = (id: string) => setWorkers(workers.map(w => w.id === id ? { ...w, isExpanded: !w.isExpanded } : w));
     const getAvailablePolishers = () => {
         const existingIds = new Set(workers.map(w => w.id));
-        return psRoster.filter(m => !existingIds.has(m.id));
+        return (psRoster || []).filter((m: any) => !existingIds.has(m.id));
     };
 
     const handleAddWorker = (member: UICrewMember) => {
@@ -222,19 +240,17 @@ export default function PolishersScreen() {
     })).filter(w => w.logs.length > 0 || (searchQuery === '' && !colorFilter));
 
     const renderJobRow = ({ item }: { item: UIJobLog }) => {
-        if (Platform.OS === 'web') {
-            return (
-                <ProductionRow
-                    key={item.id}
-                    log={item}
-                    activeJobs={activeJobs}
-                    onUpdate={(field, value) => updateLog(item.workerId, item.id, field as keyof UIJobLog, value)}
-                    onDelete={() => deleteRow(item.workerId, item.id)}
-                    onDuplicate={() => duplicateRow(item.workerId, item)}
-                />
-            );
-        }
-        return <View><Text>Native Row Placeholder</Text></View>;
+        return (
+            <ProductionRow
+                key={item.id}
+                log={item}
+                activeJobs={activeJobs}
+                onUpdate={(field, value) => updateLog(item.workerId, item.id, field as keyof UIJobLog, value)}
+                onDelete={() => deleteRow(item.workerId, item.id)}
+                onDuplicate={() => duplicateRow(item.workerId, item)}
+                onSelectJob={() => setSelectedLogForJob({ workerId: item.workerId, logId: item.id })}
+            />
+        );
     };
 
     return (
@@ -455,6 +471,35 @@ export default function PolishersScreen() {
                                 </TouchableOpacity>
                             </View>
                         </View>
+                    </View>
+                </View>
+            </Modal>
+            {/* Modal for Job Selection (Native) */}
+            <Modal visible={!!selectedLogForJob} transparent animationType="fade">
+                <View className="flex-1 bg-black/50 justify-center items-center p-4">
+                    <View className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-xl">
+                        <Text className="text-xl font-bold text-slate-800 mb-4">Select Job</Text>
+                        <FlatList
+                            data={activeJobs}
+                            keyExtractor={i => i.id}
+                            style={{ maxHeight: 300 }}
+                            renderItem={({ item }) => (
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        if (selectedLogForJob) {
+                                            updateLog(selectedLogForJob.workerId, selectedLogForJob.logId, 'jobId', item.id);
+                                            setSelectedLogForJob(null);
+                                        }
+                                    }}
+                                    className="p-4 border-b border-slate-100 active:bg-slate-50"
+                                >
+                                    <Text className="font-semibold text-slate-700">{item.name}</Text>
+                                </TouchableOpacity>
+                            )}
+                        />
+                        <TouchableOpacity onPress={() => setSelectedLogForJob(null)} className="mt-4 py-3 bg-slate-100 rounded-xl items-center">
+                            <Text className="font-bold text-slate-600">Cancel</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>

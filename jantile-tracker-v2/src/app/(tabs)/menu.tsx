@@ -4,8 +4,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
     Users, FileBarChart, Hammer, Key, ChevronRight,
-    LayoutDashboard, Building2, HardHat, Box, Factory
+    LayoutDashboard, Building2, HardHat, Box, Factory, LogOut
 } from 'lucide-react-native';
+import { useAuth } from '../../context/AuthContext';
 
 const MenuButton = ({ title, icon: Icon, route }: { title: string, icon: any, route: string }) => {
     const router = useRouter();
@@ -28,6 +29,7 @@ const MenuButton = ({ title, icon: Icon, route }: { title: string, icon: any, ro
 };
 
 export default function MenuScreen() {
+    const { signOut } = useAuth();
     return (
         <SafeAreaView className="flex-1 bg-white" edges={['top']}>
             <View className="px-5 py-4 border-b border-slate-100">
@@ -81,6 +83,16 @@ export default function MenuScreen() {
                         icon={Key}
                         route="/(tabs)/team-access"
                     />
+
+                    <View className="mt-8 px-4">
+                        <TouchableOpacity
+                            onPress={() => signOut()}
+                            className="flex-row items-center justify-center p-4 bg-red-50 rounded-xl border border-red-100"
+                        >
+                            <LogOut size={20} color="#dc2626" className="mr-2" />
+                            <Text className="text-red-600 font-bold text-base">Sign Out</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </ScrollView>
         </SafeAreaView>

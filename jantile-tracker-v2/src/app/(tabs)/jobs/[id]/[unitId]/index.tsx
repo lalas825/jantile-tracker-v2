@@ -83,11 +83,11 @@ export default function AreaChecklistPage() {
             // Fetch checklist items
             const items = await SupabaseService.getChecklistItems(areaId);
             // Map DB items to UI items
-            const uiItems = items.map((item: any) => ({
+            const uiItems: UIChecklistItem[] = items.map((item: any) => ({
                 id: item.id,
                 text: item.text,
                 completed: item.completed,
-                status: item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED' // Simple mapping for now
+                status: (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED') as TaskStatus
             }));
             setChecklist(uiItems);
 
@@ -101,30 +101,37 @@ export default function AreaChecklistPage() {
         }
     };
 
-    const updateProgress = (items: UIChecklistItem[]) => {
+    const updateProgress = async (items: UIChecklistItem[]) => {
         const total = items.length;
-        const completed = items.filter(i => i.status === 'COMPLETED').length;
-        setProgress(total > 0 ? Math.round((completed / total) * 100) : 0);
+        const completedCount = items.filter(i => i.status === 'COMPLETED').length;
+        const newProgress = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+
+        setProgress(newProgress);
+
+        // PERSIST progress to Areas table
+        if (areaId) {
+            try {
+                await SupabaseService.updateArea(areaId, { progress: newProgress });
+            } catch (e) {
+                console.error("Failed to save aggregate progress:", e);
+            }
+        }
     };
 
     const cycleStatus = async (item: UIChecklistItem) => {
-        // Logic: Start -> Done (Skip In Progress/NA for simplicity first, or implement full cycle)
-        // DB only has 0/1 for completed. We should probably expand DB if we want full status.
-        // For now, toggle 0/1.
         const newCompleted = item.completed === 1 ? 0 : 1;
         const newStatus: TaskStatus = newCompleted === 1 ? 'COMPLETED' : 'NOT_STARTED';
 
         // Optimistic Update
         const updatedChecklist = checklist.map(i => i.id === item.id ? { ...i, completed: newCompleted, status: newStatus } : i);
         setChecklist(updatedChecklist);
-        updateProgress(updatedChecklist);
+        await updateProgress(updatedChecklist);
 
         try {
             await SupabaseService.updateChecklistItem(item.id, { completed: newCompleted });
         } catch (error) {
             console.error("Failed to update status:", error);
             alert("Failed to save status");
-            // Revert on error?
         }
     };
 

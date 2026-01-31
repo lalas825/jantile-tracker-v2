@@ -1,0 +1,21 @@
+bucket_definitions:
+  # Global data visible to all workers
+  global:
+    data:
+      - SELECT * FROM workers
+      - SELECT * FROM jobs
+      - SELECT * FROM inventory
+      - SELECT * FROM floors
+      - SELECT * FROM units
+      - SELECT * FROM areas
+      - SELECT * FROM checklist_items
+      - SELECT * FROM tickets
+      - SELECT * FROM production_logs
+      - SELECT * FROM area_photos
+      - SELECT * FROM inventory
+
+  # User-specific data (logs and profiles)
+  by_user:
+    parameters: SELECT request.user_id() as user_id
+    data:
+      - SELECT * FROM profiles WHERE id = bucket.user_id

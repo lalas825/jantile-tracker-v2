@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, Platform, ScrollView } from 'react-native';
 import { ChevronDown, ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react-native';
 import clsx from 'clsx';
 import { useRouter } from 'expo-router';
@@ -173,7 +173,11 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
     };
 
     return (
-        <View className="flex-1 px-6 pt-6 pb-20">
+        <ScrollView
+            className="flex-1"
+            contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 24, paddingBottom: 40 }}
+            showsVerticalScrollIndicator={false}
+        >
             <View className="mb-8 flex-row items-center justify-between">
                 <View>
                     <Text className="text-2xl font-black text-slate-900 tracking-tight">Production Overview</Text>
@@ -293,6 +297,6 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
                     }
                 }}
             />
-        </View>
+        </ScrollView>
     );
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../config/supabase';
 
 // Web-only version of useLogisticsData - uses Supabase directly
 export const useLogisticsData = () => {

@@ -5,7 +5,7 @@ import {
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { Stack } from 'expo-router';
 import { SupabaseService, UICrewMember } from '../../services/SupabaseService';
-import { useQuery } from '@powersync/react-native';
+import { useQuery } from '@powersync/react';
 
 // --- CONFIGURATION ---
 const ROLES = [
@@ -42,14 +42,36 @@ export default function ManpowerScreen() {
     const [formAssignedJobs, setFormAssignedJobs] = useState<string[]>([]);
     const [showRolePicker, setShowRolePicker] = useState(false);
 
-    // --- PowerSync Reactive Data ---
-    const { data: psCrew = [] } = useQuery('SELECT * FROM workers ORDER BY name ASC');
-    const { data: psJobs = [] } = useQuery('SELECT * FROM jobs WHERE status = "active" ORDER BY name ASC');
+    // --- PowerSync Reactive Data (Native Only) ---
+    const { data: psCrew = [] } = useQuery(Platform.OS === 'web' ? 'SELECT 1 WHERE 0' : 'SELECT * FROM workers ORDER BY name ASC');
+    const { data: psJobs = [] } = useQuery(Platform.OS === 'web' ? 'SELECT 1 WHERE 0' : 'SELECT * FROM jobs WHERE LOWER(status) = "active" ORDER BY name ASC');
 
     const [crew, setCrew] = useState<UICrewMember[]>([]);
     const [jobs, setJobs] = useState<any[]>([]);
 
+    // Web Data Fetching
     useEffect(() => {
+        if (Platform.OS === 'web') {
+            const fetchWebData = async () => {
+                try {
+                    const [workers, activeJobs] = await Promise.all([
+                        SupabaseService.getWorkers(),
+                        SupabaseService.getActiveJobs()
+                    ]);
+                    setCrew(workers);
+                    setJobs(activeJobs);
+                } catch (error) {
+                    console.error("Web Data Fetch Error:", error);
+                }
+            };
+            fetchWebData();
+        }
+    }, []);
+
+    // Native Data Sync
+    useEffect(() => {
+        if (Platform.OS === 'web') return;
+
         // Map PowerSync records to UICrewMember interface
         const mappedCrew: UICrewMember[] = psCrew.map((w: any) => ({
             id: w.id,
@@ -66,6 +88,7 @@ export default function ManpowerScreen() {
     }, [psCrew]);
 
     useEffect(() => {
+        if (Platform.OS === 'web') return;
         setJobs(psJobs);
     }, [psJobs]);
 

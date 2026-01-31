@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Platform, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface ProductionRowProps {
@@ -7,24 +7,25 @@ interface ProductionRowProps {
     activeJobs: any[];
     onUpdate: (field: string, value: any) => void;
     onDelete: () => void;
-    onDuplicate: () => void; // Added back the Duplicate feature
+    onDuplicate: () => void;
+    onSelectJob?: () => void; // New prop for triggers job picker modal
 }
 
-// RESTORED COLORS
+// REFINED COLORS (LAYERED PASTELS)
 const COLORS = [
-    { id: 'white', code: '#ffffff', border: '#e2e8f0', dot: '#ffffff' },
-    { id: 'green', code: '#dcfce7', border: '#86efac', dot: '#dcfce7' },
-    { id: 'yellow', code: '#fef9c3', border: '#fde047', dot: '#fef9c3' },
-    { id: 'red', code: '#fee2e2', border: '#fca5a5', dot: '#fee2e2' },
-    { id: 'purple', code: '#f3e8ff', border: '#d8b4fe', dot: '#f3e8ff' },
-    { id: 'blue', code: '#dbeafe', border: '#93c5fd', dot: '#dbeafe' },
-    { id: 'orange', code: '#ffedd5', border: '#fdba74', dot: '#ffedd5' },
-    { id: 'pink', code: '#fce7f3', border: '#f9a8d4', dot: '#fce7f3' },
-    { id: 'teal', code: '#ccfbf1', border: '#5eead4', dot: '#ccfbf1' },
-    { id: 'gray', code: '#f1f5f9', border: '#cbd5e1', dot: '#f1f5f9' },
+    { id: 'white', code: '#ffffff', border: '#e2e8f0', inputBg: '#f8fafc', dot: '#ffffff' },
+    { id: 'green', code: '#dcfce7', border: '#bbf7d0', inputBg: '#f0fdf4', dot: '#86efac' },
+    { id: 'yellow', code: '#fef9c3', border: '#fef08a', inputBg: '#fefce8', dot: '#fde047' },
+    { id: 'red', code: '#fee2e2', border: '#fecaca', inputBg: '#fef2f2', dot: '#fca5a5' },
+    { id: 'purple', code: '#f3e8ff', border: '#e9d5ff', inputBg: '#faf5ff', dot: '#d8b4fe' },
+    { id: 'blue', code: '#dbeafe', border: '#bfdbfe', inputBg: '#eff6ff', dot: '#93c5fd' },
+    { id: 'orange', code: '#ffedd5', border: '#fed7aa', inputBg: '#fff7ed', dot: '#fdba74' },
+    { id: 'pink', code: '#fce7f3', border: '#fbcfe8', inputBg: '#fdf2f8', dot: '#f9a8d4' },
+    { id: 'teal', code: '#ccfbf1', border: '#99f6e4', inputBg: '#f0fdfa', dot: '#5eead4' },
+    { id: 'gray', code: '#f1f5f9', border: '#e2e8f0', inputBg: '#f8fafc', dot: '#cbd5e1' },
 ];
 
-export default function ProductionRow({ log, activeJobs, onUpdate, onDelete, onDuplicate }: ProductionRowProps) {
+export default function ProductionRow({ log, activeJobs, onUpdate, onDelete, onDuplicate, onSelectJob }: ProductionRowProps) {
     const [localData, setLocalData] = useState(log);
 
     useEffect(() => {
@@ -56,120 +57,142 @@ export default function ProductionRow({ log, activeJobs, onUpdate, onDelete, onD
             {/* 1. JOB SELECTOR */}
             <View className="mx-1" style={{ width: 180 }}>
                 <Text className="text-[10px] text-slate-500 font-bold mb-1">JOB</Text>
-                <select
-                    value={localData.jobId || ''}
-                    onChange={(e) => {
-                        const val = e.target.value;
-                        handleChange('jobId', val);
-                        onUpdate('jobId', val);
-                    }}
-                    className="h-[40px] w-full rounded border border-gray-300 px-2 bg-transparent text-sm"
-                    style={{ appearance: 'none', WebkitAppearance: 'none', outline: 'none' }}
-                >
-                    <option value="" disabled>Select Job</option>
-                    {activeJobs.map((j) => (
-                        <option key={j.id} value={j.id}>{j.name}</option>
-                    ))}
-                </select>
+                {Platform.OS === 'web' ? (
+                    <select
+                        value={localData.jobId || ''}
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            handleChange('jobId', val);
+                            onUpdate('jobId', val);
+                        }}
+                        className="h-[40px] w-full rounded border px-2 text-sm"
+                        style={{
+                            appearance: 'none',
+                            WebkitAppearance: 'none',
+                            outline: 'none',
+                            backgroundColor: activeColor.inputBg,
+                            borderColor: activeColor.border
+                        }}
+                    >
+                        <option value="" disabled>Select Job</option>
+                        {activeJobs.map((j) => (
+                            <option key={j.id} value={j.id}>{j.name}</option>
+                        ))}
+                    </select>
+                ) : (
+                    <TouchableOpacity
+                        className="h-[40px] w-full rounded border px-2 justify-center"
+                        style={{ borderColor: activeColor.border, backgroundColor: activeColor.inputBg }}
+                        onPress={onSelectJob}
+                    >
+                        <Text className="text-sm text-slate-700" numberOfLines={1}>
+                            {activeJobs.find(j => j.id === localData.jobId)?.name || localData.jobName || 'Select Job'}
+                        </Text>
+                    </TouchableOpacity>
+                )}
             </View>
 
             {/* 2. PL Number */}
             <View className="mx-1" style={{ width: 80 }}>
                 <Text className="text-[10px] text-slate-500 font-bold mb-1">PL #</Text>
-                <input
-                    type="text"
+                <TextInput
                     value={localData.plNumber || ''}
-                    onChange={(e) => handleChange('plNumber', e.target.value)}
+                    onChangeText={(val) => handleChange('plNumber', val)}
                     onBlur={() => handleSave('plNumber')}
-                    className="h-[40px] w-full border border-gray-300 rounded px-2 text-sm bg-transparent"
+                    className="h-[40px] w-full border rounded px-2 text-sm"
+                    style={{ borderColor: activeColor.border, backgroundColor: activeColor.inputBg }}
                     placeholder="PL#"
-                    style={{ outline: 'none' }}
+                    placeholderTextColor="#94a3b8"
                 />
             </View>
 
             {/* 3. Unit */}
             <View className="mx-1" style={{ width: 60 }}>
                 <Text className="text-[10px] text-slate-500 font-bold mb-1">UNIT</Text>
-                <input
-                    type="text"
+                <TextInput
                     value={localData.unit || ''}
-                    onChange={(e) => handleChange('unit', e.target.value)}
+                    onChangeText={(val) => handleChange('unit', val)}
                     onBlur={() => handleSave('unit')}
-                    className="h-[40px] w-full border border-gray-300 rounded px-2 text-sm bg-transparent"
+                    className="h-[40px] w-full border rounded px-2 text-sm"
+                    style={{ borderColor: activeColor.border, backgroundColor: activeColor.inputBg }}
                     placeholder="Unit"
-                    style={{ outline: 'none' }}
+                    placeholderTextColor="#94a3b8"
                 />
             </View>
 
             {/* 4. Reg Hours */}
             <View className="mx-1" style={{ width: 50 }}>
                 <Text className="text-[10px] text-slate-600 font-bold mb-1">REG</Text>
-                <input
-                    type="number"
-                    value={localData.regHours || ''}
-                    onChange={(e) => handleChange('regHours', e.target.value)}
+                <TextInput
+                    keyboardType="numeric"
+                    value={localData.regHours?.toString() || ''}
+                    onChangeText={(val) => handleChange('regHours', val)}
                     onBlur={() => handleSave('regHours')}
-                    className="h-[40px] w-full border border-gray-300 rounded text-center font-bold text-slate-800 bg-transparent"
+                    className="h-[40px] w-full border rounded text-center font-bold text-slate-800"
+                    style={{ borderColor: activeColor.border, backgroundColor: activeColor.inputBg }}
                     placeholder="0"
-                    style={{ outline: 'none' }}
+                    placeholderTextColor="#94a3b8"
                 />
             </View>
 
             {/* 5. OT Hours */}
             <View className="mx-1" style={{ width: 50 }}>
                 <Text className="text-[10px] text-slate-600 font-bold mb-1">OT</Text>
-                <input
-                    type="number"
-                    value={localData.otHours || ''}
-                    onChange={(e) => handleChange('otHours', e.target.value)}
+                <TextInput
+                    keyboardType="numeric"
+                    value={localData.otHours?.toString() || ''}
+                    onChangeText={(val) => handleChange('otHours', val)}
                     onBlur={() => handleSave('otHours')}
-                    className="h-[40px] w-full border border-gray-300 rounded text-center font-bold text-slate-800 bg-transparent"
+                    className="h-[40px] w-full border rounded text-center font-bold text-slate-800"
+                    style={{ borderColor: activeColor.border, backgroundColor: activeColor.inputBg }}
                     placeholder="0"
-                    style={{ outline: 'none' }}
+                    placeholderTextColor="#94a3b8"
                 />
             </View>
 
             {/* 6. Ticket # */}
             <View className="mx-1" style={{ width: 80 }}>
                 <Text className="text-[10px] text-blue-500 font-bold mb-1">TKT #</Text>
-                <input
-                    type="text"
+                <TextInput
                     value={localData.ticketNumber || ''}
-                    onChange={(e) => handleChange('ticketNumber', e.target.value)}
+                    onChangeText={(val) => handleChange('ticketNumber', val)}
                     onBlur={() => handleSave('ticketNumber')}
-                    className="h-[40px] w-full border border-gray-300 rounded px-2 text-sm bg-transparent"
+                    className="h-[40px] w-full border rounded px-2 text-sm"
+                    style={{ borderColor: activeColor.border, backgroundColor: activeColor.inputBg }}
                     placeholder="Tkt #"
-                    style={{ outline: 'none' }}
+                    placeholderTextColor="#94a3b8"
                 />
             </View>
 
-            {/* 7. Checkboxes (Cleaned up: No black border boxes) */}
-            <View className="flex-row items-center mx-2 mt-4 space-x-2">
-                <label className="flex-row items-center px-1 py-1">
-                    <input
-                        type="checkbox"
-                        checked={localData.isJantile || false}
-                        onChange={(e) => {
-                            handleChange('isJantile', e.target.checked);
-                            onUpdate('isJantile', e.target.checked);
-                        }}
-                        style={{ width: 18, height: 18, cursor: 'pointer' }}
-                    />
+            {/* 7. Checkboxes */}
+            <View className="flex-row items-center mx-2 mt-4 gap-4">
+                <TouchableOpacity
+                    onPress={() => {
+                        const val = !localData.isJantile;
+                        handleChange('isJantile', val);
+                        onUpdate('isJantile', val);
+                    }}
+                    className="flex-row items-center"
+                >
+                    <View className={`w-5 h-5 rounded border items-center justify-center ${localData.isJantile ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'}`}>
+                        {localData.isJantile && <Ionicons name="checkmark" size={14} color="white" />}
+                    </View>
                     <Text className="text-[10px] ml-1.5 text-slate-600 font-bold">JAN</Text>
-                </label>
+                </TouchableOpacity>
 
-                <label className="flex-row items-center px-1 py-1 ml-1">
-                    <input
-                        type="checkbox"
-                        checked={localData.isTicket || false}
-                        onChange={(e) => {
-                            handleChange('isTicket', e.target.checked);
-                            onUpdate('isTicket', e.target.checked);
-                        }}
-                        style={{ width: 18, height: 18, cursor: 'pointer' }}
-                    />
+                <TouchableOpacity
+                    onPress={() => {
+                        const val = !localData.isTicket;
+                        handleChange('isTicket', val);
+                        onUpdate('isTicket', val);
+                    }}
+                    className="flex-row items-center"
+                >
+                    <View className={`w-5 h-5 rounded border items-center justify-center ${localData.isTicket ? 'bg-blue-600 border-blue-600' : 'border-slate-300 bg-white'}`}>
+                        {localData.isTicket && <Ionicons name="checkmark" size={14} color="white" />}
+                    </View>
                     <Text className="text-[10px] ml-1.5 text-slate-600 font-bold">TKT</Text>
-                </label>
+                </TouchableOpacity>
             </View>
 
             {/* 8. Color Picker Dots */}

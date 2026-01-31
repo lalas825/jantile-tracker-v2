@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
-import { PowerSyncContext } from '@powersync/react-native';
+import { PowerSyncContext } from '@powersync/react';
 
 // Native (iOS/Android) version - uses PowerSync SQLite
 // Updates for Expo Go: Handle missing DB gracefully

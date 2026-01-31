@@ -1,9 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, RefreshControl, Modal, Alert, Platform } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SupabaseService } from '../../../services/SupabaseService';
+import { useQuery as usePowerSyncQuery } from '@powersync/react';
+import { useSafeStatus } from '../../../hooks/useSafeStatus';
 import clsx from 'clsx';
 
 export default function JobsScreen() {
@@ -12,6 +14,16 @@ export default function JobsScreen() {
     const [search, setSearch] = useState('');
     const [jobs, setJobs] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
+
+    const status = useSafeStatus();
+    const [userEmail, setUserEmail] = useState<string | null>(null);
+
+    // Fetch User Email
+    useEffect(() => {
+        SupabaseService.supabase.auth.getUser().then(({ data }) => {
+            setUserEmail(data.user?.email || 'Anonymous');
+        });
+    }, []);
 
     const [modalVisible, setModalVisible] = useState(false);
     const [editingJobId, setEditingJobId] = useState<string | null>(null);
@@ -40,13 +52,38 @@ export default function JobsScreen() {
         return totalAreas === 0 ? 0 : Math.round(totalProgress / totalAreas);
     };
 
+    // --- DATA FETCHING ---
+    const { data: psJobs = [] } = usePowerSyncQuery(
+        Platform.OS === 'web' ? 'SELECT 1 WHERE 0' : `SELECT * FROM jobs WHERE status = 'active'`
+    );
+
     // 1. FETCH JOBS
     const loadJobs = async () => {
-        setRefreshing(true);
-        const data = await SupabaseService.getActiveJobs();
-        setJobs(data || []);
-        setRefreshing(false);
+        if (Platform.OS === 'web') {
+            setRefreshing(true);
+            try {
+                const data = await SupabaseService.getActiveJobs();
+                setJobs(data || []);
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setRefreshing(false);
+            }
+        }
     };
+
+    useFocusEffect(
+        useCallback(() => {
+            loadJobs();
+        }, [])
+    );
+
+    // Sync PowerSync data to state on Native
+    useEffect(() => {
+        if (Platform.OS !== 'web') {
+            setJobs(psJobs);
+        }
+    }, [psJobs]);
 
     useFocusEffect(
         useCallback(() => {
@@ -129,6 +166,7 @@ export default function JobsScreen() {
 
     return (
         <View className="flex-1 bg-slate-50" style={{ paddingTop: insets.top }}>
+
             {/* HEADER */}
             <View className="px-6 py-6 border-b border-slate-200 flex-row justify-between items-center bg-white">
                 <Text className="text-2xl font-bold text-slate-900">Projects</Text>
@@ -242,24 +280,33 @@ export default function JobsScreen() {
                         </TouchableOpacity>
                     </View>
                 )}
+
+
             </ScrollView>
 
             {/* --- MODAL V1 --- */}
-            <Modal animationType="fade" transparent={true} visible={modalVisible}>
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={modalVisible}
+            >
                 <View className="flex-1 justify-center items-center bg-black/50 backdrop-blur-sm p-4">
                     <View className="bg-white rounded-xl w-full max-w-[500px] shadow-2xl overflow-hidden">
 
                         {/* Header */}
                         <View className="px-6 py-4 border-b border-gray-100 flex-row justify-between items-center">
-                            <Text className="text-lg font-bold text-gray-900">New Project</Text>
-                            <TouchableOpacity onPress={() => setModalVisible(false)}>
+                            <Text className="text-lg font-bold text-gray-900">{editingJobId ? 'Edit Project' : 'New Project'}</Text>
+                            <TouchableOpacity onPress={() => {
+                                setModalVisible(false);
+                                setEditingJobId(null);
+                                setForm({ name: '', jobNumber: '', address: '', gc: '', units: '', email: '' });
+                            }}>
                                 <Ionicons name="close" size={24} color="#9ca3af" />
                             </TouchableOpacity>
                         </View>
 
                         {/* Form Fields */}
                         <ScrollView className="p-6 max-h-[600px]">
-
                             {/* Project Name */}
                             <Text className="text-xs font-bold text-gray-500 mb-1 ml-1">Project Name</Text>
                             <TextInput
@@ -269,7 +316,7 @@ export default function JobsScreen() {
                                 placeholder="e.g. Skyline Tower"
                             />
 
-                            {/* Job Number (NEW) */}
+                            {/* Job Number */}
                             <Text className="text-xs font-bold text-gray-500 mb-1 ml-1">Job Number</Text>
                             <TextInput
                                 className="border border-gray-200 rounded-lg p-3 mb-4 text-base bg-white focus:border-blue-500 outline-none"
@@ -315,7 +362,6 @@ export default function JobsScreen() {
                                 placeholder="foreman@jantile.com"
                                 keyboardType="email-address"
                             />
-
                         </ScrollView>
 
                         {/* Footer Buttons */}
@@ -339,11 +385,12 @@ export default function JobsScreen() {
                                 </Text>
                             </TouchableOpacity>
                         </View>
-
                     </View>
                 </View>
             </Modal>
-
         </View>
     );
 }
+
+
+

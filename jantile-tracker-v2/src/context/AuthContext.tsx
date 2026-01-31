@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../config/supabase';
+import { db } from '../powersync/db';
 
 type Role = 'admin' | 'pm' | 'foreman' | 'warehouse';
 
@@ -75,8 +76,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const fetchProfile = async (userId: string) => {
         try {
-            // TODO: Switch to querying local PowerSync DB once initialized for offline support.
-            // For initialization, we fetch from Supabase directly.
+            // 1. Try Local DB (Offline First)
+            const localResult = await db.getAll(`SELECT * FROM profiles WHERE id = ?`, [userId]);
+
+            if (localResult.length > 0) {
+                const localProfile = localResult[0] as any;
+                setProfile({
+                    id: userId,
+                    role: localProfile.role,
+                    full_name: localProfile.full_name
+                } as UserProfile);
+                setIsLoading(false);
+                return;
+            }
+
+            // 2. Fallback to Supabase (Online)
             const { data, error } = await supabase
                 .from('profiles')
                 .select('*')
@@ -88,7 +102,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             if (data) {
-                setProfile(data as UserProfile);
+                const userProfile = data as UserProfile;
+                setProfile(userProfile);
+
+                // 3. Cache to Local DB for next time
+                await db.execute(
+                    `INSERT OR REPLACE INTO profiles (id, role, full_name, email) VALUES (?, ?, ?, ?)`,
+                    [userProfile.id, userProfile.role, userProfile.full_name, session?.user.email || null]
+                );
             }
         } catch (e) {
             console.error('Error fetching profile exception', e);

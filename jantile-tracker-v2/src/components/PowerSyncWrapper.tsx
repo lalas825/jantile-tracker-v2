@@ -1,8 +1,10 @@
 import { ReactNode, useState, useEffect } from 'react';
 import { View, Text, ActivityIndicator } from 'react-native';
-import { PowerSyncContext } from '@powersync/react-native';
+import { PowerSyncContext } from '@powersync/react';
 import { db } from '../powersync/db';
+import { SupabaseConnector } from '../powersync/SupabaseConnector';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { useAuth } from '../context/AuthContext';
 
 // Native version - provides PowerSync context with proper initialization
 // Mock DB for Expo Go / Fallback
@@ -11,34 +13,72 @@ const mockDb = {
     writeTransaction: async () => { },
     execute: async () => { },
     init: async () => { },
+    currentStatus: { connected: false, uploading: false, downloading: false, lastSyncedAt: null },
 } as any;
+
+
 
 export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
     // Immediate check for Expo Go to avoid any Provider rendering issues
     if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
-        return <>{children}</>;
+        // Even in Expo Go, provide a mock context to prevent crashes in children hook calls
+        return (
+            <PowerSyncContext.Provider value={mockDb}>
+                {children}
+            </PowerSyncContext.Provider>
+        );
     }
+
+    const { session } = useAuth();
+    // const status = useStatus(); // Causes crash loop if used before provider is ready
+
+    // useEffect(() => {
+    //    console.log("PowerSync Status:", JSON.stringify(status));
+    // }, [status]);
 
     const [isReady, setIsReady] = useState(false);
     const [dbInstance, setDbInstance] = useState<any>(mockDb); // Start with safe mock
 
     useEffect(() => {
+        let isLoopActive = true;
+
         const initDb = async () => {
             try {
-                // Initialize/open the database
                 await db.init();
+
+                if (!isLoopActive) return;
+
+                // CONNECT TO BACKEND
+                const connector = new SupabaseConnector();
+
+                await db.connect(connector);
+
                 setDbInstance(db);
                 setIsReady(true);
             } catch (e: any) {
-                console.warn('PowerSync init error (expected in Expo Go):', e);
-                // Fallback to mock DB to allow UI to render
-                setDbInstance(mockDb);
+                console.error('CRITICAL PowerSync init error:', e);
+                // Fallback to mock DB to allow UI to render, BUT pass the error so it's visible
+                const failedDb = {
+                    ...mockDb,
+                    currentStatus: {
+                        ...mockDb.currentStatus,
+                        lastDisconnectError: e.message || e // Pass the error object/string here
+                    }
+                };
+                setDbInstance(failedDb);
                 setIsReady(true);
             }
         };
 
-        initDb();
-    }, []);
+        if (session) {
+            initDb();
+        } else {
+            // alert("Waiting for session to log in...");
+            setIsReady(true); // Let it render so they can log in
+        }
+
+        return () => { isLoopActive = false; };
+    }, [session]); // RE-RUN when session changes!
 
     if (!isReady) {
         return (
@@ -49,11 +89,7 @@ export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
         );
     }
 
-    // Double safety: If we ended up with mockDb (e.g. init failed), skip Provider
-    if (dbInstance === mockDb) {
-        return <>{children}</>;
-    }
-
+    // Always provide context, even if it's the mock DB
     return (
         <PowerSyncContext.Provider value={dbInstance}>
             {children}

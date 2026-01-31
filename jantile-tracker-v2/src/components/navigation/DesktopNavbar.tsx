@@ -1,8 +1,9 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, TextInput, Image } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
-import { Search, Bell } from 'lucide-react-native';
+import { Search, Bell, LogOut } from 'lucide-react-native';
 import clsx from 'clsx';
+import { useAuth } from '../../context/AuthContext';
 
 const NavLink = ({ title, route }: { title: string, route: string }) => {
     const router = useRouter();
@@ -10,7 +11,7 @@ const NavLink = ({ title, route }: { title: string, route: string }) => {
     const isActive = route === '/(tabs)' ? pathname === '/' || pathname === '/(tabs)' : pathname.startsWith(route);
 
     return (
-        <TouchableOpacity onPress={() => router.push(route)} className="mx-0">
+        <TouchableOpacity onPress={() => router.push(route as any)} className="mx-0">
             <Text className={clsx(
                 "text-base font-bold whitespace-nowrap transition-colors", // text-base (16px), font-bold
                 isActive ? "text-red-700" : "text-slate-600 hover:text-red-700"
@@ -22,6 +23,7 @@ const NavLink = ({ title, route }: { title: string, route: string }) => {
 };
 
 export default function DesktopNavbar() {
+    const { signOut } = useAuth();
     return (
         <View className="h-16 bg-white border-b border-slate-200 flex-row items-center justify-between px-4 shadow-sm z-50">
             {/* Zone 1: The Brand */}
@@ -66,6 +68,11 @@ export default function DesktopNavbar() {
                 <View className="h-8 w-8 rounded-full bg-slate-200 items-center justify-center border border-slate-300">
                     <Text className="text-xs font-bold text-slate-600">JT</Text>
                 </View>
+
+                {/* Logout Button */}
+                <TouchableOpacity onPress={() => signOut()} className="p-2 border border-slate-200 rounded-md hover:bg-slate-50">
+                    <LogOut size={18} color="#64748b" />
+                </TouchableOpacity>
             </View>
         </View>
     );

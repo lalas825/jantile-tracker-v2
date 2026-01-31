@@ -45,7 +45,7 @@ export default function StructureModule({
     onAreaPress
 }: StructureModuleProps) {
     return (
-        <View className="flex-1 gap-6">
+        <View className="gap-6">
             {floors?.map((floor) => (
                 <FloorSection
                     key={floor.id}
