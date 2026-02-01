@@ -59,6 +59,8 @@ export default function JobDetailsScreen() {
         switch (activeTab) {
             case 'PRODUCTION':
                 return <ProductionTab job={job} setJob={setJob} />;
+            case 'ISSUES':
+                return <JobIssuesTab jobId={job.id} />;
             default:
                 // Placeholder for the new tabs
                 return (
@@ -154,5 +156,101 @@ export default function JobDetailsScreen() {
                 {renderContent()}
             </View>
         </SafeAreaView>
+    );
+}
+
+// 3. JOB ISSUES TAB COMPONENT
+function JobIssuesTab({ jobId }: { jobId: string }) {
+    const [issues, setIssues] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const router = useRouter();
+
+    useEffect(() => {
+        const loadIssues = async () => {
+            try {
+                const data = await SupabaseService.getJobIssues(jobId);
+                setIssues(data);
+            } catch (err) {
+                console.error("Failed to load job issues:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadIssues();
+    }, [jobId]);
+
+    if (loading) return <ActivityIndicator className="py-20" color="#3b82f6" />;
+
+    return (
+        <ScrollView className="flex-1 p-6" contentContainerStyle={{ paddingBottom: 100 }}>
+            <View className="flex-row justify-between items-center mb-6">
+                <Text className="text-slate-900 font-bold text-lg">Job Activity Feed</Text>
+                <View className="bg-blue-100 px-3 py-1 rounded-full">
+                    <Text className="text-blue-700 font-bold text-xs">{issues.length} Total</Text>
+                </View>
+            </View>
+
+            {issues.length === 0 ? (
+                <View className="py-20 items-center justify-center bg-white rounded-3xl border border-dashed border-slate-200">
+                    <Ionicons name="shield-checkmark" size={48} color="#94a3b8" />
+                    <Text className="text-slate-500 font-bold mt-4">No reported issues</Text>
+                    <Text className="text-slate-400 text-xs mt-1">This job site is running smoothly.</Text>
+                </View>
+            ) : (
+                <View className="flex-row flex-wrap gap-4">
+                    {issues.map(issue => (
+                        <TouchableOpacity
+                            key={issue.id}
+                            onPress={() => router.push(`/job-issues/${issue.id}` as any)}
+                            style={Platform.OS === 'web' ? { width: '22%', minWidth: 280 } : { width: '100%' }}
+                            className="bg-white p-5 rounded-2xl mb-4 border border-slate-200 shadow-sm"
+                        >
+                            <View className="flex-row justify-between items-start mb-3">
+                                <View className="flex-1 mr-4">
+                                    <View className={`px-2 py-0.5 rounded border self-start mb-2 ${issue.status === 'open' ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                        <Text className={`text-[9px] font-black uppercase ${issue.status === 'open' ? 'text-red-600' : 'text-emerald-700'}`}>{issue.status}</Text>
+                                    </View>
+                                    <View className="flex-row flex-wrap items-center">
+                                        <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                                            {issue.job_name}
+                                            {issue.floor_name && ` • ${issue.floor_name}`}
+                                            {issue.unit_name && ` • ${issue.unit_name}`}
+                                            {issue.area_name && ` • ${issue.area_name}`}
+                                        </Text>
+                                    </View>
+                                    <Text className="font-bold text-slate-900 mt-1">{issue.type}</Text>
+                                </View>
+                                <View className="items-end">
+                                    <Text className="text-[10px] text-slate-400 font-bold">{new Date(issue.created_at).toLocaleDateString()}</Text>
+                                    <Text className="text-[10px] text-slate-400 font-bold uppercase mt-0.5 whitespace-nowrap">PRIORITY: {issue.priority}</Text>
+                                </View>
+                            </View>
+                            <Text className="text-slate-600 text-xs mb-4" numberOfLines={2}>{issue.description}</Text>
+
+                            <View className="flex-row items-center justify-between pt-3 border-t border-slate-50">
+                                <View className="flex-1">
+                                    <Text className="text-[10px] text-slate-400 font-bold mb-2">BY: {issue.created_by}</Text>
+                                    {issue.status === 'open' && (
+                                        <TouchableOpacity
+                                            onPress={async (e) => {
+                                                e.stopPropagation();
+                                                await SupabaseService.updateIssueStatus(issue.id, 'resolved');
+                                                const data = await SupabaseService.getJobIssues(jobId);
+                                                setIssues(data);
+                                            }}
+                                            className="bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 self-start mt-1 flex-row items-center gap-1.5"
+                                        >
+                                            <Ionicons name="checkmark-circle" size={12} color="#059669" />
+                                            <Text className="text-emerald-700 text-[10px] font-black uppercase">Mark Resolved</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                                <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
+                            </View>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            )}
+        </ScrollView>
     );
 }

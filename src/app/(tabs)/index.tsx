@@ -5,6 +5,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, G } from 'react-native-svg';
 import { SupabaseService } from '../../services/SupabaseService';
+import { useAuth } from '../../context/AuthContext';
 
 
 // --- CHART COMPONENT ---
@@ -50,9 +51,10 @@ const DonutChart = ({ percentage, radius = 40, strokeWidth = 10, color = "#3b82f
 };
 
 export default function Dashboard() {
+    const { profile, user } = useAuth();
     const router = useRouter();
     const [jobs, setJobs] = useState<any[]>([]);
-    const [portfolio, setPortfolio] = useState({ totalHours: 0, totalIssues: 0, avgProgress: 0, activeJobs: 0 });
+    const [portfolio, setPortfolio] = useState({ totalHours: 0, openIssues: 0, resolvedIssues: 0, avgProgress: 0, activeJobs: 0 });
     const [refreshing, setRefreshing] = useState(false);
 
     const loadData = async () => {
@@ -73,11 +75,20 @@ export default function Dashboard() {
             setJobs(mappedJobs);
 
             // Recalculate portfolio stats (will be 0 for now since we lack deep data)
-            let totalReg = 0, totalOT = 0, totalIssues = 0, totalProgress = 0;
+            let totalReg = 0, totalOT = 0, totalProgress = 0;
+
+            // Fetch actual issue stats
+            let issueStats = { open: 0, resolved: 0 };
+            try {
+                issueStats = await SupabaseService.getGlobalIssueStats();
+            } catch (err) {
+                console.warn("Issue stats fetch failed (expected if tables not in Supabase):", err);
+            }
 
             setPortfolio({
                 totalHours: 0,
-                totalIssues: 0,
+                openIssues: issueStats.open,
+                resolvedIssues: issueStats.resolved,
                 avgProgress: 0,
                 activeJobs: activeJobs.length
             });
@@ -102,10 +113,18 @@ export default function Dashboard() {
                         <Text className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Overview</Text>
                         <Text className="text-3xl font-bold text-slate-900">Dashboard</Text>
                     </View>
-                    <Image
-                        source={{ uri: 'https://ui-avatars.com/api/?name=Juan+Restrepo&background=0D8ABC&color=fff' }}
-                        className="w-10 h-10 rounded-full bg-slate-200"
-                    />
+                    <View className="flex-row items-center gap-4">
+                        <View className="items-end">
+                            <Text className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Welcome back</Text>
+                            <Text className="text-xl font-black text-slate-900 tracking-tight">
+                                {profile?.full_name || user?.email?.split('@')[0] || 'User'}
+                            </Text>
+                        </View>
+                        <Image
+                            source={{ uri: `https://ui-avatars.com/api/?name=${profile?.full_name || user?.email || 'User'}&background=0D8ABC&color=fff` }}
+                            className="w-10 h-10 rounded-full bg-slate-200"
+                        />
+                    </View>
                 </View>
 
                 {/* 1. PORTFOLIO SUMMARY CARD */}
@@ -138,33 +157,45 @@ export default function Dashboard() {
                 {/* 2. ISSUES & MANPOWER ROW */}
                 <View className="flex-row gap-4 mb-8">
                     {/* Issues Card */}
-                    <View className="flex-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                    <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => router.push('/(tabs)/field')}
+                        className="flex-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-100"
+                    >
                         <View className="flex-row justify-between items-start mb-2">
-                            <View className={`p-2 rounded-xl ${portfolio.totalIssues > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
+                            <View className={`p-2 rounded-xl ${portfolio.openIssues > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
                                 <Ionicons
-                                    name={portfolio.totalIssues > 0 ? "alert-circle" : "checkmark-circle"}
+                                    name={portfolio.openIssues > 0 ? "alert-circle" : "checkmark-circle"}
                                     size={24}
-                                    color={portfolio.totalIssues > 0 ? "#ef4444" : "#10b981"}
+                                    color={portfolio.openIssues > 0 ? "#ef4444" : "#10b981"}
                                 />
                             </View>
-                            {portfolio.totalIssues > 0 && (
+                            {portfolio.openIssues > 0 && (
                                 <View className="bg-red-100 px-2 py-1 rounded">
                                     <Text className="text-red-700 text-xs font-bold">Action Req.</Text>
                                 </View>
                             )}
                         </View>
 
-                        <Text className="text-3xl font-bold text-slate-800 mt-2">{portfolio.totalIssues}</Text>
-                        <Text className="text-slate-500 text-xs font-bold uppercase tracking-wide mt-1">Open Issues</Text>
+                        <View className="flex-row items-end gap-6 mt-2">
+                            <View>
+                                <Text className="text-3xl font-bold text-slate-800">{portfolio.openIssues}</Text>
+                                <Text className="text-slate-500 text-[10px] font-bold uppercase tracking-wide mt-1">Open</Text>
+                            </View>
+                            <View>
+                                <Text className="text-3xl font-bold text-emerald-600">{portfolio.resolvedIssues}</Text>
+                                <Text className="text-slate-500 text-[10px] font-bold uppercase tracking-wide mt-1">Resolved</Text>
+                            </View>
+                        </View>
 
                         <View className="mt-4 pt-4 border-t border-slate-100">
                             <Text className="text-slate-400 text-xs">
-                                {portfolio.totalIssues > 0
+                                {portfolio.openIssues > 0
                                     ? "Delays possible across active jobs."
                                     : "All sites running smoothly."}
                             </Text>
                         </View>
-                    </View>
+                    </TouchableOpacity>
 
                     {/* Manpower Card */}
                     <View className="flex-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 justify-between">

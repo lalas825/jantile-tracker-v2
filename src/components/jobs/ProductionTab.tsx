@@ -223,6 +223,7 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
                 isVisible={drawerVisible}
                 onClose={() => setDrawerVisible(false)}
                 area={selectedArea}
+                jobId={job.id}
                 onUpdate={async (newChecklist: any[]) => {
                     if (selectedArea) {
                         // Calculate new progress

@@ -23,7 +23,12 @@ const NavLink = ({ title, route }: { title: string, route: string }) => {
 };
 
 export default function DesktopNavbar() {
-    const { signOut } = useAuth();
+    const { signOut, profile, user } = useAuth();
+
+    const initials = profile?.full_name
+        ? profile.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
+        : user?.email ? user.email.substring(0, 2).toUpperCase() : '??';
+
     return (
         <View className="h-16 bg-white border-b border-slate-200 flex-row items-center justify-between px-4 shadow-sm z-50">
             {/* Zone 1: The Brand */}
@@ -66,7 +71,7 @@ export default function DesktopNavbar() {
 
                 {/* Profile */}
                 <View className="h-8 w-8 rounded-full bg-slate-200 items-center justify-center border border-slate-300">
-                    <Text className="text-xs font-bold text-slate-600">JT</Text>
+                    <Text className="text-xs font-bold text-slate-600">{initials}</Text>
                 </View>
 
                 {/* Logout Button */}

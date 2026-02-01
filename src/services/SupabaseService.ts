@@ -25,6 +25,34 @@ export interface Job {
     status?: string;
 }
 
+export interface JobIssue {
+    id: string;
+    job_id: string;
+    area_id?: string;
+    type: string;
+    priority: 'Low' | 'Medium' | 'High';
+    status: 'open' | 'resolved';
+    description: string;
+    photo_url?: string;
+    created_by: string;
+    created_at: string;
+    updated_at: string;
+    // Derived for UI
+    job_name?: string;
+    area_name?: string;
+    unit_name?: string;
+    floor_name?: string;
+}
+
+export interface IssueComment {
+    id: string;
+    issue_id: string;
+    user_id: string;
+    user_name: string;
+    message: string;
+    created_at: string;
+}
+
 export interface ProductionLog {
     id: string;
     date: string;
@@ -679,7 +707,7 @@ export const SupabaseService = {
         return Array.from(workerMap.values());
     },
 
-    async upsertLog(logId: string, date: Date, workerId: string, field: string, value: any) {
+    async upsertLog(logId: string, date: Date, workerId: string, field: string, value: any): Promise<any> {
         const dateStr = formatDate(date);
 
         let colName = '';
@@ -1086,6 +1114,175 @@ export const SupabaseService = {
             .eq('id', photoId);
 
         if (dbError) throw dbError;
+    },
+
+    // --- ISSUES ---
+
+    async getJobIssues(jobId?: string, areaId?: string): Promise<JobIssue[]> {
+        if (useSupabase) {
+            // Join with jobs, areas, units, and floors
+            let query = supabase.from('job_issues').select(`
+                *, 
+                jobs(name),
+                areas(
+                    name,
+                    units(
+                        name,
+                        floors(name)
+                    )
+                )
+            `);
+            if (jobId) query = query.eq('job_id', jobId);
+            if (areaId) query = query.eq('area_id', areaId);
+            const { data, error } = await query.order('created_at', { ascending: false });
+            if (error) throw error;
+            return (data || []).map((i: any) => ({
+                ...i,
+                job_name: i.jobs?.name,
+                area_name: i.areas?.name,
+                unit_name: i.areas?.units?.name,
+                floor_name: i.areas?.units?.floors?.name
+            }));
+        }
+
+        let sql = `
+            SELECT i.*, 
+                   j.name as job_name,
+                   a.name as area_name,
+                   u.name as unit_name,
+                   f.name as floor_name
+            FROM job_issues i 
+            LEFT JOIN jobs j ON i.job_id = j.id
+            LEFT JOIN areas a ON i.area_id = a.id
+            LEFT JOIN units u ON a.unit_id = u.id
+            LEFT JOIN floors f ON u.floor_id = f.id
+        `;
+        const params = [];
+        const conditions = [];
+
+        if (jobId) {
+            conditions.push(`i.job_id = ?`);
+            params.push(jobId);
+        }
+        if (areaId) {
+            conditions.push(`i.area_id = ?`);
+            params.push(areaId);
+        }
+
+        if (conditions.length > 0) {
+            sql += ` WHERE ` + conditions.join(' AND ');
+        }
+
+        sql += ` ORDER BY i.created_at DESC`;
+
+        const result = await db.getAll(sql, params);
+        return result as JobIssue[];
+    },
+
+    async getGlobalIssueStats(): Promise<{ open: number, resolved: number }> {
+        if (useSupabase) {
+            const { count: open, error: oe } = await supabase.from('job_issues').select('*', { count: 'exact', head: true }).eq('status', 'open');
+            const { count: resolved, error: re } = await supabase.from('job_issues').select('*', { count: 'exact', head: true }).eq('status', 'resolved');
+            if (oe) throw oe;
+            if (re) throw re;
+            return { open: open || 0, resolved: resolved || 0 };
+        }
+        const openResult = await db.getAll(`SELECT COUNT(*) as count FROM job_issues WHERE status = 'open'`, []);
+        const resolvedResult = await db.getAll(`SELECT COUNT(*) as count FROM job_issues WHERE status = 'resolved'`, []);
+        return {
+            open: (openResult[0] as any).count || 0,
+            resolved: (resolvedResult[0] as any).count || 0
+        };
+    },
+
+    async getGlobalOpenIssuesCount(): Promise<number> {
+        if (useSupabase) {
+            const { count, error } = await supabase.from('job_issues').select('*', { count: 'exact', head: true }).eq('status', 'open');
+            if (error) throw error;
+            return count || 0;
+        }
+        const result = await db.getAll(`SELECT COUNT(*) as count FROM job_issues WHERE status = 'open'`, []);
+        return (result[0] as any).count || 0;
+    },
+
+    async createIssue(issue: Partial<JobIssue>): Promise<string> {
+        const id = randomUUID();
+        const now = new Date().toISOString();
+        const payload = {
+            id,
+            job_id: issue.job_id,
+            area_id: issue.area_id || null,
+            type: issue.type || 'Other',
+            priority: issue.priority || 'Medium',
+            status: 'open',
+            description: issue.description || '',
+            photo_url: issue.photo_url || null,
+            created_by: issue.created_by || 'Anonymous',
+            created_at: now,
+            updated_at: now
+        };
+
+        console.log(`[SupabaseService] Creating Issue:`, JSON.stringify(payload));
+
+        if (useSupabase) {
+            const { error } = await supabase.from('job_issues').insert(payload);
+            if (error) throw error;
+            return id;
+        }
+
+        await db.execute(
+            `INSERT INTO job_issues (id, job_id, area_id, type, priority, status, description, photo_url, created_by, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [payload.id, payload.job_id, payload.area_id, payload.type, payload.priority, payload.status, payload.description, payload.photo_url, payload.created_by, payload.created_at, payload.updated_at]
+        );
+        return id;
+    },
+
+    async updateIssueStatus(id: string, status: 'open' | 'resolved'): Promise<void> {
+        const now = new Date().toISOString();
+        if (useSupabase) {
+            const { error } = await supabase.from('job_issues').update({ status, updated_at: now }).eq('id', id);
+            if (error) throw error;
+            return;
+        }
+
+        await db.execute(`UPDATE job_issues SET status = ?, updated_at = ? WHERE id = ?`, [status, now, id]);
+    },
+
+    async deleteIssue(id: string): Promise<void> {
+        if (useSupabase) {
+            const { error } = await supabase.from('job_issues').delete().eq('id', id);
+            if (error) throw error;
+            return;
+        }
+        await db.execute(`DELETE FROM job_issues WHERE id = ?`, [id]);
+    },
+
+    async getIssueComments(issueId: string): Promise<IssueComment[]> {
+        if (useSupabase) {
+            const { data, error } = await supabase.from('issue_comments').select('*').eq('issue_id', issueId).order('created_at', { ascending: true });
+            if (error) throw error;
+            return data || [];
+        }
+
+        return await db.getAll(`SELECT * FROM issue_comments WHERE issue_id = ? ORDER BY created_at ASC`, [issueId]) as IssueComment[];
+    },
+
+    async addIssueComment(issueId: string, message: string, userId: string, userName: string): Promise<void> {
+        const id = randomUUID();
+        const now = new Date().toISOString();
+        const payload = { id, issue_id: issueId, user_id: userId, user_name: userName, message, created_at: now };
+
+        if (useSupabase) {
+            const { error } = await supabase.from('issue_comments').insert(payload);
+            if (error) throw error;
+            return;
+        }
+
+        await db.execute(
+            `INSERT INTO issue_comments (id, issue_id, user_id, user_name, message, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+            [payload.id, payload.issue_id, payload.user_id, payload.user_name, payload.message, payload.created_at]
+        );
     },
 
     // Check connection/client

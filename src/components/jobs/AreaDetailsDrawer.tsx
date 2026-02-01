@@ -3,8 +3,9 @@ import { View, Text, TouchableOpacity, Modal, ScrollView, TextInput, Platform, D
 import { X, Camera, Image as ImageIcon, CheckCircle2, AlertTriangle, Calendar, Activity, Ban, Circle, Clock, ChevronDown, Plus, Minus, User, Trash2 } from 'lucide-react-native';
 import clsx from 'clsx';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SupabaseService } from '../../services/SupabaseService';
+import { SupabaseService, JobIssue } from '../../services/SupabaseService';
 import { CHECKLIST_PRESETS } from '../../constants/JobTemplates';
+import { useAuth } from '../../context/AuthContext';
 
 import { CREW_MEMBERS } from '../../constants/CrewData';
 import LogTimeTab from './tabs/LogTimeTab';
@@ -48,6 +49,7 @@ interface AreaDetailsDrawerProps {
     isVisible: boolean;
     onClose: () => void;
     area: AreaData | null;
+    jobId?: string;
     onUpdate: (newChecklist: ChecklistItem[]) => void;
     onLogTime?: (logData: any) => void;
     onAddPhoto?: (uri: string) => void;
@@ -92,7 +94,8 @@ const StatusButton = ({ status, onPress }: { status: TaskStatus, onPress: () => 
     }
 };
 
-export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, onLogTime, onAddPhoto, onDeletePhoto, onReportIssue, onResolveIssue, onDeleteIssue }: AreaDetailsDrawerProps) {
+export default function AreaDetailsDrawer({ isVisible, onClose, area, jobId, onUpdate, onLogTime, onAddPhoto, onDeletePhoto, onReportIssue, onResolveIssue, onDeleteIssue }: AreaDetailsDrawerProps) {
+    const { profile, user } = useAuth();
     const [activeTab, setActiveTab] = useState('Checklist');
     const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
     const [progress, setProgress] = useState(0);
@@ -101,6 +104,7 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
     const isDesktop = width > 768;
     const [loading, setLoading] = useState(false);
     const [areaPhotos, setAreaPhotos] = useState<{ id: string; url: string; storage_path: string }[]>([]);
+    const [areaIssues, setAreaIssues] = useState<JobIssue[]>([]);
 
     // Hydrate Data on Open or when area updates
     useEffect(() => {
@@ -141,51 +145,40 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
             try {
                 console.log("Fetching items and photos for:", area.id);
 
-                // Fetch photos first (usually faster, and we want to see web uploads)
-                const photos = await SupabaseService.getAreaPhotos(area.id);
-                setAreaPhotos(photos);
+                // Fetch checklist items first & independently
+                try {
+                    const items = await SupabaseService.getChecklistItems(area.id);
+                    if (items && items.length > 0) {
+                        setChecklist(currentLists => {
+                            const baseItems = items.map((item: any) => ({
+                                id: item.id,
+                                label: item.text,
+                                status: (item.status || (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED')) as TaskStatus,
+                                position: item.position,
+                                created_at: item.created_at
+                            }));
 
-                const items = await SupabaseService.getChecklistItems(area.id);
-
-                if (items && items.length > 0) {
-                    // DB has data.
-                    setChecklist(currentLists => {
-                        const baseItems = items.map((item: any) => ({
-                            id: item.id,
-                            label: item.text,
-                            status: (item.status || (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED')) as TaskStatus,
-                            position: item.position,
-                            created_at: item.created_at
-                        }));
-
-                        // If no temp items, just sort and use base.
-                        if (!currentLists.some(i => i.id.startsWith('temp_'))) {
-                            return SupabaseService.sortChecklist(baseItems, area.name);
-                        }
-
-                        // Map base items to preserve any user changes made to temp items
-                        const merged = baseItems.map((real: any, index: number) => {
-                            const tempMatch = currentLists[index];
-                            if (tempMatch && tempMatch.id.startsWith('temp_') && tempMatch.status !== 'NOT_STARTED') {
-                                SupabaseService.updateChecklistItem(real.id, { status: tempMatch.status });
-                                return { ...real, status: tempMatch.status };
+                            if (!currentLists.some(i => i.id.startsWith('temp_'))) {
+                                return SupabaseService.sortChecklist(baseItems, area.name);
                             }
-                            return real;
+
+                            const merged = baseItems.map((real: any, index: number) => {
+                                const tempMatch = currentLists[index];
+                                if (tempMatch && tempMatch.id.startsWith('temp_') && tempMatch.status !== 'NOT_STARTED') {
+                                    SupabaseService.updateChecklistItem(real.id, { status: tempMatch.status });
+                                    return { ...real, status: tempMatch.status };
+                                }
+                                return real;
+                            });
+
+                            return SupabaseService.sortChecklist(merged, area.name);
                         });
-
-                        return SupabaseService.sortChecklist(merged, area.name);
-                    });
-
-                } else {
-                    // DB is empty.
-                    if (preset) {
+                    } else if (preset) {
+                        // Populate defaults if truly empty
                         console.log("DB Empty. Background saving preset...");
-                        // Save preset to DB
                         for (const task of preset) {
                             await SupabaseService.addChecklistItem(area.id, task);
                         }
-
-                        // Re-fetch to get real IDs
                         const realItems = await SupabaseService.getChecklistItems(area.id);
                         const realUiItems = realItems.map((item: any) => ({
                             id: item.id,
@@ -194,28 +187,29 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
                             position: item.position,
                             created_at: item.created_at
                         }));
-
-                        // Same merge logic for the newly created items
-                        setChecklist(currentLists => {
-                            if (!currentLists.some(i => i.id.startsWith('temp_'))) {
-                                return SupabaseService.sortChecklist(realUiItems, area.name);
-                            }
-                            const mergedItems = realUiItems.map((real: any, index: number) => {
-                                const tempMatch = currentLists[index];
-                                if (tempMatch && tempMatch.id.startsWith('temp_') && tempMatch.status !== 'NOT_STARTED') {
-                                    SupabaseService.updateChecklistItem(real.id, { status: tempMatch.status });
-                                    return { ...real, status: tempMatch.status };
-                                }
-                                return real;
-                            });
-                            return SupabaseService.sortChecklist(mergedItems, area.name);
-                        });
-                    } else {
-                        setChecklist([]);
+                        setChecklist(SupabaseService.sortChecklist(realUiItems, area.name));
                     }
+                } catch (err) {
+                    console.error("Critical Checklist Load Error:", err);
+                }
+
+                // Fetch photos independently
+                try {
+                    const photos = await SupabaseService.getAreaPhotos(area.id);
+                    setAreaPhotos(photos);
+                } catch (err) {
+                    console.error("Non-critical Photo Load Error:", err);
+                }
+
+                // Fetch issues independently
+                try {
+                    const issues = await SupabaseService.getJobIssues(undefined, area.id);
+                    setAreaIssues(issues);
+                } catch (err) {
+                    console.error("Non-critical Issue Load Error (Expected if tables not in Supabase yet):", err);
                 }
             } catch (e) {
-                console.error("Failed to load/sync checklist", e);
+                console.error("General background sync error", e);
             } finally {
                 setLoading(false);
             }
@@ -430,16 +424,42 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
                         {/* 3. ISSUES TAB */}
                         {activeTab === 'Issues' && (
                             <IssuesTab
-                                issues={area?.issues}
-                                onReport={(issue) => {
-                                    if (onReportIssue) onReportIssue(issue);
-                                    else Alert.alert("Dev Warning", "No handler for reporting issues");
+                                issues={areaIssues}
+                                onReport={async (issueData) => {
+                                    if (!area) return;
+                                    try {
+                                        // We need jobId here. I'll search for it or pass it.
+                                        // For now, I'll assume we can pass it to the drawer or find it.
+                                        // Searching for jobId in the file... it's not here.
+                                        // I'll add jobId to the props.
+                                        // Identify reporter: Use Full Name, then Email, then Fallback
+                                        const reporterName = profile?.full_name || user?.email || 'Unknown User';
+
+                                        await SupabaseService.createIssue({
+                                            ...issueData,
+                                            area_id: area.id,
+                                            job_id: jobId || (area as any).job_id,
+                                            created_by: reporterName
+                                        });
+                                        const freshIssues = await SupabaseService.getJobIssues(undefined, area.id);
+                                        setAreaIssues(freshIssues);
+                                    } catch (e) {
+                                        console.error("Failed to report issue", e);
+                                    }
                                 }}
-                                onResolve={(id) => {
-                                    if (onResolveIssue) onResolveIssue(id);
+                                onResolve={async (id) => {
+                                    await SupabaseService.updateIssueStatus(id, 'resolved');
+                                    if (area) {
+                                        const freshIssues = await SupabaseService.getJobIssues(undefined, area.id);
+                                        setAreaIssues(freshIssues);
+                                    }
                                 }}
-                                onDelete={(id) => {
-                                    if (onDeleteIssue) onDeleteIssue(id);
+                                onDelete={async (id) => {
+                                    await SupabaseService.deleteIssue(id);
+                                    if (area) {
+                                        const freshIssues = await SupabaseService.getJobIssues(undefined, area.id);
+                                        setAreaIssues(freshIssues);
+                                    }
                                 }}
                             />
                         )}

@@ -121,6 +121,31 @@ export const AppSchema = new Schema([
         ]
     }),
     new Table({
+        name: 'job_issues',
+        columns: [
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'area_id', type: ColumnType.TEXT }),
+            new Column({ name: 'type', type: ColumnType.TEXT }),
+            new Column({ name: 'priority', type: ColumnType.TEXT }),
+            new Column({ name: 'status', type: ColumnType.TEXT }),
+            new Column({ name: 'description', type: ColumnType.TEXT }),
+            new Column({ name: 'photo_url', type: ColumnType.TEXT }),
+            new Column({ name: 'created_by', type: ColumnType.TEXT }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+            new Column({ name: 'updated_at', type: ColumnType.TEXT }),
+        ]
+    }),
+    new Table({
+        name: 'issue_comments',
+        columns: [
+            new Column({ name: 'issue_id', type: ColumnType.TEXT }),
+            new Column({ name: 'user_id', type: ColumnType.TEXT }),
+            new Column({ name: 'user_name', type: ColumnType.TEXT }),
+            new Column({ name: 'message', type: ColumnType.TEXT }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+        ]
+    }),
+    new Table({
         name: 'offline_photos',
         columns: [
             new Column({ name: 'area_id', type: ColumnType.TEXT }),
