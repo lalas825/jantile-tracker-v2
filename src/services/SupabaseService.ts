@@ -136,28 +136,32 @@ export const SupabaseService = {
     },
 
     async saveWorker(worker: Partial<UICrewMember>): Promise<void> {
+        const id = worker.id || randomUUID();
+        const now = new Date().toISOString();
+        const avatar = worker.avatar || getInitials(worker.name || '');
+
         if (useSupabase) {
-            const { error } = await supabase.from('workers').upsert({
-                id: worker.id,
+            const payload = {
+                id,
                 name: worker.name,
                 role: worker.role,
                 status: worker.status || 'Active',
-                phone: worker.phone,
-                email: worker.email,
-                address: worker.address,
-                avatar: worker.avatar,
-                assigned_job_ids: JSON.stringify(worker.assignedJobIds || [])
-            });
+                phone: worker.phone || null,
+                email: worker.email || null,
+                address: worker.address || null,
+                avatar: avatar,
+                assigned_job_ids: JSON.stringify(worker.assignedJobIds || []),
+                created_at: now
+            };
+
+            const { error } = await supabase.from('workers').upsert(payload);
             if (error) throw error;
             return;
         }
 
-        // Construct simplified worker object for DB
-        // We use INSERT OR REPLACE for upsert behavior
-        const id = worker.id || randomUUID(); // Should always have ID but safety first
-
+        // Native PowerSync
         await db.execute(
-            `INSERT OR REPLACE INTO workers (id, name, role, status, phone, email, address, assigned_job_ids, avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT OR REPLACE INTO workers (id, name, role, status, phone, email, address, assigned_job_ids, avatar, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 worker.name || null,
@@ -166,8 +170,9 @@ export const SupabaseService = {
                 worker.phone || null,
                 worker.email || null,
                 worker.address || null,
-                JSON.stringify(worker.assignedJobIds || []), // Store array as JSON
-                worker.avatar || null
+                JSON.stringify(worker.assignedJobIds || []),
+                avatar,
+                now
             ]
         );
     },
