@@ -708,7 +708,6 @@ export const SupabaseService = {
             case 'isTkt': case 'isTicket': case 'is_ticket':
                 colName = 'is_ticket';
                 colVal = value === true ? 1 : 0;
-                break;
             case 'isJan': case 'isJantile': case 'is_jantile':
                 colName = 'is_jantile';
                 colVal = value === true ? 1 : 0;
@@ -776,6 +775,18 @@ export const SupabaseService = {
 
             console.log(`Successfully saved ${field} for log ${logId}`);
         } catch (e: any) {
+            // HOTFIX for missing status_color column in local DB
+            if (e.message?.includes('no such column: status_color')) {
+                console.log('HOTFIX: Attempting to add status_color column to local production_logs...');
+                try {
+                    await db.execute('ALTER TABLE production_logs ADD COLUMN status_color TEXT');
+                    // Retry once
+                    return await SupabaseService.upsertLog(logId, date, workerId, field, value);
+                } catch (alterErr) {
+                    console.error('HOTFIX FAILED:', alterErr);
+                }
+            }
+
             // 3. Final catch for race conditions (row created between Update and Insert)
             if (e.message?.includes('UNIQUE constraint failed')) {
                 if (colName) {
@@ -790,8 +801,6 @@ export const SupabaseService = {
             throw e;
         }
     },
-
-
 
     deleteLog: async (logId: string): Promise<void> => {
         if (useSupabase) {
@@ -912,7 +921,7 @@ export const SupabaseService = {
         // Fetch area_id first if not provided
         let areaId = updates.area_id;
         if (!areaId) {
-            const item = await db.getFirst(`SELECT area_id FROM checklist_items WHERE id = ?`, [itemId]);
+            const item = await db.get(`SELECT area_id FROM checklist_items WHERE id = ?`, [itemId]);
             areaId = item?.area_id;
         }
 
@@ -956,7 +965,7 @@ export const SupabaseService = {
 
     deleteChecklistItem: async (itemId: string) => {
         // Fetch area_id for progress recalculation
-        const item = await db.getFirst(`SELECT area_id FROM checklist_items WHERE id = ?`, [itemId]);
+        const item = await db.get(`SELECT area_id FROM checklist_items WHERE id = ?`, [itemId]);
         const areaId = item?.area_id;
 
         if (useSupabase) {

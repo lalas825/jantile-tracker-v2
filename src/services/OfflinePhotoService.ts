@@ -72,8 +72,8 @@ export const OfflinePhotoService = {
             const allItems = await db.getAll(`SELECT * FROM offline_photos`);
             console.log(`📸 [DEBUG] Total rows in offline_photos table: ${allItems.length}`);
 
-            const result = await db.getAll(`SELECT * FROM offline_photos WHERE status = 'queued' OR status = 'failed'`);
-            console.log(`📸 [DEBUG] Found ${result.length} items with status 'queued' or 'failed'.`);
+            const result = await db.getAll(`SELECT * FROM offline_photos WHERE status = 'queued' OR status = 'failed' OR status = 'uploading'`);
+            console.log(`📸 [DEBUG] Found ${result.length} items to sync (queued, failed, or stuck uploading).`);
 
             if (result.length === 0) {
                 console.log('📸 [DEBUG] OfflinePhotoService: Nothing to sync. END.');
@@ -82,7 +82,7 @@ export const OfflinePhotoService = {
 
             for (const row of result) {
                 const item = row as OfflinePhotoItem;
-                console.log(`📸 [DEBUG] Processing item: ${item.id} for area: ${item.area_id}`);
+                console.log(`📸 [DEBUG] Processing item: ${item.id} for area: ${item.area_id} (current status: ${item.status})`);
 
                 try {
                     // Update status to uploading
@@ -91,8 +91,8 @@ export const OfflinePhotoService = {
                     // Read file
                     const fileInfo = await FS.getInfoAsync(item.local_uri);
                     if (!fileInfo.exists) {
-                        console.error('❌ File not found:', item.local_uri);
-                        // Mark as fatal error or delete?
+                        console.error('❌ File not found locally:', item.local_uri);
+                        // If it's been in 'uploading' for a while and file is gone, just cleanup
                         await db.execute(`DELETE FROM offline_photos WHERE id = ?`, [item.id]);
                         continue;
                     }
@@ -104,6 +104,7 @@ export const OfflinePhotoService = {
 
                     const storagePath = `photos/${item.area_id}/${item.filename}`;
 
+                    console.log(`📸 [DEBUG] Uploading to Supabase: ${storagePath}`);
                     const { error } = await supabase.storage
                         .from('area-photos')
                         .upload(storagePath, binaryBody, {
@@ -111,12 +112,17 @@ export const OfflinePhotoService = {
                             upsert: true
                         });
 
-                    if (error) throw error;
+                    if (error) {
+                        console.error('❌ Supabase Storage Error:', error);
+                        throw error;
+                    }
 
                     // Get Public URL
                     const { data: { publicUrl } } = supabase.storage
                         .from('area-photos')
                         .getPublicUrl(storagePath);
+
+                    console.log(`📸 [DEBUG] Upload successful. Metadata sync...`);
 
                     // Insert into Supabase REAL photos table (FOR WEB/OTHERS)
                     const { error: dbUpstreamError } = await supabase
@@ -129,8 +135,11 @@ export const OfflinePhotoService = {
                         });
 
                     if (dbUpstreamError) {
-                        console.error('❌ Failed to push photo metadata to Supabase:', dbUpstreamError);
-                        throw dbUpstreamError;
+                        // If it's a duplicate error, we can ignore and proceed
+                        if (!dbUpstreamError.message?.includes('unique_violation')) {
+                            console.error('❌ Failed to push photo metadata to Supabase:', dbUpstreamError);
+                            throw dbUpstreamError;
+                        }
                     }
 
                     // Insert into REAL photos table (local PowerSync/SQLite)
