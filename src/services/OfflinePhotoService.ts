@@ -52,8 +52,8 @@ export const OfflinePhotoService = {
 
             // Trigger sync immediately instead of waiting for interval
             console.log('📸 OfflinePhotoService: Triggering immediate sync...');
-            OfflinePhotoService.processQueue().catch(e => console.error('❌ Sync failed:', e));
-        } catch (dbErr) {
+            OfflinePhotoService.processQueue().catch(e => console.log('ℹ️ Sync background task:', e.message));
+        } catch (dbErr: any) {
             console.error('❌ OfflinePhotoService: Failed to insert into offline_photos:', dbErr);
             throw dbErr;
         }
@@ -89,22 +89,38 @@ export const OfflinePhotoService = {
                     await db.execute(`UPDATE offline_photos SET status = 'uploading' WHERE id = ?`, [item.id]);
 
                     // Read file
-                    const fileInfo = await FS.getInfoAsync(item.local_uri);
+                    let localUri = item.local_uri;
+                    let fileInfo = await FS.getInfoAsync(localUri);
+
+                    // ROBUSTNESS: Recover from sandbox path changes (e.g. update)
                     if (!fileInfo.exists) {
-                        console.error('❌ File not found locally:', item.local_uri);
+                        const recoverPath = `${FS.documentDirectory}photos/${item.filename}`;
+                        const recoverInfo = await FS.getInfoAsync(recoverPath);
+                        if (recoverInfo.exists) {
+                            console.log(`⚠️ [Sync] Fixed stale path for ${item.id}. Old: ${localUri} -> New: ${recoverPath}`);
+                            localUri = recoverPath;
+                            // Update DB
+                            await db.execute(`UPDATE offline_photos SET local_uri = ? WHERE id = ?`, [localUri, item.id]);
+                            fileInfo = recoverInfo;
+                        }
+                    }
+
+                    if (!fileInfo.exists) {
+                        console.error('❌ [Sync] File not found locally (even after recovery attempt):', localUri);
+                        console.error('❌ [Sync] DELETING photo from queue due to missing file:', item.id);
                         // If it's been in 'uploading' for a while and file is gone, just cleanup
                         await db.execute(`DELETE FROM offline_photos WHERE id = ?`, [item.id]);
                         continue;
                     }
 
                     // robust binary read
-                    const base64 = await FS.readAsStringAsync(item.local_uri, { encoding: FS.EncodingType?.Base64 || 'base64' });
+                    const base64 = await FS.readAsStringAsync(localUri, { encoding: FS.EncodingType?.Base64 || 'base64' });
                     const { Buffer } = require('buffer');
                     const binaryBody = Buffer.from(base64, 'base64');
 
                     const storagePath = `photos/${item.area_id}/${item.filename}`;
 
-                    console.log(`📸 [DEBUG] Uploading to Supabase: ${storagePath}`);
+                    console.log(`📸 [Sync] Uploading to Supabase: ${storagePath}`);
                     const { error } = await supabase.storage
                         .from('area-photos')
                         .upload(storagePath, binaryBody, {
@@ -113,7 +129,7 @@ export const OfflinePhotoService = {
                         });
 
                     if (error) {
-                        console.error('❌ Supabase Storage Error:', error);
+                        // Throw to catch block where we handle it quietly
                         throw error;
                     }
 
@@ -122,9 +138,10 @@ export const OfflinePhotoService = {
                         .from('area-photos')
                         .getPublicUrl(storagePath);
 
-                    console.log(`📸 [DEBUG] Upload successful. Metadata sync...`);
+                    console.log(`📸 [Sync] Upload successful. Metadata sync...`);
 
-                    // Insert into Supabase REAL photos table (FOR WEB/OTHERS)
+                    // 1. Insert into Supabase REAL photos table (FOR WEB/OTHERS)
+                    // We try this first. If it fails due to network, we catch it.
                     const { error: dbUpstreamError } = await supabase
                         .from('area_photos')
                         .insert({
@@ -137,26 +154,43 @@ export const OfflinePhotoService = {
                     if (dbUpstreamError) {
                         // If it's a duplicate error, we can ignore and proceed
                         if (!dbUpstreamError.message?.includes('unique_violation')) {
-                            console.error('❌ Failed to push photo metadata to Supabase:', dbUpstreamError);
+                            console.error('❌ [Sync] Failed to push photo metadata to Supabase:', dbUpstreamError);
                             throw dbUpstreamError;
                         }
+                        console.log('ℹ️ [Sync] Supabase insert ignored (duplicate).');
+                    } else {
+                        console.log('✅ [Sync] Supabase insert success.');
                     }
 
-                    // Insert into REAL photos table (local PowerSync/SQLite)
+                    // 2. Insert into REAL photos table (local PowerSync/SQLite)
+                    // This is CRITICAL. If this fails or is ignored, we must ensure the record exists.
+                    console.log('📸 [Sync] Inserting into local area_photos...');
+
+                    // We use INSERT OR REPLACE to ensure the local record is up to date with the uploaded URL
                     await db.execute(
-                        `INSERT INTO area_photos (id, area_id, url, storage_path) VALUES (?, ?, ?, ?)`,
+                        `INSERT OR REPLACE INTO area_photos (id, area_id, url, storage_path, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
                         [item.id, item.area_id, publicUrl, storagePath]
                     );
 
-                    // Remove from queue
+                    // VERIFY insertion
+                    const verify = await db.getAll(`SELECT id FROM area_photos WHERE id = ?`, [item.id]);
+                    if (verify.length === 0) {
+                        console.error('❌ [Sync] CRITICAL: Inserted into area_photos but record not found! Aborting delete.');
+                        throw new Error("Local insert verification failed");
+                    }
+                    console.log('✅ [Sync] Local area_photos insert verified.');
+
+                    // 3. Remove from queue ONLY if verification passed
                     await db.execute(`DELETE FROM offline_photos WHERE id = ?`, [item.id]);
 
-                    // Cleanup local file
+                    // 4. Cleanup local file
                     await FS.deleteAsync(item.local_uri, { idempotent: true });
-                    console.log('✅ Photo synced successfully:', item.id);
+                    console.log('✅ [Sync] Photo sync flow COMPLETE for:', item.id);
 
                 } catch (e: any) {
-                    console.error('❌ Photo sync failed for', item.id, e.message || e);
+                    // SILENT LOG for network drops
+                    console.log('ℹ️ [Sync] Background upload pending (offline):', e.message || e);
+                    // Reset status to failed so it shows up in UI (and can be retried)
                     await db.execute(`UPDATE offline_photos SET status = 'failed' WHERE id = ?`, [item.id]);
                 }
             }
@@ -165,3 +199,10 @@ export const OfflinePhotoService = {
         }
     }
 };
+
+// PERIODIC RETRY (Every 30 seconds)
+if (Platform.OS !== 'web') {
+    setInterval(() => {
+        OfflinePhotoService.processQueue().catch(() => { });
+    }, 30000);
+}

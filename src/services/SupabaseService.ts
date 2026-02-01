@@ -1,9 +1,12 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { supabase } from '../config/supabase';
 import { db } from '../powersync/db';
 import { randomUUID } from 'expo-crypto';
 import { OfflinePhotoService } from './OfflinePhotoService';
 import { CHECKLIST_PRESETS } from '../constants/JobTemplates';
+
+const FS = FileSystem as any;
 
 // --- TYPES ---
 
@@ -385,10 +388,16 @@ export const SupabaseService = {
             // Map Photos to Areas
             const photosByArea = new Map<string, any[]>();
             [...photos, ...offlinePhotos].forEach((p: any) => {
-                // For offline photos, map local_uri to url for UI
+                // ROBUSTNESS: Reconstruction of local path to handle sandbox changes
+                let finalUrl = p.url;
+                if (!finalUrl && p.filename) {
+                    // It's an offline photo, or a synced photo we want to verify locally
+                    finalUrl = `${FS.documentDirectory}photos/${p.filename}`;
+                }
+
                 const uiPhoto = {
                     id: p.id,
-                    url: p.url || p.local_uri, // Fallback to local_uri
+                    url: finalUrl,
                     storage_path: p.storage_path || p.filename
                 };
 
@@ -1092,11 +1101,19 @@ export const SupabaseService = {
         const photos = await db.getAll(`SELECT * FROM area_photos WHERE area_id = ? ORDER BY created_at DESC`, [areaId]);
         const offlinePhotos = await db.getAll(`SELECT * FROM offline_photos WHERE area_id = ?`, [areaId]);
 
-        return [...photos, ...offlinePhotos].map(p => ({
-            id: p.id,
-            url: p.url || p.local_uri,
-            storage_path: p.storage_path || p.filename
-        }));
+        return [...photos, ...offlinePhotos].map(p => {
+            // ROBUSTNESS: Reconstruction of local path
+            let finalUrl = p.url;
+            if (!finalUrl && p.filename) {
+                finalUrl = `${FS.documentDirectory}photos/${p.filename}`;
+            }
+
+            return {
+                id: p.id,
+                url: finalUrl || p.local_uri,
+                storage_path: p.storage_path || p.filename
+            };
+        });
     },
 
     async deleteAreaPhoto(photoId: string, storagePath: string) {

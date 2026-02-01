@@ -153,6 +153,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'filename', type: ColumnType.TEXT }),
             new Column({ name: 'status', type: ColumnType.TEXT }), // 'queued', 'uploading', 'failed'
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
-        ]
+        ],
+        localOnly: true
     }),
 ]);
