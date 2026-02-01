@@ -190,17 +190,47 @@ export const SupabaseService = {
 
     async getActiveJobs(): Promise<any[]> {
         if (useSupabase) {
-            // Use ilike for case-insensitive status check
-            const { data, error } = await supabase.from('jobs').select('id, name, status').ilike('status', 'active');
+            const { data, error } = await supabase
+                .from('jobs')
+                .select(`
+                    id, name, status, address, general_contractor,
+                    floors (
+                        id, name,
+                        units (
+                            id, name,
+                            areas (
+                                id, name, progress
+                            )
+                        )
+                    )
+                `)
+                .ilike('status', 'active')
+                .order('name');
             if (error) throw error;
             return data || [];
         }
 
-        // READ from Local DB
-        const result = await db.getAll(
+        // READ from Local DB (Native PowerSync)
+        // Since PowerSync is SQL, we need to fetch the hierarchy manually or join
+        // For the Projects list, we'll fetch jobs and then join floors/units/areas for each
+        const jobs = await db.getAll(
             `SELECT * FROM jobs WHERE LOWER(status) = 'active' ORDER BY name ASC`
         );
-        return result;
+
+        const fullJobs = await Promise.all(jobs.map(async (job: any) => {
+            const floors = await db.getAll(`SELECT * FROM floors WHERE job_id = ?`, [job.id]);
+            const floorsWithUnits = await Promise.all(floors.map(async (floor: any) => {
+                const units = await db.getAll(`SELECT * FROM units WHERE floor_id = ?`, [floor.id]);
+                const unitsWithAreas = await Promise.all(units.map(async (unit: any) => {
+                    const areas = await db.getAll(`SELECT * FROM areas WHERE unit_id = ?`, [unit.id]);
+                    return { ...unit, areas };
+                }));
+                return { ...floor, units: unitsWithAreas };
+            }));
+            return { ...job, floors: floorsWithUnits };
+        }));
+
+        return fullJobs;
     },
 
     async updateJob(id: string, updates: any) {
