@@ -96,6 +96,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'text', type: ColumnType.TEXT }),
             new Column({ name: 'completed', type: ColumnType.INTEGER }),
             new Column({ name: 'status', type: ColumnType.TEXT }),
+            new Column({ name: 'position', type: ColumnType.INTEGER }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
         ]
     }),

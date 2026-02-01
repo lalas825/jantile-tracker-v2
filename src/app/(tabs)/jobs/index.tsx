@@ -59,16 +59,14 @@ export default function JobsScreen() {
 
     // 1. FETCH JOBS
     const loadJobs = async () => {
-        if (Platform.OS === 'web') {
-            setRefreshing(true);
-            try {
-                const data = await SupabaseService.getActiveJobs();
-                setJobs(data || []);
-            } catch (e) {
-                console.error(e);
-            } finally {
-                setRefreshing(false);
-            }
+        setRefreshing(true);
+        try {
+            const data = await SupabaseService.getActiveJobs();
+            setJobs(data || []);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setRefreshing(false);
         }
     };
 
@@ -79,17 +77,14 @@ export default function JobsScreen() {
     );
 
     // Sync PowerSync data to state on Native
+    // DISABLED: This flat query overwrites the full hierarchy needed for progress
+    /*
     useEffect(() => {
         if (Platform.OS !== 'web') {
             setJobs(psJobs);
         }
     }, [psJobs]);
-
-    useFocusEffect(
-        useCallback(() => {
-            loadJobs();
-        }, [])
-    );
+    */
 
     // 2. HANDLE CREATE / UPDATE
     const handleSaveJob = async () => {

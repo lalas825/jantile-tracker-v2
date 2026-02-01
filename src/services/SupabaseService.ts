@@ -508,6 +508,7 @@ export const SupabaseService = {
                     text: text,
                     completed: 0,
                     status: 'NOT_STARTED',
+                    position: index,
                     created_at: new Date(now.getTime() + index * 10).toISOString()
                 }));
                 const { error: itemsError } = await supabase.from('checklist_items').insert(items);
@@ -529,10 +530,11 @@ export const SupabaseService = {
             let i = 0;
             for (const text of preset) {
                 const id = randomUUID();
+                const pos = i;
                 const now = new Date(baseTime + (i++) * 10).toISOString();
                 await db.execute(
-                    `INSERT INTO checklist_items (id, area_id, text, completed, status, created_at) VALUES (?, ?, ?, 0, 'NOT_STARTED', ?)`,
-                    [id, areaId, text, now]
+                    `INSERT INTO checklist_items (id, area_id, text, completed, status, position, created_at) VALUES (?, ?, ?, 0, 'NOT_STARTED', ?, ?)`,
+                    [id, areaId, text, pos, now]
                 );
             }
         }
@@ -811,15 +813,21 @@ export const SupabaseService = {
     // --- CHECKLIST MANAGEMENT ---
     getChecklistItems: async (areaId: string) => {
         if (useSupabase) {
-            const { data, error } = await supabase.from('checklist_items').select('*').eq('area_id', areaId).order('created_at', { ascending: true }); // Assuming created_at exists or sorting by something else
+            // Sort by position ASC, then created_at for legacy/fallbacks
+            const { data, error } = await supabase
+                .from('checklist_items')
+                .select('*')
+                .eq('area_id', areaId)
+                .order('position', { ascending: true })
+                .order('created_at', { ascending: true });
             if (error) throw error;
             return data || [];
         }
 
         // Use PowerSync for implicit offline support
-        // Sort by created_at to match web order
+        // Sort by position ASC, then created_at for legacy/fallbacks
         const result = await db.getAll(
-            `SELECT * FROM checklist_items WHERE area_id = ? ORDER BY created_at ASC`,
+            `SELECT * FROM checklist_items WHERE area_id = ? ORDER BY position ASC, created_at ASC`,
             [areaId]
         );
         return result || [];
@@ -827,12 +835,18 @@ export const SupabaseService = {
 
     addChecklistItem: async (areaId: string, text: string) => {
         const nowStr = new Date().toISOString();
+
+        // Find next position
+        const items = await SupabaseService.getChecklistItems(areaId);
+        const nextPos = items.length > 0 ? Math.max(...items.map((i: any) => i.position || 0)) + 1 : 0;
+
         if (useSupabase) {
             const { error } = await supabase.from('checklist_items').insert({
                 area_id: areaId,
                 text: text,
                 completed: 0,
                 status: 'NOT_STARTED',
+                position: nextPos,
                 created_at: nowStr
             });
             if (error) throw error;
@@ -841,8 +855,8 @@ export const SupabaseService = {
 
         const id = randomUUID();
         await db.execute(
-            `INSERT INTO checklist_items (id, area_id, text, completed, status, created_at) VALUES (?, ?, ?, 0, 'NOT_STARTED', ?)`,
-            [id, areaId, text, nowStr]
+            `INSERT INTO checklist_items (id, area_id, text, completed, status, position, created_at) VALUES (?, ?, ?, 0, 'NOT_STARTED', ?, ?)`,
+            [id, areaId, text, nextPos, nowStr]
         );
     },
 
