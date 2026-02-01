@@ -502,11 +502,13 @@ export const SupabaseService = {
 
             // 3. Insert Items
             if (preset && preset.length > 0) {
-                const items = preset.map(text => ({
+                const now = new Date();
+                const items = preset.map((text, index) => ({
                     area_id: newArea.id,
                     text: text,
                     completed: 0,
-                    status: 'NOT_STARTED'
+                    status: 'NOT_STARTED',
+                    created_at: new Date(now.getTime() + index * 10).toISOString()
                 }));
                 const { error: itemsError } = await supabase.from('checklist_items').insert(items);
                 if (itemsError) throw itemsError;
@@ -523,18 +525,16 @@ export const SupabaseService = {
 
         // 3. Insert Items
         if (preset && preset.length > 0) {
-            // Build bulk insert query
-            // We use datetime('now', '+X.X seconds') to ensure unique timestamps for sorting
-            const placeholders = preset.map((_, i) => `(?, ?, ?, ?, 'NOT_STARTED', datetime('now', '+${i * 0.01} seconds'))`).join(', ');
-            const values: any[] = [];
-            preset.forEach(text => {
-                values.push(randomUUID(), areaId, text, 0);
-            });
-
-            await db.execute(
-                `INSERT INTO checklist_items (id, area_id, text, completed, status, created_at) VALUES ${placeholders}`,
-                values
-            );
+            const baseTime = Date.now();
+            let i = 0;
+            for (const text of preset) {
+                const id = randomUUID();
+                const now = new Date(baseTime + (i++) * 10).toISOString();
+                await db.execute(
+                    `INSERT INTO checklist_items (id, area_id, text, completed, status, created_at) VALUES (?, ?, ?, 0, 'NOT_STARTED', ?)`,
+                    [id, areaId, text, now]
+                );
+            }
         }
     },
 
@@ -826,12 +826,14 @@ export const SupabaseService = {
     },
 
     addChecklistItem: async (areaId: string, text: string) => {
+        const nowStr = new Date().toISOString();
         if (useSupabase) {
             const { error } = await supabase.from('checklist_items').insert({
                 area_id: areaId,
                 text: text,
                 completed: 0,
-                status: 'NOT_STARTED'
+                status: 'NOT_STARTED',
+                created_at: nowStr
             });
             if (error) throw error;
             return;
@@ -839,8 +841,8 @@ export const SupabaseService = {
 
         const id = randomUUID();
         await db.execute(
-            `INSERT INTO checklist_items (id, area_id, text, completed, status, created_at) VALUES (?, ?, ?, 0, 'NOT_STARTED', datetime('now'))`,
-            [id, areaId, text]
+            `INSERT INTO checklist_items (id, area_id, text, completed, status, created_at) VALUES (?, ?, ?, 0, 'NOT_STARTED', ?)`,
+            [id, areaId, text, nowStr]
         );
     },
 
