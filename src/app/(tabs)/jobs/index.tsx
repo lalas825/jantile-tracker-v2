@@ -84,7 +84,7 @@ export default function JobsScreen() {
             j.*,
             (SELECT COUNT(*) FROM floors f WHERE f.job_id = j.id) as floor_count,
             (SELECT COUNT(*) FROM units u JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as unit_count,
-            (SELECT AVG(a.progress) FROM areas a JOIN units u ON a.unit_id = u.id JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as overall_progress
+            (SELECT ROUND(AVG(a.progress)) FROM areas a JOIN units u ON a.unit_id = u.id JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as overall_progress
          FROM jobs j
          WHERE LOWER(j.status) = 'active'
          ORDER BY j.name ASC`
@@ -95,7 +95,7 @@ export default function JobsScreen() {
         if (Platform.OS !== 'web' && Array.isArray(psJobs)) {
             const mapped = psJobs.map((j: any) => ({
                 ...j,
-                computed_progress: j.overall_progress || 0
+                computed_progress: Math.round(j.overall_progress || 0)
             }));
             setJobs(mapped);
         }

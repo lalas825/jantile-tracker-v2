@@ -210,13 +210,13 @@ export const SupabaseService = {
             return data || [];
         }
 
-        // Efficient single query for stats
+        // Efficient single query for stats with ROUNDing
         const query = `
             SELECT 
                 j.*,
                 (SELECT COUNT(*) FROM floors f WHERE f.job_id = j.id) as floor_count,
                 (SELECT COUNT(*) FROM units u JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as unit_count,
-                (SELECT AVG(a.progress) FROM areas a JOIN units u ON a.unit_id = u.id JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as overall_progress
+                (SELECT ROUND(AVG(a.progress)) FROM areas a JOIN units u ON a.unit_id = u.id JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as overall_progress
             FROM jobs j
             WHERE LOWER(j.status) = 'active'
             ORDER BY j.name ASC
@@ -224,8 +224,6 @@ export const SupabaseService = {
 
         const jobs = await db.getAll(query);
 
-        // Map to match the expected structure for calculateJobProgress (though the stats are now pre-calculated)
-        // We still return the structure index.tsx expects
         return jobs.map((j: any) => ({
             ...j,
             // For backward compatibility with calculateJobProgress in index.tsx
@@ -871,6 +869,16 @@ export const SupabaseService = {
         });
     },
 
+    async recalculateAreaProgress(areaId: string) {
+        const items = await SupabaseService.getChecklistItems(areaId);
+        const validItems = items.filter((i: any) => i.status !== 'NA');
+        const completedCount = validItems.filter((i: any) => i.status === 'COMPLETED' || i.completed === 1).length;
+        const progress = validItems.length > 0 ? Math.round((completedCount / validItems.length) * 100) : 0;
+
+        await SupabaseService.updateArea(areaId, { progress });
+        return progress;
+    },
+
     addChecklistItem: async (areaId: string, text: string) => {
         const nowStr = new Date().toISOString();
 
@@ -896,9 +904,18 @@ export const SupabaseService = {
             `INSERT INTO checklist_items (id, area_id, text, completed, status, position, created_at) VALUES (?, ?, ?, 0, 'NOT_STARTED', ?, ?)`,
             [id, areaId, text, nextPos, nowStr]
         );
+
+        await SupabaseService.recalculateAreaProgress(areaId);
     },
 
     updateChecklistItem: async (itemId: string, updates: any) => {
+        // Fetch area_id first if not provided
+        let areaId = updates.area_id;
+        if (!areaId) {
+            const item = await db.getFirst(`SELECT area_id FROM checklist_items WHERE id = ?`, [itemId]);
+            areaId = item?.area_id;
+        }
+
         if (useSupabase) {
             const up: any = {};
             if (updates.text !== undefined) up.text = updates.text;
@@ -910,6 +927,8 @@ export const SupabaseService = {
 
             const { error } = await supabase.from('checklist_items').update(up).eq('id', itemId);
             if (error) throw error;
+
+            if (areaId) await SupabaseService.recalculateAreaProgress(areaId);
             return;
         }
 
@@ -932,15 +951,22 @@ export const SupabaseService = {
         params.push(itemId);
 
         await db.execute(query, params);
+        if (areaId) await SupabaseService.recalculateAreaProgress(areaId);
     },
 
     deleteChecklistItem: async (itemId: string) => {
+        // Fetch area_id for progress recalculation
+        const item = await db.getFirst(`SELECT area_id FROM checklist_items WHERE id = ?`, [itemId]);
+        const areaId = item?.area_id;
+
         if (useSupabase) {
             const { error } = await supabase.from('checklist_items').delete().eq('id', itemId);
             if (error) throw error;
+            if (areaId) await SupabaseService.recalculateAreaProgress(areaId);
             return;
         }
         await db.execute(`DELETE FROM checklist_items WHERE id = ?`, [itemId]);
+        if (areaId) await SupabaseService.recalculateAreaProgress(areaId);
     },
 
 
