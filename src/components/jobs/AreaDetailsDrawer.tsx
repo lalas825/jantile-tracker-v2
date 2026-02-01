@@ -149,33 +149,31 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
 
                 if (items && items.length > 0) {
                     // DB has data.
-                    const realUiItems = items.map((item: any) => ({
-                        id: item.id,
-                        label: item.text,
-                        status: (item.status || (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED')) as TaskStatus
-                    }));
-
-                    // MERGE LOGIC: Apply any pending user changes from 'temp' items to these new real items
                     setChecklist(currentLists => {
-                        // If no temp items, just use real.
-                        if (!currentLists.some(i => i.id.startsWith('temp_'))) return realUiItems;
+                        const baseItems = items.map((item: any) => ({
+                            id: item.id,
+                            label: item.text,
+                            status: (item.status || (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED')) as TaskStatus,
+                            position: item.position,
+                            created_at: item.created_at
+                        }));
 
-                        // Map real items to preserve any user changes made to temp items
-                        return realUiItems.map((real, index) => {
+                        // If no temp items, just sort and use base.
+                        if (!currentLists.some(i => i.id.startsWith('temp_'))) {
+                            return SupabaseService.sortChecklist(baseItems, area.name);
+                        }
+
+                        // Map base items to preserve any user changes made to temp items
+                        const merged = baseItems.map((real: any, index: number) => {
                             const tempMatch = currentLists[index];
                             if (tempMatch && tempMatch.id.startsWith('temp_') && tempMatch.status !== 'NOT_STARTED') {
-                                // User modified this temp item!
-                                console.log("Merging user change to real item:", real.label, tempMatch.status);
-
-                                // TRIGGER DELAYED SAVE
-                                SupabaseService.updateChecklistItem(real.id, {
-                                    status: tempMatch.status
-                                });
-
+                                SupabaseService.updateChecklistItem(real.id, { status: tempMatch.status });
                                 return { ...real, status: tempMatch.status };
                             }
                             return real;
                         });
+
+                        return SupabaseService.sortChecklist(merged, area.name);
                     });
 
                 } else {
@@ -192,23 +190,25 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, onUpdate, 
                         const realUiItems = realItems.map((item: any) => ({
                             id: item.id,
                             label: item.text,
-                            status: (item.status || (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED')) as TaskStatus
+                            status: (item.status || (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED')) as TaskStatus,
+                            position: item.position,
+                            created_at: item.created_at
                         }));
 
                         // Same merge logic for the newly created items
                         setChecklist(currentLists => {
-                            if (!currentLists.some(i => i.id.startsWith('temp_'))) return realUiItems;
-                            return realUiItems.map((real, index) => {
+                            if (!currentLists.some(i => i.id.startsWith('temp_'))) {
+                                return SupabaseService.sortChecklist(realUiItems, area.name);
+                            }
+                            const mergedItems = realUiItems.map((real: any, index: number) => {
                                 const tempMatch = currentLists[index];
                                 if (tempMatch && tempMatch.id.startsWith('temp_') && tempMatch.status !== 'NOT_STARTED') {
-                                    console.log("Merging user change to NEW real item:", real.label, tempMatch.status);
-                                    SupabaseService.updateChecklistItem(real.id, {
-                                        status: tempMatch.status
-                                    });
+                                    SupabaseService.updateChecklistItem(real.id, { status: tempMatch.status });
                                     return { ...real, status: tempMatch.status };
                                 }
                                 return real;
                             });
+                            return SupabaseService.sortChecklist(mergedItems, area.name);
                         });
                     } else {
                         setChecklist([]);

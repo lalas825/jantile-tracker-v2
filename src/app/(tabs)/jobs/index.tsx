@@ -37,6 +37,10 @@ export default function JobsScreen() {
     });
 
     const calculateJobProgress = (job: any) => {
+        // Prefer pre-calculated stats from SQL (Native)
+        if (job.computed_progress !== undefined) return job.computed_progress;
+        if (job.overall_progress !== undefined) return job.overall_progress;
+
         let totalAreas = 0;
         let totalProgress = 0;
 
@@ -53,9 +57,6 @@ export default function JobsScreen() {
     };
 
     // --- DATA FETCHING ---
-    const { data: psJobs = [] } = usePowerSyncQuery(
-        Platform.OS === 'web' ? 'SELECT 1 WHERE 0' : `SELECT * FROM jobs WHERE status = 'active'`
-    );
 
     // 1. FETCH JOBS
     const loadJobs = async () => {
@@ -76,15 +77,29 @@ export default function JobsScreen() {
         }, [])
     );
 
-    // Sync PowerSync data to state on Native
-    // DISABLED: This flat query overwrites the full hierarchy needed for progress
-    /*
+    // 0. REACTIVE FETCH (PowerSync)
+    // We use a powerful subquery to fetch stats reactively for the Projects list
+    const psJobs = usePowerSyncQuery(
+        `SELECT
+            j.*,
+            (SELECT COUNT(*) FROM floors f WHERE f.job_id = j.id) as floor_count,
+            (SELECT COUNT(*) FROM units u JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as unit_count,
+            (SELECT AVG(a.progress) FROM areas a JOIN units u ON a.unit_id = u.id JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as overall_progress
+         FROM jobs j
+         WHERE LOWER(j.status) = 'active'
+         ORDER BY j.name ASC`
+    ).data || [];
+
+    // Sync PowerSync data to state on Native (including pre-calculated stats)
     useEffect(() => {
-        if (Platform.OS !== 'web') {
-            setJobs(psJobs);
+        if (Platform.OS !== 'web' && Array.isArray(psJobs)) {
+            const mapped = psJobs.map((j: any) => ({
+                ...j,
+                computed_progress: j.overall_progress || 0
+            }));
+            setJobs(mapped);
         }
     }, [psJobs]);
-    */
 
     // 2. HANDLE CREATE / UPDATE
     const handleSaveJob = async () => {
@@ -253,11 +268,15 @@ export default function JobsScreen() {
                                     <View className="flex-row items-center">
                                         <View className="flex-row items-center mr-4">
                                             <Ionicons name="layers-outline" size={14} color="#94a3b8" />
-                                            <Text className="text-xs text-slate-500 ml-1">{floorCount} Floors</Text>
+                                            <Text className="text-xs text-slate-500 ml-1">
+                                                {job.floor_count || job.floors?.length || 0} Floors
+                                            </Text>
                                         </View>
                                         <View className="flex-row items-center">
                                             <Ionicons name="cube-outline" size={14} color="#94a3b8" />
-                                            <Text className="text-xs text-slate-500 ml-1">{unitCount} Units</Text>
+                                            <Text className="text-xs text-slate-500 ml-1">
+                                                {job.unit_count || job.floors?.reduce((acc: number, f: any) => acc + (f.units?.length || 0), 0) || 0} Units
+                                            </Text>
                                         </View>
                                     </View>
                                     <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />

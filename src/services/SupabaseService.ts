@@ -210,27 +210,28 @@ export const SupabaseService = {
             return data || [];
         }
 
-        // READ from Local DB (Native PowerSync)
-        // Since PowerSync is SQL, we need to fetch the hierarchy manually or join
-        // For the Projects list, we'll fetch jobs and then join floors/units/areas for each
-        const jobs = await db.getAll(
-            `SELECT * FROM jobs WHERE LOWER(status) = 'active' ORDER BY name ASC`
-        );
+        // Efficient single query for stats
+        const query = `
+            SELECT 
+                j.*,
+                (SELECT COUNT(*) FROM floors f WHERE f.job_id = j.id) as floor_count,
+                (SELECT COUNT(*) FROM units u JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as unit_count,
+                (SELECT AVG(a.progress) FROM areas a JOIN units u ON a.unit_id = u.id JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as overall_progress
+            FROM jobs j
+            WHERE LOWER(j.status) = 'active'
+            ORDER BY j.name ASC
+        `;
 
-        const fullJobs = await Promise.all(jobs.map(async (job: any) => {
-            const floors = await db.getAll(`SELECT * FROM floors WHERE job_id = ?`, [job.id]);
-            const floorsWithUnits = await Promise.all(floors.map(async (floor: any) => {
-                const units = await db.getAll(`SELECT * FROM units WHERE floor_id = ?`, [floor.id]);
-                const unitsWithAreas = await Promise.all(units.map(async (unit: any) => {
-                    const areas = await db.getAll(`SELECT * FROM areas WHERE unit_id = ?`, [unit.id]);
-                    return { ...unit, areas };
-                }));
-                return { ...floor, units: unitsWithAreas };
-            }));
-            return { ...job, floors: floorsWithUnits };
+        const jobs = await db.getAll(query);
+
+        // Map to match the expected structure for calculateJobProgress (though the stats are now pre-calculated)
+        // We still return the structure index.tsx expects
+        return jobs.map((j: any) => ({
+            ...j,
+            // For backward compatibility with calculateJobProgress in index.tsx
+            // if overall_progress is null, we set it to 0
+            computed_progress: j.overall_progress || 0
         }));
-
-        return fullJobs;
     },
 
     async updateJob(id: string, updates: any) {
@@ -813,7 +814,7 @@ export const SupabaseService = {
     // --- CHECKLIST MANAGEMENT ---
     getChecklistItems: async (areaId: string) => {
         if (useSupabase) {
-            // Sort by position ASC, then created_at for legacy/fallbacks
+            // Sort by position ASC, then text for stable fallback
             const { data, error } = await supabase
                 .from('checklist_items')
                 .select('*')
@@ -831,6 +832,42 @@ export const SupabaseService = {
             [areaId]
         );
         return result || [];
+    },
+
+    // --- HELPER FOR ROBUST SORTING ---
+    sortChecklist(items: any[], areaName: string) {
+        // 1. Determine Preset for this area
+        const areaNameLower = areaName.toLowerCase();
+        let presetOrder = CHECKLIST_PRESETS[areaNameLower];
+        if (!presetOrder) {
+            if (areaNameLower.includes('bathroom') || areaNameLower.includes('bath')) presetOrder = CHECKLIST_PRESETS['master bathroom'];
+            else if (areaNameLower.includes('kitchen')) presetOrder = CHECKLIST_PRESETS['kitchen'];
+            else if (areaNameLower.includes('powder')) presetOrder = CHECKLIST_PRESETS['powder room'];
+            else if (areaNameLower.includes('laundry')) presetOrder = CHECKLIST_PRESETS['laundry'];
+        }
+
+        return [...items].sort((a, b) => {
+            // If both have positions, use them
+            if (a.position !== null && b.position !== null && a.position !== b.position) {
+                return (a.position || 0) - (b.position || 0);
+            }
+
+            // Fallback to Template Order if positions are missing or same
+            if (presetOrder) {
+                const textA = (a.text || a.label || '').trim().toLowerCase();
+                const textB = (b.text || b.label || '').trim().toLowerCase();
+
+                const idxA = presetOrder.findIndex(p => p.toLowerCase() === textA);
+                const idxB = presetOrder.findIndex(p => p.toLowerCase() === textB);
+
+                if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                if (idxA !== -1) return -1;
+                if (idxB !== -1) return 1;
+            }
+
+            // Final fallback to created_at
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        });
     },
 
     addChecklistItem: async (areaId: string, text: string) => {
