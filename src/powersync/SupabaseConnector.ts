@@ -72,10 +72,10 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
                 // REMOVE 'position' column (TEMPORARY FIX)
                 // We keep 'position' locally in PowerSync for sorting, but Supabase doesn't have it yet.
                 // If we send it, Supabase throws a 400 (PGRST204)
-                if (cleanedData && typeof cleanedData === 'object') {
+                if (table === 'checklist_items' && cleanedData && typeof cleanedData === 'object') {
                     const { position, ...rest } = cleanedData;
                     cleanedData = rest;
-                    console.log(`[SupabaseConnector] Sanitized data (removed position) for ${table}`);
+                    console.log(`[SupabaseConnector] Sanitized checklist_items (removed position)`);
                 }
 
                 if (operation === 'PUT') {
