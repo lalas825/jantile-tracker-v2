@@ -57,6 +57,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'is_jantile', type: ColumnType.INTEGER }),
             new Column({ name: 'is_ticket', type: ColumnType.INTEGER }),
             new Column({ name: 'notes', type: ColumnType.TEXT }),
+            new Column({ name: 'status_color', type: ColumnType.TEXT }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
         ],
     }),
