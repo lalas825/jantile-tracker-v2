@@ -847,26 +847,27 @@ export const SupabaseService = {
         }
 
         return [...items].sort((a, b) => {
-            // If both have positions, use them
-            if (a.position !== null && b.position !== null && a.position !== b.position) {
-                return (a.position || 0) - (b.position || 0);
-            }
+            const textA = (a.text || a.label || '').trim().toLowerCase();
+            const textB = (b.text || b.label || '').trim().toLowerCase();
 
-            // Fallback to Template Order if positions are missing or same
+            // 1. Template Order is the absolute source of truth if available
             if (presetOrder) {
-                const textA = (a.text || a.label || '').trim().toLowerCase();
-                const textB = (b.text || b.label || '').trim().toLowerCase();
-
                 const idxA = presetOrder.findIndex(p => p.toLowerCase() === textA);
                 const idxB = presetOrder.findIndex(p => p.toLowerCase() === textB);
 
-                if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                if (idxA !== -1) return -1;
-                if (idxB !== -1) return 1;
+                if (idxA !== -1 && idxB !== -1 && idxA !== idxB) return idxA - idxB;
+                // If only one is in template, that one goes first
+                if (idxA !== -1 && idxB === -1) return -1;
+                if (idxA === -1 && idxB !== -1) return 1;
             }
 
-            // Final fallback to created_at
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+            // 2. Fallback to Position (Legacy/Manual items)
+            if (a.position !== null && b.position !== null && a.position !== b.position && a.position !== undefined && b.position !== undefined) {
+                return (a.position || 0) - (b.position || 0);
+            }
+
+            // 3. Final fallback to created_at
+            return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
         });
     },
 
