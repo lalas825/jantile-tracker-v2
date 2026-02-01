@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
-    View, Text, ScrollView, TouchableOpacity, TextInput, Platform, SafeAreaView, useWindowDimensions, Modal, FlatList, KeyboardAvoidingView, Alert
+    View, Text, ScrollView, TouchableOpacity, TextInput, Platform, useWindowDimensions, Modal, FlatList, KeyboardAvoidingView, Alert
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { Stack } from 'expo-router';
 import { SupabaseService, UICrewMember } from '../../services/SupabaseService';
@@ -205,7 +206,7 @@ export default function ManpowerScreen() {
     );
 
     return (
-        <SafeAreaView className="flex-1 bg-slate-50">
+        <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
             <Stack.Screen options={{ headerShown: false }} />
 
             {/* HEADER */}

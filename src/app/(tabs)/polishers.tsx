@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Modal, FlatList, TextInput, Platform, Alert, Dimensions, SafeAreaView, KeyboardAvoidingView } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Modal, FlatList, TextInput, Platform, Alert, Dimensions, KeyboardAvoidingView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -254,7 +255,7 @@ export default function PolishersScreen() {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-slate-50" style={{ paddingTop: Platform.OS === 'android' ? insets.top + 10 : 0 }}>
+        <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
             <Stack.Screen options={{ headerShown: false }} />
 
             <View className="flex-row items-center justify-between mb-6 px-6 pt-6 bg-white border-b border-slate-200 pb-6">

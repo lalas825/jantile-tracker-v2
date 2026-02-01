@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, StatusBar, Image , useWindowDimensions } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, StatusBar, Image, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -90,7 +90,7 @@ export default function Dashboard() {
     useFocusEffect(useCallback(() => { loadData(); }, []));
 
     return (
-        <SafeAreaView className="flex-1 bg-slate-50">
+        <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
             <StatusBar barStyle="dark-content" />
             <ScrollView
                 contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
