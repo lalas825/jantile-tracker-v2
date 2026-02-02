@@ -2,7 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { supabase } from '../config/supabase';
 import { db } from '../powersync/db';
-import { randomUUID } from 'expo-crypto';
+import * as Crypto from 'expo-crypto';
 import { OfflinePhotoService } from './OfflinePhotoService';
 import { CHECKLIST_PRESETS } from '../constants/JobTemplates';
 
@@ -80,7 +80,6 @@ export interface UICrewMember {
     status: 'Active' | 'Inactive';
     phone?: string;
     email?: string;
-    address?: string;
     assignedJobIds: string[];
     avatar: string;
 }
@@ -146,8 +145,7 @@ export const SupabaseService = {
                 status: w.status,
                 phone: w.phone,
                 email: w.email,
-                address: w.address,
-                assignedJobIds: w.assigned_job_ids ? JSON.parse(w.assigned_job_ids) : [],
+                assignedJobIds: Array.isArray(w.assigned_job_ids) ? w.assigned_job_ids : (w.assigned_job_ids ? JSON.parse(w.assigned_job_ids) : []),
                 avatar: w.avatar || getInitials(w.name)
             }));
         }
@@ -161,14 +159,13 @@ export const SupabaseService = {
             status: w.status,
             phone: w.phone,
             email: w.email,
-            address: w.address,
             assignedJobIds: w.assigned_job_ids ? JSON.parse(w.assigned_job_ids) : [],
             avatar: w.avatar || getInitials(w.name)
         }));
     },
 
     async saveWorker(worker: Partial<UICrewMember>): Promise<void> {
-        const id = worker.id || randomUUID();
+        const id = worker.id || Crypto.randomUUID();
         const now = new Date().toISOString();
         const avatar = worker.avatar || getInitials(worker.name || '');
 
@@ -180,20 +177,24 @@ export const SupabaseService = {
                 status: worker.status || 'Active',
                 phone: worker.phone || null,
                 email: worker.email || null,
-                address: worker.address || null,
                 avatar: avatar,
-                assigned_job_ids: JSON.stringify(worker.assignedJobIds || []),
+                assigned_job_ids: worker.assignedJobIds || [],
                 created_at: now
             };
 
-            const { error } = await supabase.from('workers').upsert(payload);
-            if (error) throw error;
+            console.log("[SupabaseService] Upserting worker to Supabase:", payload);
+            const { error, data } = await supabase.from('workers').upsert(payload).select();
+            if (error) {
+                console.error("[SupabaseService] Supabase Upsert Error:", error);
+                throw error;
+            }
+            console.log("[SupabaseService] Supabase Upsert Success:", data);
             return;
         }
 
         // Native PowerSync
         await db.execute(
-            `INSERT OR REPLACE INTO workers (id, name, role, status, phone, email, address, assigned_job_ids, avatar, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT OR REPLACE INTO workers (id, name, role, status, phone, email, assigned_job_ids, avatar, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 worker.name || null,
@@ -201,7 +202,6 @@ export const SupabaseService = {
                 worker.status || 'Active',
                 worker.phone || null,
                 worker.email || null,
-                worker.address || null,
                 JSON.stringify(worker.assignedJobIds || []),
                 avatar,
                 now
@@ -218,7 +218,7 @@ export const SupabaseService = {
             return;
         }
 
-        const id = job.id || randomUUID();
+        const id = job.id || Crypto.randomUUID();
         await db.execute(
             `INSERT INTO jobs (id, name, status, address, general_contractor) VALUES (?, ?, ?, ?, ?)`,
             [id, job.name, job.status || 'active', job.address, job.general_contractor]
@@ -459,7 +459,7 @@ export const SupabaseService = {
             return;
         }
 
-        const id = randomUUID();
+        const id = Crypto.randomUUID();
         await db.execute(
             `INSERT INTO floors (id, job_id, name, created_at) VALUES (?, ?, ?, datetime('now'))`,
             [id, jobId, name]
@@ -497,7 +497,7 @@ export const SupabaseService = {
             return;
         }
 
-        const id = randomUUID();
+        const id = Crypto.randomUUID();
         await db.execute(
             `INSERT INTO units (id, floor_id, name, created_at) VALUES (?, ?, ?, datetime('now'))`,
             [id, floorId, name]
@@ -560,7 +560,7 @@ export const SupabaseService = {
         }
 
         // 1. Insert Area
-        const areaId = randomUUID();
+        const areaId = Crypto.randomUUID();
         await db.execute(
             `INSERT INTO areas (id, unit_id, name, description, status, progress, created_at) VALUES (?, ?, ?, ?, 'NOT_STARTED', 0, datetime('now'))`,
             [areaId, unitId, name, description]
@@ -571,7 +571,7 @@ export const SupabaseService = {
             const baseTime = Date.now();
             let i = 0;
             for (const text of preset) {
-                const id = randomUUID();
+                const id = Crypto.randomUUID();
                 const pos = i;
                 const now = new Date(baseTime + (i++) * 10).toISOString();
                 await db.execute(
@@ -936,7 +936,7 @@ export const SupabaseService = {
             return;
         }
 
-        const id = randomUUID();
+        const id = Crypto.randomUUID();
         await db.execute(
             `INSERT INTO checklist_items (id, area_id, text, completed, status, position, created_at) VALUES (?, ?, ?, 0, 'NOT_STARTED', ?, ?)`,
             [id, areaId, text, nextPos, nowStr]
@@ -1028,7 +1028,7 @@ export const SupabaseService = {
                 // Read as buffer for consistency
                 const response = await fetch(uri);
                 const blob = await response.blob();
-                const filename = `${randomUUID()}.jpg`;
+                const filename = `${Crypto.randomUUID()}.jpg`;
                 const storagePath = `photos/${areaId}/${filename}`;
 
                 // 2. Upload to Supabase Storage
@@ -1209,7 +1209,7 @@ export const SupabaseService = {
     },
 
     async createIssue(issue: Partial<JobIssue>): Promise<string> {
-        const id = randomUUID();
+        const id = Crypto.randomUUID();
         const now = new Date().toISOString();
         const payload = {
             id,
@@ -1272,7 +1272,7 @@ export const SupabaseService = {
     },
 
     async addIssueComment(issueId: string, message: string, userId: string, userName: string): Promise<void> {
-        const id = randomUUID();
+        const id = Crypto.randomUUID();
         const now = new Date().toISOString();
         const payload = { id, issue_id: issueId, user_id: userId, user_name: userName, message, created_at: now };
 

@@ -8,7 +8,7 @@ import ProductionRow from '../../components/ProductionRow';
 import * as Crypto from 'expo-crypto';
 import { usePowerSyncQuery } from '@powersync/react';
 
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../../config/supabase';
 
 // RECONSTRUCTION PHASE 9
 // Objective: Phase 8 + Supabase Realtime (Web) + Forced Refresh (Native).

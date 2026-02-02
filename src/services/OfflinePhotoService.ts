@@ -1,6 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
-import { randomUUID } from 'expo-crypto';
+import * as Crypto from 'expo-crypto';
 import { db } from '../powersync/db';
 import { supabase } from '../config/supabase';
 
@@ -22,7 +22,7 @@ export const OfflinePhotoService = {
     // Saves photo to permanent local storage and adds to queue
     async queuePhoto(areaId: string, tempUri: string): Promise<string> {
         if (Platform.OS === 'web') return tempUri;
-        const photoId = randomUUID();
+        const photoId = Crypto.randomUUID();
         const filename = `${photoId}.jpg`;
         // Use documentDirectory if available
         const localDir = `${FS.documentDirectory}photos/`;

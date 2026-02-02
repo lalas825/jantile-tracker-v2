@@ -165,7 +165,21 @@ export default function ProductionRow({ log, activeJobs, onUpdate, onDelete, onD
                 />
             </View>
 
-            {/* 7. Checkboxes (Mutually Exclusive) */}
+            {/* 7. DESCRIPTION */}
+            <View className="mx-1 flex-1" style={{ minWidth: 150 }}>
+                <Text className="text-[10px] text-slate-500 font-bold mb-1">DESCRIPTION</Text>
+                <TextInput
+                    value={localData.notes || ''}
+                    onChangeText={(val) => handleChange('notes', val)}
+                    onBlur={() => handleSave('notes')}
+                    className="h-[40px] w-full border rounded px-2 text-sm"
+                    style={{ borderColor: activeColor.border, backgroundColor: activeColor.inputBg }}
+                    placeholder="Work description..."
+                    placeholderTextColor="#94a3b8"
+                />
+            </View>
+
+            {/* 8. Checkboxes (Mutually Exclusive) */}
             <View className="flex-row items-center mx-2 mt-4 gap-4">
                 <TouchableOpacity
                     onPress={() => {
@@ -200,7 +214,7 @@ export default function ProductionRow({ log, activeJobs, onUpdate, onDelete, onD
                 </TouchableOpacity>
             </View>
 
-            {/* 8. Color Picker Dots */}
+            {/* 9. Color Picker Dots */}
             <View className="flex-row items-center mt-4 ml-2">
                 {COLORS.map((c) => (
                     <TouchableOpacity
@@ -232,7 +246,7 @@ export default function ProductionRow({ log, activeJobs, onUpdate, onDelete, onD
                 </TouchableOpacity>
             </View>
 
-            {/* 9. Action Buttons */}
+            {/* 10. Action Buttons */}
             <View className="flex-1 flex-row justify-end mt-4">
                 <TouchableOpacity onPress={onDuplicate} className="p-2 mr-1 bg-blue-50 rounded-full">
                     <Ionicons name="copy-outline" size={16} color="#2563eb" />

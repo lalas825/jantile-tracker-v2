@@ -51,22 +51,22 @@ export default function ManpowerScreen() {
     const [jobs, setJobs] = useState<any[]>([]);
 
     // Web Data Fetching
-    useEffect(() => {
-        if (Platform.OS === 'web') {
-            const fetchWebData = async () => {
-                try {
-                    const [workers, activeJobs] = await Promise.all([
-                        SupabaseService.getWorkers(),
-                        SupabaseService.getActiveJobs()
-                    ]);
-                    setCrew(workers);
-                    setJobs(activeJobs);
-                } catch (error) {
-                    console.error("Web Data Fetch Error:", error);
-                }
-            };
-            fetchWebData();
+    const loadWebData = async () => {
+        if (Platform.OS !== 'web') return;
+        try {
+            const [workers, activeJobs] = await Promise.all([
+                SupabaseService.getWorkers(),
+                SupabaseService.getActiveJobs()
+            ]);
+            setCrew(workers);
+            setJobs(activeJobs);
+        } catch (error) {
+            console.error("Web Data Fetch Error:", error);
         }
+    };
+
+    useEffect(() => {
+        loadWebData();
     }, []);
 
     // Native Data Sync
@@ -102,8 +102,7 @@ export default function ManpowerScreen() {
             setFormStatus(member.status);
             setFormPhone(member.phone || '');
             setFormEmail(member.email || '');
-            setFormAddress(member.address || '');
-            setFormAssignedJobs(member.assignedJobIds);
+            setFormAssignedJobs(member.assignedJobIds || []);
         } else {
             setEditingId(null);
             setFormName('');
@@ -111,7 +110,6 @@ export default function ManpowerScreen() {
             setFormStatus('Active');
             setFormPhone('');
             setFormEmail('');
-            setFormAddress('');
             setFormAssignedJobs([]);
         }
         setModalVisible(true);
@@ -123,41 +121,37 @@ export default function ManpowerScreen() {
             return;
         }
 
-        // Optimistic Update can be tricky with saving to DB if we don't have ID.
-        // But for better UX let's show loading or just wait.
-        // Or we can do optimistic update if we trust success.
-
         const memberData: Partial<UICrewMember> = {
-            id: editingId || undefined, // undefined relies on DB gen if new? Actually we might need to handle ID.
+            id: editingId || undefined,
             name: formName,
             role: formRole,
             status: formStatus,
             phone: formPhone,
             email: formEmail,
-            address: formAddress,
             assignedJobIds: formAssignedJobs,
-            avatar: '' // Will use helper in service or existing
-            // Note: Service handles avatar generation if missing for new ones?
-            // Service `getWorkers` generates initials. `saveWorker` upserts.
-            // If new, we don't have ID. If Supabase generates ID, we need to return it.
-            // But `polishers.tsx` mock data had IDs like '1', '2'.
-            // If using Supabase, IDs are usually UUIDs.
+            avatar: ''
         };
 
-        // If it's new, we need to handle it.
-        // For now, let's assume we can rely on reload, or we should optimize.
-        // The service `saveWorker` is `upsert`. If no ID, `upsert` might fail if PK is missing?
-        // Actually Supabase `upsert` expects the PK to be present for update.
-        // If we want to INSERT, we omit PK (if auto-gen) and use `insert`.
-        // My `saveWorker` implementation uses `upsert` and removes undefined keys.
-        // If `id` is undefined, Supabase will try to insert. If `id` is PK and auto-gen (identity/uuid), it works.
-
         try {
+            console.log("[manpower] Saving worker:", memberData);
             await SupabaseService.saveWorker(memberData as any);
-            // No need to reload manually, PowerSync useQuery will react to the change
+            console.log("[manpower] Save successful");
+
+            // On Web, we must manually refresh the list since we don't have reactive PowerSync queries
+            if (Platform.OS === 'web') {
+                console.log("[manpower] Refreshing web data...");
+                await loadWebData();
+            }
+
             setModalVisible(false);
-        } catch (error) {
-            Alert.alert("Error", "Failed to save crew member.");
+        } catch (error: any) {
+            console.error("[manpower] Save Worker Error:", error);
+            const msg = error.message || "Unknown error";
+            if (Platform.OS === 'web') {
+                window.alert("Error: Failed to save crew member: " + msg);
+            } else {
+                Alert.alert("Error", "Failed to save crew member: " + msg);
+            }
         }
     };
 
@@ -362,17 +356,32 @@ export default function ManpowerScreen() {
                                     <View className="flex-1 bg-white border border-slate-300 rounded-lg flex-row items-center px-3 h-12"><Ionicons name="call-outline" size={18} color="#94a3b8" /><TextInput value={formPhone} onChangeText={setFormPhone} placeholder="Phone" className="flex-1 ml-2" keyboardType="phone-pad" /></View>
                                     <View className="flex-1 bg-white border border-slate-300 rounded-lg flex-row items-center px-3 h-12"><Ionicons name="mail-outline" size={18} color="#94a3b8" /><TextInput value={formEmail} onChangeText={setFormEmail} placeholder="Email" className="flex-1 ml-2" keyboardType="email-address" autoCapitalize="none" /></View>
                                 </View>
-                                <View className="bg-white border border-slate-300 rounded-lg flex-row items-center px-3 h-12"><Ionicons name="location-outline" size={18} color="#94a3b8" /><TextInput value={formAddress} onChangeText={setFormAddress} placeholder="Home Address" className="flex-1 ml-2" /></View>
                             </View>
+
                             {/* Jobs */}
                             <View className="mb-8">
                                 <Text className="text-xs font-bold text-slate-500 uppercase mb-2">Assign to Active Jobs</Text>
                                 <View className="bg-slate-50 border border-slate-200 rounded-xl max-h-60">
                                     <ScrollView nestedScrollEnabled className="p-2">
-                                        {jobs.length === 0 ? (<Text className="p-4 text-slate-400 italic text-center">No active jobs found.</Text>) : (jobs.map(job => {
-                                            const isAssigned = formAssignedJobs.includes(job.id);
-                                            return (<TouchableOpacity key={job.id} onPress={() => toggleJobAssignment(job.id)} className={`p-3 mb-1 rounded-lg flex-row items-center gap-3 ${isAssigned ? 'bg-blue-50 border border-blue-100' : 'bg-white border border-transparent'}`}><View className={`w-5 h-5 rounded border flex items-center justify-center ${isAssigned ? 'bg-blue-500 border-blue-500' : 'border-slate-300 bg-white'}`}>{isAssigned && <Ionicons name="checkmark" size={14} color="white" />}</View><Text className={`text-sm font-medium ${isAssigned ? 'text-blue-800' : 'text-slate-600'}`}>{job.name}</Text></TouchableOpacity>);
-                                        }))}
+                                        {jobs.length === 0 ? (
+                                            <Text className="p-4 text-slate-400 italic text-center">No active jobs found.</Text>
+                                        ) : (
+                                            jobs.map(job => {
+                                                const isAssigned = formAssignedJobs.includes(job.id);
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={job.id}
+                                                        onPress={() => toggleJobAssignment(job.id)}
+                                                        className={`p-3 mb-1 rounded-lg flex-row items-center gap-3 ${isAssigned ? 'bg-blue-50 border border-blue-100' : 'bg-white border border-transparent'}`}
+                                                    >
+                                                        <View className={`w-5 h-5 rounded border flex items-center justify-center ${isAssigned ? 'bg-blue-500 border-blue-500' : 'border-slate-300 bg-white'}`}>
+                                                            {isAssigned && <Ionicons name="checkmark" size={14} color="white" />}
+                                                        </View>
+                                                        <Text className={`text-sm font-medium ${isAssigned ? 'text-blue-800' : 'text-slate-600'}`}>{job.name}</Text>
+                                                    </TouchableOpacity>
+                                                );
+                                            })
+                                        )}
                                     </ScrollView>
                                 </View>
                             </View>
@@ -385,7 +394,6 @@ export default function ManpowerScreen() {
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
-
         </SafeAreaView>
     );
 }
