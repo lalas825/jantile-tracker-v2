@@ -1,7 +1,7 @@
 import "../global.css";
 import "../polyfills";
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack , useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { View } from 'react-native';
@@ -14,10 +14,10 @@ import { useEffect } from 'react';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 
 export const unstable_settings = {
-    anchor: '(tabs)',
+    initialRouteName: '(tabs)',
 };
 
-function RootLayoutNav() {
+function AuthGuard() {
     const { session, isLoading } = useAuth();
     const segments = useSegments();
     const router = useRouter();
@@ -28,13 +28,17 @@ function RootLayoutNav() {
         const inAuthGroup = segments[0] === 'login';
 
         if (!session && !inAuthGroup) {
-            // Redirect to the login page if not signed in
             router.replace('/login');
         } else if (session && inAuthGroup) {
-            // Redirect away from the login page if already signed in
             router.replace('/(tabs)');
         }
     }, [session, isLoading, segments]);
+
+    return null;
+}
+
+function RootLayoutNav() {
+    const { session, isLoading } = useAuth();
 
     // Background Photo Sync Trigger
     useEffect(() => {
@@ -53,13 +57,33 @@ function RootLayoutNav() {
     }, [session]);
 
     return (
-        <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="login" options={{ headerShown: false }} />
-            <Stack.Screen name="logistics/new-request" options={{ headerShown: false }} />
-        </Stack>
+        <View style={{ flex: 1 }}>
+            <Stack>
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="login" options={{ headerShown: false }} />
+                <Stack.Screen name="logistics/new-request" options={{ headerShown: false }} />
+            </Stack>
+
+            <AuthGuard />
+
+            {isLoading && (
+                <View style={{
+                    position: 'absolute',
+                    top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: '#f8fafc',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    zIndex: 10000
+                }}>
+                    <ActivityIndicator size="large" color="#3b82f6" />
+                </View>
+            )}
+        </View>
     );
 }
+
+// Helper component to avoid using hooks in RootLayout default export
+import { ActivityIndicator } from 'react-native';
 
 export default function RootLayout() {
     const colorScheme = useColorScheme();

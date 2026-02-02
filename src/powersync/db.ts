@@ -9,7 +9,11 @@ const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreCl
 // V2 Initialization
 // PowerSync v2 manages the DB connection internally more robustly.
 // Only construct the real DB if we're on a native platform AND not in Expo Go.
-const realDb = (Platform.OS === 'web' || isExpoGo)
+const isWeb = Platform.OS === 'web';
+
+console.log(`[db] platform: ${Platform.OS}, isWeb: ${isWeb}, isExpoGo: ${isExpoGo}`);
+
+const realDb = (isWeb || isExpoGo)
     ? null
     : new PowerSyncDatabase({
         schema: AppSchema,
@@ -27,8 +31,11 @@ export const db = realDb || ({
     get: async () => null,
     watch: () => ({ close: () => { } }),
     watchSingle: () => ({ close: () => { } }),
-    customQuery: () => ({ close: () => { } }), // Common method for hooks
+    customQuery: () => ({ close: () => { } }),
     onChange: () => ({ close: () => { } }),
+    readLock: async (cb: any) => cb({ execute: async () => ({ rows: { _array: [] } }), getAll: async () => [], get: async () => null }),
+    writeLock: async (cb: any) => cb({ execute: async () => ({ rows: { _array: [] } }), getAll: async () => [], get: async () => null }),
+    writeTransaction: async (cb: any) => cb({ execute: async () => ({ rows: { _array: [] } }), getAll: async () => [], get: async () => null }),
     currentStatus: { connected: false, uploading: false, downloading: false, lastSyncedAt: null },
 } as any);
 

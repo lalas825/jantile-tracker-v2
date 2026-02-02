@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 interface ProductionRowProps {
     log: any;
     activeJobs: any[];
-    onUpdate: (field: string, value: any) => void;
+    onUpdate: (field: string | Record<string, any>, value?: any) => void;
     onDelete: () => void;
     onDuplicate: () => void;
     onSelectJob?: () => void; // New prop for triggers job picker modal
@@ -62,8 +62,9 @@ export default function ProductionRow({ log, activeJobs, onUpdate, onDelete, onD
                         value={localData.jobId || ''}
                         onChange={(e) => {
                             const val = e.target.value;
+                            const job = activeJobs.find(j => j.id === val);
                             handleChange('jobId', val);
-                            onUpdate('jobId', val);
+                            onUpdate({ jobId: val, jobName: job?.name || '' });
                         }}
                         className="h-[40px] w-full rounded border px-2 text-sm"
                         style={{
@@ -164,13 +165,15 @@ export default function ProductionRow({ log, activeJobs, onUpdate, onDelete, onD
                 />
             </View>
 
-            {/* 7. Checkboxes */}
+            {/* 7. Checkboxes (Mutually Exclusive) */}
             <View className="flex-row items-center mx-2 mt-4 gap-4">
                 <TouchableOpacity
                     onPress={() => {
                         const val = !localData.isJantile;
+                        const nextTicket = val ? false : localData.isTicket;
                         handleChange('isJantile', val);
-                        onUpdate('isJantile', val);
+                        handleChange('isTicket', nextTicket);
+                        onUpdate({ isJantile: val, isTicket: nextTicket });
                     }}
                     className="flex-row items-center"
                 >
@@ -183,8 +186,10 @@ export default function ProductionRow({ log, activeJobs, onUpdate, onDelete, onD
                 <TouchableOpacity
                     onPress={() => {
                         const val = !localData.isTicket;
+                        const nextJantile = val ? false : localData.isJantile;
                         handleChange('isTicket', val);
-                        onUpdate('isTicket', val);
+                        handleChange('isJantile', nextJantile);
+                        onUpdate({ isTicket: val, isJantile: nextJantile });
                     }}
                     className="flex-row items-center"
                 >

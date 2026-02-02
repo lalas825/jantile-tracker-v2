@@ -159,7 +159,14 @@ export const usePolishersData = (startDate: string, endDate: string) => {
             role: w.role,
             status: w.status,
             avatar: w.avatar || w.name.substring(0, 2).toUpperCase(),
-            assignedJobIds: w.assigned_job_ids ? JSON.parse(w.assigned_job_ids) : []
+            assignedJobIds: (() => {
+                try {
+                    return w.assigned_job_ids ? JSON.parse(w.assigned_job_ids) : [];
+                } catch (e) {
+                    console.warn(`Malformed assigned_job_ids for worker ${w.id}:`, w.assigned_job_ids);
+                    return [];
+                }
+            })()
         }));
     }, [workersData, webWorkers]);
 

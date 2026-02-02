@@ -9,16 +9,22 @@ import { useAuth } from '../context/AuthContext';
 // Native version - provides PowerSync context with proper initialization
 // Mock DB for Expo Go / Fallback
 const mockDb = {
+    isMock: true,
     getAll: async () => [],
-    writeTransaction: async () => { },
+    get: async () => null,
     execute: async () => { },
     init: async () => { },
+    readLock: async (cb: any) => cb({ execute: async () => ({ rows: { _array: [] } }), getAll: async () => [], get: async () => null }),
+    writeLock: async (cb: any) => cb({ execute: async () => ({ rows: { _array: [] } }), getAll: async () => [], get: async () => null }),
+    writeTransaction: async (cb: any) => cb({ execute: async () => ({ rows: { _array: [] } }), getAll: async () => [], get: async () => null }),
     currentStatus: { connected: false, uploading: false, downloading: false, lastSyncedAt: null },
 } as any;
 
 
 
 export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
+    const { session } = useAuth();
+
     // Immediate check for Expo Go to avoid any Provider rendering issues
     if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
         // Even in Expo Go, provide a mock context to prevent crashes in children hook calls
@@ -28,8 +34,6 @@ export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
             </PowerSyncContext.Provider>
         );
     }
-
-    const { session } = useAuth();
     // const status = useStatus(); // Causes crash loop if used before provider is ready
 
     // useEffect(() => {
@@ -84,19 +88,25 @@ export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
         return () => { isLoopActive = false; };
     }, [session]); // RE-RUN when session changes!
 
-    if (!isReady) {
-        return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0f172a' }}>
-                <ActivityIndicator size="large" color="#34d399" />
-                <Text style={{ color: '#94a3b8', marginTop: 16 }}>Loading...</Text>
-            </View>
-        );
-    }
 
-    // Always provide context, even if it's the mock DB
     return (
         <PowerSyncContext.Provider value={dbInstance}>
-            {children}
+            <View style={{ flex: 1 }}>
+                {children}
+                {!isReady && session && (
+                    <View style={{
+                        position: 'absolute',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: 'rgba(15, 23, 42, 0.7)',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        zIndex: 9999
+                    }}>
+                        <ActivityIndicator size="large" color="#34d399" />
+                        <Text style={{ color: '#94a3b8', marginTop: 16 }}>Syncing Database...</Text>
+                    </View>
+                )}
+            </View>
         </PowerSyncContext.Provider>
     );
 };

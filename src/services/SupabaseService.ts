@@ -120,14 +120,15 @@ export interface UIWorkerWithLogs {
     isExpanded: boolean;
 }
 
-// Fix: Use "en-CA" (Canadian format) which forces YYYY-MM-DD in LOCAL time.
-// This solves the 5-hour UTC offset bug.
+// Robust manual YYYY-MM-DD formatter to avoid locale-specific issues with string comparisons in the DB
 export const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-CA');
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 };
 
 // Helper to determine if we should use Supabase directly
-// (Web platform or mock DB in Expo Go)
 const useSupabase = Platform.OS === 'web' || (db as any).isMock;
 
 export const SupabaseService = {
@@ -623,35 +624,30 @@ export const SupabaseService = {
         let logs: any[] = [];
 
         if (useSupabase) {
-            // 1. Get logs for the date or range via Supabase SDK
-            let query = supabase
+            // WEB: Direct fetch with manual in-memory join
+            const { data: rawLogs, error: logsError } = await supabase
                 .from('production_logs')
-                .select(`
-                *,
-                workers(
-                    id,
-                    name,
-                    avatar
-                )
-                    `);
+                .select('*')
+                .gte('date', date)
+                .lte('date', endDate || date)
+                .order('created_at', { ascending: false });
 
-            if (endDate && endDate !== date) {
-                query = query.gte('date', date).lte('date', endDate);
-            } else {
-                query = query.eq('date', date);
-            }
+            if (logsError) throw logsError;
+            if (!rawLogs || rawLogs.length === 0) return [];
 
-            const { data, error } = await query;
-            if (error) {
-                console.error("Error fetching logs:", error);
-                throw error;
-            }
-            logs = data || [];
+            const workerIds = Array.from(new Set(rawLogs.map((l: any) => l.worker_id).filter(id => !!id)));
+            const { data: workersData } = await supabase
+                .from('workers')
+                .select('id, name, avatar')
+                .in('id', workerIds);
+
+            const workerMap = new Map((workersData || []).map((w: any) => [w.id, w]));
+            logs = rawLogs.map((l: any) => ({
+                ...l,
+                workers: workerMap.get(l.worker_id) || { id: l.worker_id, name: 'Unknown Worker', avatar: '' }
+            }));
         } else {
-            // Native / PowerSync
-            // We need to JOIN manually or use a VIEW. PowerSync supports basic joins.
-            // "workers" table is available.
-
+            // NATIVE: PowerSync handled via raw SQL join
             let sql = `
                 SELECT pl.*, w.name as worker_name, w.avatar as worker_avatar 
                 FROM production_logs pl 
@@ -661,16 +657,10 @@ export const SupabaseService = {
              `;
 
             const end = endDate || date;
-            logs = await db.getAll(sql, [date, end]);
-
-            // Transform native result to match Supabase structure for grouping logic below
-            logs = logs.map(l => ({
+            const result = await db.getAll(sql, [date, end]);
+            logs = result.map((l: any) => ({
                 ...l,
-                workers: {
-                    id: l.worker_id,
-                    name: l.worker_name,
-                    avatar: l.worker_avatar
-                }
+                workers: { id: l.worker_id, name: l.worker_name, avatar: l.worker_avatar }
             }));
         }
 
@@ -680,14 +670,13 @@ export const SupabaseService = {
         const workerMap = new Map<string, UIWorkerWithLogs>();
 
         logs.forEach((log: any) => {
-            const worker = log.workers;
-            if (!worker) return; // Should not happen if integrity is maintained
+            const worker = log.workers || { id: log.worker_id, name: 'Unknown Worker', avatar: '' };
 
             if (!workerMap.has(worker.id)) {
                 workerMap.set(worker.id, {
                     id: worker.id,
-                    name: worker.name,
-                    avatar: worker.avatar || getInitials(worker.name),
+                    name: worker.name || 'Unknown Worker',
+                    avatar: worker.avatar || getInitials(worker.name || 'UW'),
                     logs: [],
                     isExpanded: true
                 });
@@ -716,83 +705,92 @@ export const SupabaseService = {
         return Array.from(workerMap.values());
     },
 
-    async upsertLog(logId: string, date: Date, workerId: string, field: string, value: any): Promise<any> {
+    async upsertLog(logId: string, date: Date, workerId: string, field: string | Record<string, any>, value?: any): Promise<any> {
         const dateStr = formatDate(date);
+        const useSupabase = Platform.OS === 'web' || (db as any).isMock;
 
-        let colName = '';
-        let colVal = value;
+        // Core field-to-column mapper to ensure consistency between Web and Native
+        const getMapping = (f: string, v: any) => {
+            let colName = '';
+            let colVal = v;
+            switch (f) {
+                case 'job': case 'job_id': case 'jobId':
+                    colName = 'job_id';
+                    colVal = (v === '' || v === 'null' || v === null) ? null : v;
+                    break;
+                case 'job_name': case 'jobName':
+                    colName = 'job_name';
+                    break;
+                case 'pl': case 'plNumber': case 'pl_number':
+                    colName = 'pl_number';
+                    break;
+                case 'unit':
+                    colName = 'unit';
+                    break;
+                case 'reg': case 'regHours': case 'reg_hours':
+                    colName = 'reg_hours';
+                    colVal = v?.toString() || '0';
+                    break;
+                case 'ot': case 'otHours': case 'ot_hours':
+                    colName = 'ot_hours';
+                    colVal = v?.toString() || '0';
+                    break;
+                case 'tkt': case 'ticketNumber': case 'ticket_number':
+                    colName = 'ticket_number';
+                    break;
+                case 'isTkt': case 'isTicket': case 'is_ticket':
+                    colName = 'is_ticket';
+                    colVal = (v === true || v === 1) ? 1 : 0;
+                    break;
+                case 'isJan': case 'isJantile': case 'is_jantile':
+                    colName = 'is_jantile';
+                    colVal = (v === true || v === 1) ? 1 : 0;
+                    break;
+                case 'status': case 'statusColor': case 'status_color':
+                    colName = 'status_color';
+                    break;
+                case 'notes':
+                    colName = 'notes';
+                    break;
+            }
+            return { colName, colVal };
+        };
 
-        switch (field) {
-            case 'job': case 'job_id': case 'jobId':
-                colName = 'job_id';
-                colVal = (value === '' || value === 'null') ? null : value;
-                break;
-            case 'pl': case 'plNumber': case 'pl_number':
-                colName = 'pl_number';
-                break;
-            case 'job_name': case 'jobName':
-                colName = 'job_name';
-                break;
-            case 'unit':
-                colName = 'unit';
-                break;
-            case 'reg': case 'regHours': case 'reg_hours':
-                colName = 'reg_hours';
-                colVal = parseFloat(value) || 0;
-                break;
-            case 'ot': case 'otHours': case 'ot_hours':
-                colName = 'ot_hours';
-                colVal = parseFloat(value) || 0;
-                break;
-            case 'tkt': case 'ticketNumber': case 'ticket_number':
-                colName = 'ticket_number';
-                break;
-            case 'isTkt': case 'isTicket': case 'is_ticket':
-                colName = 'is_ticket';
-                colVal = value === true ? 1 : 0;
-            case 'isJan': case 'isJantile': case 'is_jantile':
-                colName = 'is_jantile';
-                colVal = value === true ? 1 : 0;
-                break;
-            case 'status': case 'statusColor': case 'status_color':
-                colName = 'status_color';
-                break;
-            case 'notes':
-                colName = 'notes';
-                break;
-            default:
-                if (['id', 'worker_id', 'date'].includes(field)) {
-                    // Just identity fields, ensure row exists below
-                } else {
-                    console.log(`Ignored invalid field: ${field}`);
-                    return;
-                }
+        // Prepare the payload for both platforms
+        const finalUpdates: Record<string, any> = {};
+        if (typeof field === 'string') {
+            const { colName, colVal } = getMapping(field, value);
+            if (colName) finalUpdates[colName] = colVal;
+            else if (!['id', 'worker_id', 'date'].includes(field)) {
+                console.log(`[upsertLog] Ignored invalid field: ${field}`);
+                return;
+            }
+        } else {
+            for (const [key, val] of Object.entries(field)) {
+                const { colName, colVal } = getMapping(key, val);
+                if (colName) finalUpdates[colName] = colVal;
+            }
         }
 
+        console.log(`[upsertLog] Atomic Sync:`, finalUpdates);
+
         if (useSupabase) {
-            const updates: any = {
-                id: logId,
-                date: dateStr,
-                worker_id: workerId
-            };
-
-            // job_name is now available in schema
-            if (colName) updates[colName] = colVal;
-
-            const { error } = await supabase.from('production_logs').upsert(updates);
+            const payload = { id: logId, date: dateStr, worker_id: workerId, ...finalUpdates };
+            const { error } = await supabase.from('production_logs').upsert(payload);
             if (error) {
                 console.error('Supabase Upsert Error:', error);
+                throw error;
             }
             return;
         }
 
         try {
-            // 1. Try Update first (Safer for PowerSync views than REPLACE)
+            // NATIVE: Atomic Update/Insert via PowerSync
             const updateCols = ['date = ?', 'worker_id = ?'];
             const updateParams = [dateStr, workerId];
-            if (colName) {
-                updateCols.push(`${colName} = ?`);
-                updateParams.push(colVal);
+            for (const [col, val] of Object.entries(finalUpdates)) {
+                updateCols.push(`${col} = ?`);
+                updateParams.push(val);
             }
             updateParams.push(logId);
 
@@ -801,45 +799,33 @@ export const SupabaseService = {
                 updateParams
             );
 
-            // 2. If nothing updated, try Insert
             if (result.rowsAffected === 0) {
-                const insertCols = ['id', 'date', 'worker_id'];
-                const insertVals = ['?', '?', '?'];
-                const insertParams = [logId, dateStr, workerId];
-                if (colName) {
-                    insertCols.push(colName);
-                    insertVals.push('?');
-                    insertParams.push(colVal);
-                }
-                const sql = `INSERT INTO production_logs (${insertCols.join(', ')}) VALUES (${insertVals.join(', ')})`;
-                await db.execute(sql, insertParams);
+                const insertCols = ['id', 'date', 'worker_id', ...Object.keys(finalUpdates)];
+                const placeholders = ['?', '?', '?', ...Object.keys(finalUpdates).map(() => '?')];
+                const insertParams = [logId, dateStr, workerId, ...Object.values(finalUpdates)];
+                await db.execute(
+                    `INSERT INTO production_logs (${insertCols.join(', ')}) VALUES (${placeholders.join(', ')})`,
+                    insertParams
+                );
             }
-
-            console.log(`Successfully saved ${field} for log ${logId}`);
         } catch (e: any) {
-            // HOTFIX for missing status_color column in local DB
+            // Handle race conditions or schema version mismatches
             if (e.message?.includes('no such column: status_color')) {
-                console.log('HOTFIX: Attempting to add status_color column to local production_logs...');
-                try {
-                    await db.execute('ALTER TABLE production_logs ADD COLUMN status_color TEXT');
-                    // Retry once
-                    return await SupabaseService.upsertLog(logId, date, workerId, field, value);
-                } catch (alterErr) {
-                    console.error('HOTFIX FAILED:', alterErr);
-                }
+                await db.execute('ALTER TABLE production_logs ADD COLUMN status_color TEXT');
+                return await this.upsertLog(logId, date, workerId, field, value);
             }
-
-            // 3. Final catch for race conditions (row created between Update and Insert)
             if (e.message?.includes('UNIQUE constraint failed')) {
-                if (colName) {
-                    await db.execute(
-                        `UPDATE production_logs SET ${colName} = ? WHERE id = ?`,
-                        [colVal, logId]
-                    );
+                const retryParams = [];
+                const retryCols = Object.entries(finalUpdates).map(([col, val]) => {
+                    retryParams.push(val);
+                    return `${col} = ?`;
+                });
+                if (retryCols.length > 0) {
+                    retryParams.push(logId);
+                    await db.execute(`UPDATE production_logs SET ${retryCols.join(', ')} WHERE id = ?`, retryParams);
                 }
                 return;
             }
-            console.error(`Local Save Error (${field}):`, e);
             throw e;
         }
     },
