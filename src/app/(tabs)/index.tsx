@@ -44,7 +44,7 @@ const DonutChart = ({ percentage, radius = 40, strokeWidth = 10, color = "#3b82f
             </Svg>
             {/* Text Inside */}
             <View className="absolute items-center justify-center">
-                <Text className="text-white font-bold text-xl">{Math.round(percentage)}%</Text>
+                <Text className="text-white font-outfit font-black text-xl">{Math.round(percentage)}%</Text>
             </View>
         </View>
     );
@@ -110,13 +110,13 @@ export default function Dashboard() {
                 {/* HEADER */}
                 <View className="mb-6 mt-2 flex-row justify-between items-end">
                     <View>
-                        <Text className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Overview</Text>
-                        <Text className="text-3xl font-bold text-slate-900">Dashboard</Text>
+                        <Text className="text-slate-500 text-xs font-inter font-bold uppercase tracking-wider mb-1">Overview</Text>
+                        <Text className="text-3xl font-outfit font-black text-slate-900">Dashboard</Text>
                     </View>
                     <View className="flex-row items-center gap-4">
                         <View className="items-end">
-                            <Text className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Welcome back</Text>
-                            <Text className="text-xl font-black text-slate-900 tracking-tight">
+                            <Text className="text-slate-400 text-[10px] font-inter font-bold uppercase tracking-widest">Welcome back</Text>
+                            <Text className="text-xl font-outfit font-black text-slate-900 tracking-tight">
                                 {profile?.full_name || user?.email?.split('@')[0] || 'User'}
                             </Text>
                         </View>
@@ -132,17 +132,17 @@ export default function Dashboard() {
                     <View className="flex-row p-6 items-center">
                         {/* Left Side: Stats */}
                         <View className="flex-1 pr-4">
-                            <Text className="text-slate-400 text-xs font-bold uppercase mb-1 tracking-widest">Overall Progress</Text>
-                            <Text className="text-white text-3xl font-bold mb-6">On Track</Text>
+                            <Text className="text-slate-400 text-xs font-inter font-bold uppercase mb-1 tracking-widest">Overall Progress</Text>
+                            <Text className="text-white text-3xl font-outfit font-black mb-6">On Track</Text>
 
                             <View className="gap-3">
                                 <View className="flex-row items-center gap-2">
                                     <Ionicons name="time" size={16} color="#94a3b8" />
-                                    <Text className="text-slate-300 font-medium">{portfolio.totalHours} Total Hours</Text>
+                                    <Text className="text-slate-300 font-inter font-medium">{portfolio.totalHours} Total Hours</Text>
                                 </View>
                                 <View className="flex-row items-center gap-2">
                                     <Ionicons name="briefcase" size={16} color="#94a3b8" />
-                                    <Text className="text-slate-300 font-medium">{portfolio.activeJobs} Active Jobs</Text>
+                                    <Text className="text-slate-300 font-inter font-medium">{portfolio.activeJobs} Active Jobs</Text>
                                 </View>
                             </View>
                         </View>
@@ -172,7 +172,7 @@ export default function Dashboard() {
                             </View>
                             {portfolio.openIssues > 0 && (
                                 <View className="bg-red-100 px-2 py-1 rounded">
-                                    <Text className="text-red-700 text-xs font-bold">Action Req.</Text>
+                                    <Text className="text-red-700 text-xs font-inter font-bold">Action Req.</Text>
                                 </View>
                             )}
                         </View>

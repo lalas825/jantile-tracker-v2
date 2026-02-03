@@ -10,8 +10,24 @@ import { useColorScheme } from '../hooks/use-color-scheme';
 import { PowerSyncWrapper } from '../components/PowerSyncWrapper';
 
 import { useEffect } from 'react';
+import { ActivityIndicator } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
+import {
+    useFonts,
+    Outfit_400Regular,
+    Outfit_700Bold,
+    Outfit_900Black
+} from '@expo-google-fonts/outfit';
+import {
+    Inter_400Regular,
+    Inter_700Bold,
+    Inter_900Black
+} from '@expo-google-fonts/inter';
 
 import { AuthProvider, useAuth } from '../context/AuthContext';
+
+// Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
     initialRouteName: '(tabs)',
@@ -82,17 +98,32 @@ function RootLayoutNav() {
     );
 }
 
-// Helper component to avoid using hooks in RootLayout default export
-import { ActivityIndicator } from 'react-native';
-
 export default function RootLayout() {
     const colorScheme = useColorScheme();
+    const [loaded, error] = useFonts({
+        Outfit_400Regular,
+        Outfit_700Bold,
+        Outfit_900Black,
+        Inter_400Regular,
+        Inter_700Bold,
+        Inter_900Black,
+    });
+
+    useEffect(() => {
+        if (loaded || error) {
+            SplashScreen.hideAsync();
+        }
+    }, [loaded, error]);
+
+    if (!loaded && !error) {
+        return null;
+    }
 
     return (
         <AuthProvider>
             <PowerSyncWrapper>
                 <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                    <View className="flex-1 bg-slate-50 text-slate-900">
+                    <View className="flex-1 bg-slate-50 text-slate-900 font-inter">
                         <RootLayoutNav />
                     </View>
                     <StatusBar style="dark" />

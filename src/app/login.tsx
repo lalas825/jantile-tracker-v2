@@ -52,16 +52,16 @@ export default function LoginScreen() {
                         resizeMode="contain"
                     />
                 </View>
-                <Text className="text-slate-400 mt-4 font-bold uppercase tracking-[4px] text-[10px]">
+                <Text className="text-slate-400 mt-4 font-inter font-bold uppercase tracking-[4px] text-[10px]">
                     {isSignUp ? 'Create a new account' : 'Sign in to your account'}
                 </Text>
             </View>
 
             <View className="gap-4">
                 <View>
-                    <Text className="text-xs font-bold text-slate-500 mb-1 ml-1 uppercase">Email</Text>
+                    <Text className="text-xs font-inter font-bold text-slate-500 mb-1 ml-1 uppercase">Email</Text>
                     <TextInput
-                        className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-base text-slate-900"
+                        className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-base font-inter text-slate-900"
                         placeholder="name@jantile.com"
                         autoCapitalize="none"
                         keyboardType="email-address"
@@ -71,9 +71,9 @@ export default function LoginScreen() {
                 </View>
 
                 <View>
-                    <Text className="text-xs font-bold text-slate-500 mb-1 ml-1 uppercase">Password</Text>
+                    <Text className="text-xs font-inter font-bold text-slate-500 mb-1 ml-1 uppercase">Password</Text>
                     <TextInput
-                        className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-base text-slate-900"
+                        className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-base font-inter text-slate-900"
                         placeholder="••••••••"
                         secureTextEntry
                         value={password}
@@ -89,7 +89,7 @@ export default function LoginScreen() {
                     {loading ? (
                         <ActivityIndicator color="white" />
                     ) : (
-                        <Text className="text-white font-bold text-lg">
+                        <Text className="text-white font-outfit font-black uppercase tracking-widest text-lg">
                             {isSignUp ? 'Create Account' : 'Sign In'}
                         </Text>
                     )}
@@ -99,7 +99,7 @@ export default function LoginScreen() {
                     onPress={() => setIsSignUp(!isSignUp)}
                     className="p-4 items-center"
                 >
-                    <Text className="text-slate-500 font-medium">
+                    <Text className="text-slate-500 font-inter font-medium">
                         {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
                     </Text>
                 </TouchableOpacity>

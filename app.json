@@ -42,7 +42,8 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-secure-store",
-      "@journeyapps/react-native-quick-sqlite"
+      "@journeyapps/react-native-quick-sqlite",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

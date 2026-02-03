@@ -179,7 +179,7 @@ export default function JobsScreen() {
 
             {/* HEADER */}
             <View className="px-6 py-6 border-b border-slate-200 flex-row justify-between items-center bg-white">
-                <Text className="text-2xl font-bold text-slate-900">Projects</Text>
+                <Text className="text-2xl font-outfit font-black text-slate-900">Projects</Text>
                 <TouchableOpacity
                     onPress={() => setModalVisible(true)}
                     className="bg-slate-900 px-4 py-2 rounded-lg flex-row items-center shadow-sm"
@@ -197,7 +197,7 @@ export default function JobsScreen() {
                         placeholder="Search projects..."
                         value={search}
                         onChangeText={setSearch}
-                        className="ml-2 flex-1 text-sm bg-transparent"
+                        className="ml-2 flex-1 text-sm font-inter text-slate-700 bg-transparent"
                         style={{ outline: 'none' }}
                     />
                 </View>
@@ -225,8 +225,8 @@ export default function JobsScreen() {
                             >
                                 <View className="flex-row justify-between items-start">
                                     <View className="flex-1">
-                                        <Text className="text-lg font-bold text-gray-900">{job.name}</Text>
-                                        <Text className="text-xs text-gray-500 mt-1">{job.address || 'No Location Set'}</Text>
+                                        <Text className="text-lg font-outfit font-black text-gray-900">{job.name}</Text>
+                                        <Text className="text-xs text-gray-500 font-inter font-bold mt-1">{job.address || 'No Location Set'}</Text>
                                     </View>
                                     <View className="items-end gap-2">
                                         <View className="flex-row items-center gap-2">
@@ -244,7 +244,7 @@ export default function JobsScreen() {
                                             </TouchableOpacity>
                                         </View>
                                         <View className="bg-green-50 px-2 py-1 rounded border border-green-100">
-                                            <Text className="text-[10px] font-bold text-green-700 uppercase">ACTIVE</Text>
+                                            <Text className="text-[10px] font-outfit font-black text-green-700 uppercase tracking-widest">ACTIVE</Text>
                                         </View>
                                     </View>
                                 </View>
@@ -252,8 +252,8 @@ export default function JobsScreen() {
                                 {/* Progress Bar */}
                                 <View className="mt-4">
                                     <View className="flex-row justify-between items-center mb-1.5">
-                                        <Text className="text-[10px] font-bold text-gray-400 uppercase">Overall Progress</Text>
-                                        <Text className="text-xs font-black text-gray-700">{progress}%</Text>
+                                        <Text className="text-[10px] font-inter font-bold text-gray-400 uppercase tracking-widest">Overall Progress</Text>
+                                        <Text className="text-xs font-outfit font-black text-gray-700">{progress}%</Text>
                                     </View>
                                     <View className="h-2 bg-gray-100 rounded-full overflow-hidden border border-gray-50">
                                         <View
@@ -268,13 +268,13 @@ export default function JobsScreen() {
                                     <View className="flex-row items-center">
                                         <View className="flex-row items-center mr-4">
                                             <Ionicons name="layers-outline" size={14} color="#94a3b8" />
-                                            <Text className="text-xs text-slate-500 ml-1">
+                                            <Text className="text-xs text-slate-500 font-inter font-bold ml-1">
                                                 {job.floor_count || job.floors?.length || 0} Floors
                                             </Text>
                                         </View>
                                         <View className="flex-row items-center">
                                             <Ionicons name="cube-outline" size={14} color="#94a3b8" />
-                                            <Text className="text-xs text-slate-500 ml-1">
+                                            <Text className="text-xs text-slate-500 font-inter font-bold ml-1">
                                                 {job.unit_count || job.floors?.reduce((acc: number, f: any) => acc + (f.units?.length || 0), 0) || 0} Units
                                             </Text>
                                         </View>
@@ -309,7 +309,7 @@ export default function JobsScreen() {
 
                         {/* Header */}
                         <View className="px-6 py-4 border-b border-gray-100 flex-row justify-between items-center">
-                            <Text className="text-lg font-bold text-gray-900">{editingJobId ? 'Edit Project' : 'New Project'}</Text>
+                            <Text className="text-lg font-outfit font-black text-gray-900">{editingJobId ? 'Edit Project' : 'New Project'}</Text>
                             <TouchableOpacity onPress={() => {
                                 setModalVisible(false);
                                 setEditingJobId(null);
@@ -322,25 +322,25 @@ export default function JobsScreen() {
                         {/* Form Fields */}
                         <ScrollView className="p-6 max-h-[600px]">
                             {/* Project Name */}
-                            <Text className="text-xs font-bold text-gray-500 mb-1 ml-1">Project Name</Text>
+                            <Text className="text-xs font-inter font-bold text-gray-500 mb-1 ml-1 uppercase tracking-widest">Project Name</Text>
                             <TextInput
-                                className="border border-gray-200 rounded-lg p-3 mb-4 text-base bg-white focus:border-blue-500 outline-none"
+                                className="border border-gray-200 rounded-lg p-3 mb-4 text-base font-inter bg-white focus:border-blue-500 outline-none"
                                 value={form.name}
                                 onChangeText={(t) => setForm({ ...form, name: t })}
                                 placeholder="e.g. Skyline Tower"
                             />
 
                             {/* Job Number */}
-                            <Text className="text-xs font-bold text-gray-500 mb-1 ml-1">Job Number</Text>
+                            <Text className="text-xs font-inter font-bold text-gray-500 mb-1 ml-1 uppercase tracking-widest">Job Number</Text>
                             <TextInput
-                                className="border border-gray-200 rounded-lg p-3 mb-4 text-base bg-white focus:border-blue-500 outline-none"
+                                className="border border-gray-200 rounded-lg p-3 mb-4 text-base font-inter bg-white focus:border-blue-500 outline-none"
                                 value={form.jobNumber}
                                 onChangeText={(t) => setForm({ ...form, jobNumber: t })}
                                 placeholder="e.g. 25-104"
                             />
 
                             {/* Address */}
-                            <Text className="text-xs font-bold text-gray-500 mb-1 ml-1">Address</Text>
+                            <Text className="text-xs font-inter font-bold text-gray-500 mb-1 ml-1 uppercase tracking-widest">Address</Text>
                             <TextInput
                                 className="border border-gray-200 rounded-lg p-3 mb-4 text-base bg-white focus:border-blue-500 outline-none"
                                 value={form.address}
@@ -368,9 +368,9 @@ export default function JobsScreen() {
                             />
 
                             {/* Foreman Email */}
-                            <Text className="text-xs font-bold text-gray-500 mb-1 ml-1">Foreman Email (Optional)</Text>
+                            <Text className="text-xs font-inter font-bold text-gray-500 mb-1 ml-1 uppercase tracking-widest">Foreman Email (Optional)</Text>
                             <TextInput
-                                className="border border-gray-200 rounded-lg p-3 mb-2 text-base bg-white focus:border-blue-500 outline-none"
+                                className="border border-gray-200 rounded-lg p-3 mb-2 text-base font-inter bg-white focus:border-blue-500 outline-none"
                                 value={form.email}
                                 onChangeText={(t) => setForm({ ...form, email: t })}
                                 placeholder="foreman@jantile.com"
@@ -381,20 +381,15 @@ export default function JobsScreen() {
                         {/* Footer Buttons */}
                         <View className="px-6 py-4 border-t border-gray-100 flex-row justify-end gap-3 bg-gray-50">
                             <TouchableOpacity
-                                onPress={() => {
-                                    setModalVisible(false);
-                                    setEditingJobId(null);
-                                    setForm({ name: '', jobNumber: '', address: '', gc: '', units: '', email: '' });
-                                }}
                                 className="px-4 py-2 rounded-lg"
                             >
-                                <Text className="text-gray-600 font-bold">Cancel</Text>
+                                <Text className="text-gray-600 font-inter font-bold">Cancel</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={handleSaveJob}
                                 className="bg-[#2563eb] px-6 py-2 rounded-lg shadow-sm"
                             >
-                                <Text className="text-white font-bold">
+                                <Text className="text-white font-outfit font-black uppercase tracking-widest">
                                     {editingJobId ? 'Save Changes' : 'Create Job'}
                                 </Text>
                             </TouchableOpacity>

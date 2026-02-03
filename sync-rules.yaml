@@ -12,7 +12,10 @@ bucket_definitions:
       - SELECT * FROM tickets
       - SELECT * FROM production_logs
       - SELECT * FROM area_photos
-      - SELECT * FROM inventory
+      - SELECT * FROM job_issues
+      - SELECT * FROM issue_comments
+      - SELECT * FROM project_materials
+      - SELECT * FROM delivery_tickets
 
   # User-specific data (logs and profiles)
   by_user:

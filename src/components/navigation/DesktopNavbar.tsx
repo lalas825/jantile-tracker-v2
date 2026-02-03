@@ -13,8 +13,8 @@ const NavLink = ({ title, route }: { title: string, route: string }) => {
     return (
         <TouchableOpacity onPress={() => router.push(route as any)} className="mx-0">
             <Text className={clsx(
-                "text-base font-bold whitespace-nowrap transition-colors", // text-base (16px), font-bold
-                isActive ? "text-red-700" : "text-slate-600 hover:text-red-700"
+                "text-base font-inter font-bold whitespace-nowrap transition-colors", // text-base (16px), font-bold
+                isActive ? "text-red-700 font-black" : "text-slate-600 hover:text-red-700"
             )}>
                 {title}
             </Text>
@@ -60,7 +60,7 @@ export default function DesktopNavbar() {
                     <TextInput
                         placeholder="Search..."
                         placeholderTextColor="#94a3b8"
-                        className="flex-1 ml-2 text-sm text-slate-700 outline-none h-full bg-transparent"
+                        className="flex-1 ml-2 text-sm font-inter text-slate-700 outline-none h-full bg-transparent"
                     />
                 </View>
 
@@ -71,7 +71,7 @@ export default function DesktopNavbar() {
 
                 {/* Profile */}
                 <View className="h-8 w-8 rounded-full bg-slate-200 items-center justify-center border border-slate-300">
-                    <Text className="text-xs font-bold text-slate-600">{initials}</Text>
+                    <Text className="text-xs font-outfit font-black text-slate-600">{initials}</Text>
                 </View>
 
                 {/* Logout Button */}

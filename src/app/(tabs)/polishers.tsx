@@ -309,13 +309,13 @@ function PolishersContent() {
             <View style={{ paddingTop: 60, paddingHorizontal: 20, paddingBottom: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#0f172a' }}>Polishers Hub</Text>
-                        <View style={{ backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
-                            <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#64748b' }}>{totalLogs}</Text>
+                        <Text className="text-2xl font-outfit font-black text-slate-900">Polishers Hub</Text>
+                        <View className="bg-slate-100 px-2 py-1 rounded-xl">
+                            <Text className="text-xs font-inter font-bold text-slate-500">{totalLogs}</Text>
                         </View>
                     </View>
-                    <TouchableOpacity onPress={() => setAddWorkerVisible(true)} style={{ backgroundColor: '#eff6ff', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 }}>
-                        <Text style={{ color: '#2563eb', fontWeight: 'bold' }}>+ Polisher</Text>
+                    <TouchableOpacity onPress={() => setAddWorkerVisible(true)} className="bg-blue-50 px-4 py-2 rounded-lg">
+                        <Text className="text-blue-600 font-outfit font-black uppercase tracking-widest text-xs">+ Polisher</Text>
                     </TouchableOpacity>
                 </View>
 

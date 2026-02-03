@@ -156,4 +156,53 @@ export const AppSchema = new Schema([
         ],
         localOnly: true
     }),
+    new Table({
+        name: 'project_materials',
+        columns: [
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'area_id', type: ColumnType.TEXT }),
+            new Column({ name: 'sub_location', type: ColumnType.TEXT }),
+            new Column({ name: 'category', type: ColumnType.TEXT }),
+            new Column({ name: 'product_code', type: ColumnType.TEXT }),
+            new Column({ name: 'product_name', type: ColumnType.TEXT }),
+            new Column({ name: 'product_specs', type: ColumnType.TEXT }),
+            new Column({ name: 'zone', type: ColumnType.TEXT }),
+            new Column({ name: 'net_qty', type: ColumnType.REAL }),
+            new Column({ name: 'waste_percent', type: ColumnType.REAL }),
+            new Column({ name: 'budget_qty', type: ColumnType.REAL }),
+            new Column({ name: 'unit_cost', type: ColumnType.TEXT }),
+            new Column({ name: 'total_value', type: ColumnType.TEXT }),
+            new Column({ name: 'ordered_qty', type: ColumnType.REAL }),
+            new Column({ name: 'shop_stock', type: ColumnType.REAL }),
+            new Column({ name: 'in_transit', type: ColumnType.REAL }),
+            new Column({ name: 'received_at_job', type: ColumnType.REAL }),
+            new Column({ name: 'unit', type: ColumnType.TEXT }),
+            new Column({ name: 'pcs_per_unit', type: ColumnType.INTEGER }),
+            new Column({ name: 'expected_date', type: ColumnType.TEXT }),
+            new Column({ name: 'grout_info', type: ColumnType.TEXT }),
+            new Column({ name: 'caulk_info', type: ColumnType.TEXT }),
+            new Column({ name: 'dim_length', type: ColumnType.REAL }),
+            new Column({ name: 'dim_width', type: ColumnType.REAL }),
+            new Column({ name: 'dim_thickness', type: ColumnType.TEXT }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+            new Column({ name: 'updated_at', type: ColumnType.TEXT }),
+        ]
+    }),
+    new Table({
+        name: 'delivery_tickets',
+        columns: [
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'ticket_number', type: ColumnType.TEXT }),
+            new Column({ name: 'status', type: ColumnType.TEXT }),
+            new Column({ name: 'items', type: ColumnType.TEXT }), // JSON string
+            new Column({ name: 'destination', type: ColumnType.TEXT }),
+            new Column({ name: 'requested_date', type: ColumnType.TEXT }),
+            new Column({ name: 'due_date', type: ColumnType.TEXT }),
+            new Column({ name: 'due_time', type: ColumnType.TEXT }),
+            new Column({ name: 'notes', type: ColumnType.TEXT }),
+            new Column({ name: 'created_by', type: ColumnType.TEXT }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+            new Column({ name: 'updated_at', type: ColumnType.TEXT }),
+        ]
+    }),
 ]);

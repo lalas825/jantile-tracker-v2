@@ -111,6 +111,54 @@ export interface UIJobLog {
     jobId?: string; // Explicitly link to Jobs table
 }
 
+export interface ProjectMaterial {
+    id: string;
+    job_id: string;
+    area_id?: string; // Link to specific Area
+    sub_location?: string; // e.g. "Main Bathroom", "Kitchen Backsplash"
+    category: string;
+    product_code?: string; // e.g. ST-05
+    product_name: string;
+    product_specs?: string; // dims, unit details
+    zone?: string; // e.g. L1 Lobby
+    net_qty: number;
+    waste_percent: number;
+    budget_qty: number; // Total Budget (Net + Waste)
+    unit_cost: number;
+    total_value: number;
+    supplier?: string;
+    ordered_qty: number;
+    shop_stock: number;
+    in_transit: number;
+    received_at_job: number;
+    unit: string;
+    pcs_per_unit?: number;
+    expected_date?: string;
+    grout_info?: string;
+    caulk_info?: string;
+    dim_length?: number;
+    dim_width?: number;
+    dim_thickness?: string;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface DeliveryTicket {
+    id: string;
+    job_id: string;
+    ticket_number: string;
+    status: string;
+    items: any[]; // Decoded JSON
+    destination: string;
+    requested_date: string;
+    due_date?: string;
+    due_time?: string;
+    notes?: string;
+    created_by: string;
+    created_at?: string;
+    updated_at?: string;
+}
+
 export interface UIWorkerWithLogs {
     id: string;
     name: string;
@@ -487,21 +535,23 @@ export const SupabaseService = {
         );
     },
 
-    async addUnit(floorId: string, name: string) {
+    async addUnit(floorId: string, name: string): Promise<string> {
+        const id = Crypto.randomUUID();
         if (useSupabase) {
             const { error } = await supabase.from('units').insert({
+                id,
                 floor_id: floorId,
                 name: name
             });
             if (error) throw error;
-            return;
+            return id;
         }
 
-        const id = Crypto.randomUUID();
         await db.execute(
             `INSERT INTO units (id, floor_id, name, created_at) VALUES (?, ?, ?, datetime('now'))`,
             [id, floorId, name]
         );
+        return id;
     },
 
     async deleteUnit(unitId: string) {
@@ -513,7 +563,7 @@ export const SupabaseService = {
         await db.execute(`DELETE FROM units WHERE id = ?`, [unitId]);
     },
 
-    async addArea(unitId: string, name: string, description: string = '') {
+    async addArea(unitId: string, name: string, description: string = ''): Promise<string> {
         // 2. Determine Preset
         const areaNameLower = name.toLowerCase();
         let preset = CHECKLIST_PRESETS[areaNameLower];
@@ -528,9 +578,15 @@ export const SupabaseService = {
 
         if (useSupabase) {
             // 1. Insert Area
+            if (!unitId || unitId === '') {
+                throw new Error("Cannot create area: unit_id is required");
+            }
+            const areaId = Crypto.randomUUID();
+            console.log(`[SupabaseService] creating area: ${name} for unit: ${unitId}`);
             const { data: newArea, error: areaError } = await supabase
                 .from('areas')
                 .insert({
+                    id: areaId,
                     unit_id: unitId,
                     name: name,
                     description: description,
@@ -556,7 +612,7 @@ export const SupabaseService = {
                 const { error: itemsError } = await supabase.from('checklist_items').insert(items);
                 if (itemsError) throw itemsError;
             }
-            return;
+            return areaId;
         }
 
         // 1. Insert Area
@@ -580,6 +636,7 @@ export const SupabaseService = {
                 );
             }
         }
+        return areaId;
     },
 
     async updateArea(areaId: string, updates: any) {
@@ -1289,7 +1346,148 @@ export const SupabaseService = {
     },
 
     // Check connection/client
-    supabase: supabase
+    supabase: supabase,
+
+    // --- LOGISTICS (PM MATERIAL HUB) ---
+
+    async getProjectMaterials(jobId: string): Promise<ProjectMaterial[]> {
+        if (useSupabase) {
+            const { data, error } = await supabase
+                .from('project_materials')
+                .select('*')
+                .eq('job_id', jobId)
+                .order('category', { ascending: true })
+                .order('sub_location', { ascending: true })
+                .order('product_name', { ascending: true });
+            if (error) throw error;
+            return data || [];
+        }
+
+        const result = await db.getAll(
+            `SELECT * FROM project_materials WHERE job_id = ? ORDER BY category ASC, sub_location ASC, product_name ASC`,
+            [jobId]
+        );
+        return result || [];
+    },
+
+    async saveProjectMaterial(material: Partial<ProjectMaterial>): Promise<void> {
+        const id = material.id && material.id !== '' ? material.id : Crypto.randomUUID();
+        const now = new Date().toISOString();
+
+        if (useSupabase) {
+            const { _new_area, ...cleanMaterial } = material as any;
+
+            // Defensive: ensure empty strings aren't sent to UUID columns
+            if (cleanMaterial.area_id === '') cleanMaterial.area_id = null;
+            if (cleanMaterial.job_id === '') cleanMaterial.job_id = null;
+
+            const payload = { ...cleanMaterial, id, updated_at: now };
+            const { error } = await supabase.from('project_materials').upsert(payload);
+            if (error) throw error;
+            return;
+        }
+
+        await db.writeTransaction(async (tx: any) => {
+            await tx.execute(
+                `INSERT OR REPLACE INTO project_materials (
+                    id, job_id, area_id, sub_location, category, product_code, product_name, product_specs, zone, 
+                    net_qty, waste_percent, budget_qty, unit_cost, total_value, supplier, ordered_qty, shop_stock, in_transit, 
+                    received_at_job, unit, pcs_per_unit, expected_date,
+                    grout_info, caulk_info, dim_length, dim_width, dim_thickness,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    id, material.job_id, material.area_id || null, material.sub_location || null, material.category,
+                    material.product_code || null, material.product_name, material.product_specs || null, material.zone || null,
+                    material.net_qty || 0, material.waste_percent || 10, material.budget_qty || 0,
+                    material.unit_cost || 0, material.total_value || 0, material.supplier || null,
+                    material.ordered_qty || 0, material.shop_stock || 0, material.in_transit || 0,
+                    material.received_at_job || 0, material.unit || 'sqft', material.pcs_per_unit || 1,
+                    material.expected_date || null,
+                    material.grout_info || null, material.caulk_info || null,
+                    material.dim_length || null, material.dim_width || null, material.dim_thickness || null,
+                    now
+                ]
+            );
+        });
+    },
+
+    async deleteProjectMaterial(id: string): Promise<void> {
+        if (useSupabase) {
+            const { error } = await supabase.from('project_materials').delete().eq('id', id);
+            if (error) throw error;
+            return;
+        }
+        await db.execute(`DELETE FROM project_materials WHERE id = ?`, [id]);
+    },
+
+    async getDeliveryTickets(jobId: string): Promise<DeliveryTicket[]> {
+        if (useSupabase) {
+            const { data, error } = await supabase
+                .from('delivery_tickets')
+                .select('*')
+                .eq('job_id', jobId)
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return (data || []).map((t: any) => ({
+                ...t,
+                items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items
+            }));
+        }
+
+        const result = await db.getAll(
+            `SELECT * FROM delivery_tickets WHERE job_id = ? ORDER BY created_at DESC`,
+            [jobId]
+        );
+        return result.map((t: any) => ({
+            ...t,
+            items: t.items ? JSON.parse(t.items) : []
+        }));
+    },
+
+    async saveDeliveryTicket(ticket: Partial<DeliveryTicket>): Promise<void> {
+        const id = ticket.id && ticket.id !== '' ? ticket.id : Crypto.randomUUID();
+        const now = new Date().toISOString();
+
+        if (useSupabase) {
+            const payload = {
+                ...ticket,
+                id,
+                job_id: ticket.job_id && ticket.job_id !== '' ? ticket.job_id : null,
+                items: JSON.stringify(ticket.items || []),
+                updated_at: now
+            };
+            const { error } = await supabase.from('delivery_tickets').upsert(payload);
+            if (error) throw error;
+            return;
+        }
+
+        // PowerSync Transaction for ticket save + optional material updates
+        await db.writeTransaction(async (tx: any) => {
+            await tx.execute(
+                `INSERT OR REPLACE INTO delivery_tickets (
+                    id, job_id, ticket_number, status, items, destination, 
+                    requested_date, due_date, due_time, notes, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    id, ticket.job_id, ticket.ticket_number, ticket.status || 'draft',
+                    JSON.stringify(ticket.items || []), ticket.destination,
+                    ticket.requested_date, ticket.due_date || null, ticket.due_time || null,
+                    ticket.notes || null, ticket.created_by,
+                    ticket.created_at || now, now
+                ]
+            );
+        });
+    },
+
+    async deleteDeliveryTicket(id: string): Promise<void> {
+        if (useSupabase) {
+            const { error } = await supabase.from('delivery_tickets').delete().eq('id', id);
+            if (error) throw error;
+            return;
+        }
+        await db.execute(`DELETE FROM delivery_tickets WHERE id = ?`, [id]);
+    }
 };
 
 
