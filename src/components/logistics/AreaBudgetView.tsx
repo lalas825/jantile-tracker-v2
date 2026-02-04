@@ -1,0 +1,202 @@
+import React from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { ProjectMaterial } from '../../services/SupabaseService';
+
+interface AreaBudgetViewProps {
+    materialsByArea: Record<string, ProjectMaterial[]>;
+    allAreas: any[];
+    expandedAreas: Record<string, boolean>;
+    toggleArea: (areaId: string) => void;
+    onAddMaterial: (areaId: string) => void;
+    onEditMaterial: (material: ProjectMaterial) => void;
+    onDeleteMaterial: (id: string) => void;
+    onDeleteArea: (id: string) => void;
+}
+
+export default function AreaBudgetView({
+    materialsByArea,
+    allAreas,
+    expandedAreas,
+    toggleArea,
+    onAddMaterial,
+    onEditMaterial,
+    onDeleteMaterial,
+    onDeleteArea
+}: AreaBudgetViewProps) {
+    return (
+        <View>
+            {Object.keys(materialsByArea).map(areaId => {
+                const areaMats = materialsByArea[areaId];
+                const area = allAreas.find((a: any) => a.id === areaId);
+                const areaName = area?.name || 'Project Wide / Global';
+                const areaTotal = areaMats.reduce((sum, m) => sum + (m.total_value || 0), 0);
+                const isExpanded = expandedAreas[areaId] !== false; // Default to expanded
+
+                // Split into Main and Sundries
+                const mainMaterials = areaMats.filter(m => !['Grout', 'Setting Materials', 'Sundries', 'Consumable'].includes(m.category));
+                const sundries = areaMats.filter(m => ['Grout', 'Setting Materials', 'Sundries', 'Consumable', 'Grout/Caulk'].includes(m.category));
+
+                const renderMaterialRow = (m: ProjectMaterial) => {
+                    const wasteQty = (m.net_qty || 0) * ((m.waste_percent || 0) / 100);
+                    const toBuy = Math.max(0, m.budget_qty - (m.shop_stock + m.received_at_job));
+                    const unit = m.unit || 'sqft';
+
+                    // Helper for Piece Count
+                    const renderPcs = (qty: number) => {
+                        if (!m.pcs_per_unit || m.pcs_per_unit === 0) return null;
+                        const pcs = Math.round(qty * m.pcs_per_unit);
+                        return (
+                            <Text className="text-[10px] text-slate-400 font-medium text-center leading-tight">({pcs.toLocaleString()} Pcs)</Text>
+                        );
+                    };
+
+                    return (
+                        <View key={m.id} className="flex-row px-3 py-3 border-b border-slate-50 items-center min-h-[50px]">
+                            <View className="flex-[1.2]">
+                                <Text className="font-inter font-black text-slate-900 text-[14px] leading-tight" numberOfLines={1}>{m.sub_location || '--'}</Text>
+                                <Text className="text-[11px] text-slate-400 font-inter font-bold uppercase tracking-tighter" numberOfLines={1}>{m.zone || 'No Zone'}</Text>
+                            </View>
+                            <View className="flex-[2] px-2">
+                                <Text className="font-inter font-black text-slate-900 text-[15px] leading-tight" numberOfLines={1}>{m.product_code || 'N/A'}</Text>
+                                <Text className="text-[13px] text-slate-400 font-inter font-bold" numberOfLines={1}>{m.product_name}</Text>
+                            </View>
+                            <View className="flex-1 items-center">
+                                <Text className="text-[13px] text-slate-600 font-inter font-bold text-center" numberOfLines={1}>
+                                    {m.dim_length && m.dim_width ? `${m.dim_length}x${m.dim_width}` : '--'}
+                                </Text>
+                                {m.dim_thickness && <Text className="text-[10px] text-slate-400 font-bold uppercase">{m.dim_thickness}</Text>}
+                            </View>
+                            <View className="flex-1 items-center px-1">
+                                <Text className="text-[13px] text-slate-600 font-inter font-bold text-center" numberOfLines={2}>{m.grout_info || '--'}</Text>
+                            </View>
+                            <View className="flex-1 items-center px-1">
+                                <Text className="text-[13px] text-slate-600 font-inter font-bold text-center" numberOfLines={2}>{m.caulk_info || '--'}</Text>
+                            </View>
+                            <View className="flex-[0.8] items-center">
+                                <View className="flex-row items-baseline justify-center">
+                                    <Text className="text-[14px] font-inter font-bold text-slate-600">{m.net_qty?.toLocaleString() || 0}</Text>
+                                    <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{unit}</Text>
+                                </View>
+                                {renderPcs(m.net_qty || 0)}
+                            </View>
+                            <View className="flex-[0.7] items-center">
+                                <Text className="text-[13px] font-inter font-bold text-slate-400">{m.waste_percent || 0}%</Text>
+                            </View>
+                            <View className="flex-[0.8] items-center">
+                                <View className="flex-row items-baseline justify-center">
+                                    <Text className="text-[14px] font-inter font-bold text-slate-400">{wasteQty.toFixed(1)}</Text>
+                                    <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{unit}</Text>
+                                </View>
+                            </View>
+                            <View className="flex-[1] items-center">
+                                <View className="flex-row items-baseline justify-center">
+                                    <Text className="text-[15px] font-inter font-black text-slate-900">{m.budget_qty.toLocaleString()}</Text>
+                                    <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{unit}</Text>
+                                </View>
+                                {renderPcs(m.budget_qty)}
+                            </View>
+                            <View className="flex-[1] items-center">
+                                <View className="flex-row items-baseline justify-center">
+                                    <Text className="text-[14px] font-inter font-bold text-blue-600">{m.shop_stock.toLocaleString()}</Text>
+                                    <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{unit}</Text>
+                                </View>
+                                {renderPcs(m.shop_stock)}
+                            </View>
+                            <View className="flex-[1] items-center">
+                                <View className="flex-row items-baseline justify-center">
+                                    <Text className="text-[14px] font-inter font-bold text-emerald-600">{m.received_at_job.toLocaleString()}</Text>
+                                    <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{unit}</Text>
+                                </View>
+                                {renderPcs(m.received_at_job)}
+                            </View>
+                            <View className="flex-[1] items-center">
+                                <View className="flex-row items-baseline justify-center">
+                                    <Text className={`text-[15px] font-inter font-black ${toBuy > 0 ? 'text-red-600' : 'text-slate-300'}`}>{toBuy.toLocaleString()}</Text>
+                                    <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{unit}</Text>
+                                </View>
+                                {renderPcs(toBuy)}
+                            </View>
+                            <View className="w-20 flex-row justify-end gap-3">
+                                <TouchableOpacity onPress={() => onEditMaterial(m)}>
+                                    <Ionicons name="pencil-outline" size={18} color="#cbd5e1" />
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => onDeleteMaterial(m.id)}>
+                                    <Ionicons name="trash-outline" size={18} color="#fee2e2" />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    );
+                };
+
+                return (
+                    <View key={areaId} className="bg-white rounded-2xl border border-slate-200 mb-8 overflow-hidden shadow-md">
+                        <View className="p-4 bg-slate-900 flex-row justify-between items-center">
+                            <View className="flex-row items-center gap-4">
+                                <TouchableOpacity
+                                    onPress={() => toggleArea(areaId)}
+                                    className="bg-white/10 w-8 h-8 rounded-lg items-center justify-center"
+                                >
+                                    <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={16} color="white" />
+                                </TouchableOpacity>
+                                <View>
+                                    <Text className="text-white font-inter font-black text-lg tracking-tight">{areaName}</Text>
+                                    <Text className="text-blue-400 text-[13px] font-inter font-black uppercase tracking-widest">Area Logistics Breakdown</Text>
+                                </View>
+                            </View>
+                            <View className="flex-row items-center gap-2">
+                                <View className="bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 mr-2">
+                                    <Text className="text-white font-inter font-black text-xs">Value: ${areaTotal.toLocaleString()}</Text>
+                                </View>
+                                <TouchableOpacity
+                                    onPress={() => onAddMaterial(areaId)}
+                                    className="bg-blue-600 w-8 h-8 rounded-lg items-center justify-center"
+                                >
+                                    <Ionicons name="add" size={18} color="white" />
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={() => onDeleteArea(areaId)}
+                                    className="bg-red-500/20 w-8 h-8 rounded-lg items-center justify-center ml-1"
+                                >
+                                    <Ionicons name="trash-outline" size={16} color="#f87171" />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+
+                        {isExpanded && (
+                            <>
+                                <View className="flex-row px-3 py-2 bg-slate-50 border-b border-slate-100 items-center">
+                                    <Text className="flex-[1.2] text-[11px] font-inter font-black text-slate-400 uppercase">LOC / ZONE</Text>
+                                    <Text className="flex-[2] text-[11px] font-inter font-black text-slate-400 uppercase px-2">MATERIAL</Text>
+                                    <Text className="flex-1 text-[11px] font-inter font-black text-slate-400 uppercase text-center">DIMS</Text>
+                                    <Text className="flex-1 text-[11px] font-inter font-black text-slate-400 uppercase text-center">GROUT</Text>
+                                    <Text className="flex-1 text-[11px] font-inter font-black text-slate-400 uppercase text-center">CAULK</Text>
+                                    <Text className="flex-[0.8] text-[11px] font-inter font-black text-slate-400 uppercase text-center">NET</Text>
+                                    <Text className="flex-[0.7] text-[11px] font-inter font-black text-slate-400 uppercase text-center">WASTE %</Text>
+                                    <Text className="flex-[0.8] text-[11px] font-inter font-black text-slate-400 uppercase text-center">WASTE</Text>
+                                    <Text className="flex-[1] text-[11px] font-inter font-black text-slate-900 uppercase text-center">BUDGET</Text>
+                                    <Text className="flex-[1] text-[11px] font-inter font-black text-blue-600 uppercase text-center">STOCK</Text>
+                                    <Text className="flex-[1] text-[11px] font-inter font-black text-emerald-600 uppercase text-center">SHIPPED</Text>
+                                    <Text className="flex-[1] text-[11px] font-inter font-black text-slate-900 uppercase text-center">TO BUY</Text>
+                                    <View className="w-20" />
+                                </View>
+
+                                {mainMaterials.map(renderMaterialRow)}
+
+                                {sundries.length > 0 && (
+                                    <>
+                                        <View className="px-3 py-3 bg-indigo-50/30 border-y border-indigo-100 flex-row items-center gap-2">
+                                            <Ionicons name="layers" size={16} color="#6366f1" />
+                                            <Text className="text-[14px] font-inter font-black text-indigo-800 uppercase tracking-widest">SETTING MATERIALS & SUNDRIES</Text>
+                                        </View>
+                                        {sundries.map(renderMaterialRow)}
+                                    </>
+                                )}
+                            </>
+                        )}
+                    </View>
+                );
+            })}
+        </View>
+    );
+}

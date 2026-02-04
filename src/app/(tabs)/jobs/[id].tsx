@@ -4,11 +4,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SupabaseService } from '../../../services/SupabaseService';
 import ProductionTab from '../../../components/jobs/ProductionTab';
-import OfficeTab from '../../../components/jobs/OfficeTab';
+import LogisticsTab from '../../../components/jobs/LogisticsTab';
 
 const TABS = [
     { id: 'PRODUCTION', label: 'Production', icon: 'layers' },
-    { id: 'OFFICE', label: 'Office', icon: 'briefcase' },
+    { id: 'LOGISTICS', label: 'Logistics', icon: 'cube' },
     { id: 'JOBSITE', label: 'Job Site', icon: 'construct' },
     { id: 'ISSUES', label: 'Job Issues', icon: 'alert-circle' },
     { id: 'SAFETY', label: 'Safety', icon: 'shield-checkmark' },
@@ -60,8 +60,8 @@ export default function JobDetailsScreen() {
         switch (activeTab) {
             case 'PRODUCTION':
                 return <ProductionTab job={job} setJob={setJob} />;
-            case 'OFFICE':
-                return <OfficeTab job={job} />;
+            case 'LOGISTICS':
+                return <LogisticsTab job={job} />;
             case 'ISSUES':
                 return <JobIssuesTab jobId={job.id} />;
             default:

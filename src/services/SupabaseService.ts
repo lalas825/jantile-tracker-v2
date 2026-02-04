@@ -159,6 +159,30 @@ export interface DeliveryTicket {
     updated_at?: string;
 }
 
+export interface PurchaseOrderItem {
+    id: string;
+    po_id: string;
+    material_id: string;
+    quantity_ordered: number;
+    item_cost: number;
+    created_at?: string;
+}
+
+export interface PurchaseOrder {
+    id: string;
+    job_id: string;
+    po_number: string;
+    vendor: string;
+    status: 'Ordered' | 'Partial' | 'Received';
+    order_date: string;
+    expected_date?: string;
+    total_amount: number;
+    notes?: string;
+    items?: PurchaseOrderItem[];
+    created_at?: string;
+    updated_at?: string;
+}
+
 export interface UIWorkerWithLogs {
     id: string;
     name: string;
@@ -1487,6 +1511,114 @@ export const SupabaseService = {
             return;
         }
         await db.execute(`DELETE FROM delivery_tickets WHERE id = ?`, [id]);
+    },
+
+    async getPurchaseOrders(jobId: string): Promise<PurchaseOrder[]> {
+        if (useSupabase) {
+            const { data: pos, error } = await supabase
+                .from('purchase_orders')
+                .select(`
+                    *,
+                    po_items (*)
+                `)
+                .eq('job_id', jobId)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            return (pos || []).map((p: any) => ({
+                ...p,
+                items: p.po_items || []
+            }));
+        }
+
+        // PowerSync Offline Fetch
+        const pos = await db.getAll(`SELECT * FROM purchase_orders WHERE job_id = ? ORDER BY created_at DESC`, [jobId]);
+        if (pos.length === 0) return [];
+
+        const poIds = pos.map((p: any) => p.id);
+        const placeholders = poIds.map(() => '?').join(',');
+        const items = await db.getAll(`SELECT * FROM po_items WHERE po_id IN (${placeholders})`, poIds);
+
+        const itemsMap = new Map<string, any[]>();
+        items.forEach((item: any) => {
+            if (!itemsMap.has(item.po_id)) itemsMap.set(item.po_id, []);
+            itemsMap.get(item.po_id)?.push(item);
+        });
+
+        return pos.map((p: any) => ({
+            ...p,
+            items: itemsMap.get(p.id) || []
+        }));
+    },
+
+    async savePurchaseOrder(poData: any, jobId: string): Promise<void> {
+        const now = new Date().toISOString();
+
+        if (useSupabase) {
+            // WEB: Write directly to Supabase to match the Read source
+            let poId = poData.po_id;
+
+            if (poData.mode === 'NEW') {
+                poId = Crypto.randomUUID();
+                const { error: poError } = await supabase.from('purchase_orders').insert({
+                    id: poId,
+                    job_id: jobId,
+                    po_number: poData.po_number,
+                    vendor: poData.vendor,
+                    status: 'Ordered',
+                    order_date: new Date().toISOString().split('T')[0],
+                    expected_date: poData.expected_date,
+                    total_amount: 0,
+                    created_at: now,
+                    updated_at: now
+                });
+                if (poError) throw poError;
+            }
+
+            // Insert Item
+            const itemId = Crypto.randomUUID();
+            const { error: itemError } = await supabase.from('po_items').insert({
+                id: itemId,
+                po_id: poId,
+                material_id: poData.material_id,
+                quantity_ordered: poData.qty,
+                item_cost: poData.cost,
+                created_at: now
+            });
+            if (itemError) throw itemError;
+
+            // Update Material directly via RPC or just update fields
+            // Since we can't easily do `in_transit = in_transit + X` without a stored procedure or atomic increment,
+            // we will fetch first (slightly racy but okay for this app scale) or use a RPC if critical.
+            // For now, fetch-update is acceptable on web.
+            const { data: mat } = await supabase.from('project_materials').select('in_transit').eq('id', poData.material_id).single();
+            const currentTransit = mat?.in_transit || 0;
+
+            await supabase.from('project_materials').update({
+                in_transit: currentTransit + poData.qty,
+                expected_date: poData.expected_date,
+                updated_at: now
+            }).eq('id', poData.material_id);
+
+            return;
+        }
+
+        // NATIVE: PowerSync Transaction
+        await db.writeTransaction(async (tx: any) => {
+            let poId = poData.po_id;
+            if (poData.mode === 'NEW') {
+                poId = Crypto.randomUUID();
+                await tx.execute(`INSERT INTO purchase_orders (id, job_id, po_number, vendor, status, order_date, expected_date, total_amount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [poId, jobId, poData.po_number, poData.vendor, 'Ordered', new Date().toISOString().split('T')[0], poData.expected_date, 0, now, now]);
+            }
+            const itemId = Crypto.randomUUID();
+            await tx.execute(`INSERT INTO po_items (id, po_id, material_id, quantity_ordered, item_cost, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+                [itemId, poId, poData.material_id, poData.qty, poData.cost, now]);
+
+            // Update Material: In Transit (+qty), Expected Date
+            await tx.execute(`UPDATE project_materials SET in_transit = in_transit + ?, expected_date = ?, updated_at = ? WHERE id = ?`,
+                [poData.qty, poData.expected_date, now, poData.material_id]);
+        });
     }
 };
 

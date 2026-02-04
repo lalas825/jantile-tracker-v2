@@ -163,11 +163,22 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                 alert("Please enter a name for the new area");
                 return;
             }
-            if (!unitSearch.trim() && !selectedUnitId) {
-                alert("Please enter a Unit name (e.g. 101)");
-                return;
+        }
+
+        // Auto-assign Unit ID logic
+        let linkedUnitId: string | undefined = undefined;
+        let newUnitName: string | undefined = undefined;
+
+        if (isCreatingNewArea) {
+            if (units && units.length > 0) {
+                // Default to the first unit if available
+                linkedUnitId = units[0].id;
+            } else {
+                // Determine a safe fallback or creating "General"
+                newUnitName = "General";
             }
         }
+
         onSave({
             ...initialData,
             product_code: code,
@@ -193,8 +204,8 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
             ...(isCreatingNewArea ? {
                 _new_area: {
                     name: newAreaName,
-                    unit_id: selectedUnitId || undefined,
-                    _new_unit_name: selectedUnitId ? undefined : unitSearch
+                    unit_id: linkedUnitId,
+                    _new_unit_name: newUnitName
                 }
             } : {})
         });
@@ -545,29 +556,6 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                             value={newAreaName}
                                             onChangeText={setNewAreaName}
                                         />
-                                        <TextInput
-                                            className="bg-white border border-blue-200 px-3 py-2 rounded-lg text-sm font-bold text-slate-900 mb-2"
-                                            placeholder="Unit Name (e.g. 101, Unit A)"
-                                            value={unitSearch}
-                                            onChangeText={(val) => {
-                                                setUnitSearch(val);
-                                                const match = units.find(u => u.name.toLowerCase().trim() === val.toLowerCase().trim());
-                                                if (match) setSelectedUnitId(match.id);
-                                                else setSelectedUnitId('');
-                                            }}
-                                        />
-                                        {unitSearch.length > 0 && !selectedUnitId && (
-                                            <View className="bg-orange-50 p-2 rounded-lg border border-orange-100 flex-row items-center gap-2 mb-2">
-                                                <Ionicons name="information-circle" size={12} color="#f59e0b" />
-                                                <Text className="text-[10px] text-orange-700 font-bold">New Unit will be created: "{unitSearch}"</Text>
-                                            </View>
-                                        )}
-                                        {selectedUnitId && (
-                                            <View className="bg-green-50 p-2 rounded-lg border border-green-100 flex-row items-center gap-2 mb-2">
-                                                <Ionicons name="checkmark-circle" size={12} color="#10b981" />
-                                                <Text className="text-[10px] text-green-700 font-bold">Linked to existing Unit: {unitSearch}</Text>
-                                            </View>
-                                        )}
                                     </View>
                                 )}
                             </View>

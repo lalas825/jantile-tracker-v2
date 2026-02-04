@@ -163,6 +163,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'area_id', type: ColumnType.TEXT }),
             new Column({ name: 'sub_location', type: ColumnType.TEXT }),
             new Column({ name: 'category', type: ColumnType.TEXT }),
+            new Column({ name: 'supplier', type: ColumnType.TEXT }),
             new Column({ name: 'product_code', type: ColumnType.TEXT }),
             new Column({ name: 'product_name', type: ColumnType.TEXT }),
             new Column({ name: 'product_specs', type: ColumnType.TEXT }),
@@ -203,6 +204,31 @@ export const AppSchema = new Schema([
             new Column({ name: 'created_by', type: ColumnType.TEXT }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
             new Column({ name: 'updated_at', type: ColumnType.TEXT }),
+        ]
+    }),
+    new Table({
+        name: 'purchase_orders',
+        columns: [
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'po_number', type: ColumnType.TEXT }),
+            new Column({ name: 'vendor', type: ColumnType.TEXT }),
+            new Column({ name: 'status', type: ColumnType.TEXT }),
+            new Column({ name: 'order_date', type: ColumnType.TEXT }),
+            new Column({ name: 'expected_date', type: ColumnType.TEXT }),
+            new Column({ name: 'total_amount', type: ColumnType.REAL }), // or TEXT if keeping string based
+            new Column({ name: 'notes', type: ColumnType.TEXT }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+            new Column({ name: 'updated_at', type: ColumnType.TEXT }),
+        ]
+    }),
+    new Table({
+        name: 'po_items',
+        columns: [
+            new Column({ name: 'po_id', type: ColumnType.TEXT }),
+            new Column({ name: 'material_id', type: ColumnType.TEXT }),
+            new Column({ name: 'quantity_ordered', type: ColumnType.REAL }),
+            new Column({ name: 'item_cost', type: ColumnType.REAL }), // or TEXT
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
         ]
     }),
 ]);
