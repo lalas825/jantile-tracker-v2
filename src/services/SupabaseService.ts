@@ -384,7 +384,7 @@ export const SupabaseService = {
                     units (
                         id, name, description,
                         areas (
-                            id, name, description, status, progress,
+                            id, name, description, drawing_page, status, progress,
                             area_photos (
                                 id, url, storage_path
                             )
@@ -587,7 +587,7 @@ export const SupabaseService = {
         await db.execute(`DELETE FROM units WHERE id = ?`, [unitId]);
     },
 
-    async addArea(unitId: string, name: string, description: string = ''): Promise<string> {
+    async addArea(unitId: string, name: string, description: string = '', drawingPage: string = ''): Promise<string> {
         // 2. Determine Preset
         const areaNameLower = name.toLowerCase();
         let preset = CHECKLIST_PRESETS[areaNameLower];
@@ -614,6 +614,7 @@ export const SupabaseService = {
                     unit_id: unitId,
                     name: name,
                     description: description,
+                    drawing_page: drawingPage,
                     status: 'NOT_STARTED',
                     progress: 0
                 })
@@ -642,8 +643,8 @@ export const SupabaseService = {
         // 1. Insert Area
         const areaId = Crypto.randomUUID();
         await db.execute(
-            `INSERT INTO areas (id, unit_id, name, description, status, progress, created_at) VALUES (?, ?, ?, ?, 'NOT_STARTED', 0, datetime('now'))`,
-            [areaId, unitId, name, description]
+            `INSERT INTO areas (id, unit_id, name, description, drawing_page, status, progress, created_at) VALUES (?, ?, ?, ?, ?, 'NOT_STARTED', 0, datetime('now'))`,
+            [areaId, unitId, name, description, drawingPage]
         );
 
         // 3. Insert Items
@@ -681,6 +682,7 @@ export const SupabaseService = {
         if (updates.status !== undefined) { clauses.push(`status = ?`); params.push(updates.status); }
         if (updates.progress !== undefined) { clauses.push(`progress = ?`); params.push(updates.progress); }
         if (updates.description !== undefined) { clauses.push(`description = ?`); params.push(updates.description); }
+        if (updates.drawing_page !== undefined) { clauses.push(`drawing_page = ?`); params.push(updates.drawing_page); }
 
         if (clauses.length === 0) return;
         query += clauses.join(', ') + ` WHERE id = ?`;
@@ -1513,6 +1515,102 @@ export const SupabaseService = {
         await db.execute(`DELETE FROM delivery_tickets WHERE id = ?`, [id]);
     },
 
+    async updateDeliveryTicketTime(id: string, date: string, time: string): Promise<void> {
+        const now = new Date().toISOString();
+        if (useSupabase) {
+            const { error } = await supabase
+                .from('delivery_tickets')
+                .update({ requested_date: date, scheduled_time: time, updated_at: now })
+                .eq('id', id);
+            if (error) throw error;
+            return;
+        }
+        await db.execute(`UPDATE delivery_tickets SET requested_date = ?, scheduled_time = ?, updated_at = ? WHERE id = ?`,
+            [date, time, now, id]);
+    },
+
+    async updateTicketStatus(ticket: DeliveryTicket, status: string): Promise<void> {
+        const now = new Date().toISOString();
+        if (useSupabase) {
+            const { error } = await supabase.from('delivery_tickets').update({ status, updated_at: now }).eq('id', ticket.id);
+            if (error) throw error;
+            return;
+        }
+        await db.execute(`UPDATE delivery_tickets SET status = ?, updated_at = ? WHERE id = ?`, [status, now, ticket.id]);
+    },
+
+
+    async getAllDeliveryTickets(): Promise<DeliveryTicket[]> {
+        if (useSupabase) {
+            const { data, error } = await supabase
+                .from('delivery_tickets')
+                .select('*')
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return (data || []).map((t: any) => ({
+                ...t,
+                items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items
+            }));
+        }
+
+        const result = await db.getAll(`SELECT * FROM delivery_tickets ORDER BY created_at DESC`);
+        return result.map((t: any) => ({
+            ...t,
+            items: t.items ? JSON.parse(t.items) : []
+        }));
+    },
+
+    async getAllPurchaseOrders(): Promise<PurchaseOrder[]> {
+        if (useSupabase) {
+            const { data: pos, error } = await supabase
+                .from('purchase_orders')
+                .select(`
+                    *,
+                    po_items (*)
+                `)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            return (pos || []).map((p: any) => ({
+                ...p,
+                items: p.po_items || []
+            }));
+        }
+
+        const pos = await db.getAll(`SELECT * FROM purchase_orders ORDER BY created_at DESC`);
+        if (pos.length === 0) return [];
+
+        const poIds = pos.map((p: any) => p.id);
+        const placeholders = poIds.map(() => '?').join(',');
+        const items = await db.getAll(`SELECT * FROM po_items WHERE po_id IN (${placeholders})`, poIds);
+
+        const itemsMap = new Map<string, any[]>();
+        items.forEach((item: any) => {
+            if (!itemsMap.has(item.po_id)) itemsMap.set(item.po_id, []);
+            itemsMap.get(item.po_id)?.push(item);
+        });
+
+        return pos.map((p: any) => ({
+            ...p,
+            items: itemsMap.get(p.id) || []
+        }));
+    },
+
+    async updatePurchaseOrderTime(id: string, date: string, time: string): Promise<void> {
+        const now = new Date().toISOString();
+        if (useSupabase) {
+            const { error } = await supabase
+                .from('purchase_orders')
+                .update({ expected_date: date, scheduled_time: time, updated_at: now })
+                .eq('id', id);
+            if (error) throw error;
+            return;
+        }
+        await db.execute(`UPDATE purchase_orders SET expected_date = ?, scheduled_time = ?, updated_at = ? WHERE id = ?`,
+            [date, time, now, id]);
+    },
+
+
     async getPurchaseOrders(jobId: string): Promise<PurchaseOrder[]> {
         if (useSupabase) {
             const { data: pos, error } = await supabase
@@ -1531,7 +1629,6 @@ export const SupabaseService = {
             }));
         }
 
-        // PowerSync Offline Fetch
         const pos = await db.getAll(`SELECT * FROM purchase_orders WHERE job_id = ? ORDER BY created_at DESC`, [jobId]);
         if (pos.length === 0) return [];
 
@@ -1619,6 +1716,39 @@ export const SupabaseService = {
             await tx.execute(`UPDATE project_materials SET in_transit = in_transit + ?, expected_date = ?, updated_at = ? WHERE id = ?`,
                 [poData.qty, poData.expected_date, now, poData.material_id]);
         });
+    },
+
+    async getWarehouseInventory(): Promise<any[]> {
+        if (useSupabase) {
+            const { data, error } = await supabase
+                .from('project_materials')
+                .select(`
+                    *,
+                    jobs (name, job_number)
+                `)
+                .gt('shop_stock', 0)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            return data || [];
+        }
+
+        // Native
+        const materials = await db.getAll(`SELECT * FROM project_materials WHERE shop_stock > 0`);
+        if (materials.length === 0) return [];
+
+        // Enrich with Job Name (manual join for local)
+        const jobIds = [...new Set(materials.map((m: any) => m.job_id))];
+        const placeholders = jobIds.map(() => '?').join(',');
+        const jobs = await db.getAll(`SELECT id, name, job_number FROM jobs WHERE id IN (${placeholders})`, jobIds);
+
+        const jobMap = new Map();
+        jobs.forEach((j: any) => jobMap.set(j.id, j));
+
+        return materials.map((m: any) => ({
+            ...m,
+            jobs: jobMap.get(m.job_id) || { name: 'Unknown Job', job_number: 'N/A' }
+        }));
     }
 };
 

@@ -118,7 +118,7 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
     const handleEditArea = (floorId: string, unitId: string, area: any) => {
         setModalMode('edit-area');
         setModalTarget({ floorId, unitId, areaId: area.id });
-        setExistingData({ name: area.name, areaName: area.name, description: area.description });
+        setExistingData({ name: area.name, areaName: area.name, description: area.description, drawingPage: area.drawing_page } as any);
         setModalVisible(true);
     };
 
@@ -145,11 +145,12 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
             } else if (modalMode === 'edit-unit' && modalTarget?.unitId) {
                 await SupabaseService.updateUnitName(modalTarget.unitId, data.name, data.description);
             } else if (modalMode === 'add-area' && modalTarget?.unitId) {
-                await SupabaseService.addArea(modalTarget.unitId, data.name || 'New Area', data.description || '');
+                await SupabaseService.addArea(modalTarget.unitId, data.name || 'New Area', data.description || '', data.drawingPage);
             } else if (modalMode === 'edit-area' && modalTarget?.areaId) {
                 await SupabaseService.updateArea(modalTarget.areaId, {
                     name: data.name,
-                    description: data.description
+                    description: data.description,
+                    drawing_page: data.drawingPage
                 });
             }
             await reloadJob();

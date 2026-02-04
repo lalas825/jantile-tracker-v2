@@ -16,6 +16,8 @@ bucket_definitions:
       - SELECT * FROM issue_comments
       - SELECT * FROM project_materials
       - SELECT * FROM delivery_tickets
+      - SELECT * FROM purchase_orders
+      - SELECT * FROM po_items
 
   # User-specific data (logs and profiles)
   by_user:

@@ -23,6 +23,7 @@ export default function StructureModal({
 
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
+    const [drawingPage, setDrawingPage] = useState('');
 
     // RESET LOGIC
     useEffect(() => {
@@ -31,17 +32,26 @@ export default function StructureModal({
                 // EDIT MODE: Load existing data
                 setName(initialData.name || '');
                 setDescription(initialData.description || '');
+                setDrawingPage((initialData as any).drawingPage || '');
             } else {
                 // CREATE MODE: Wipe everything clean
                 setName('');
                 setDescription('');
+                setDrawingPage('');
             }
         }
     }, [isVisible, mode, initialData]);
 
     const handleSave = () => {
         // Send 'name' as the primary identifier for all types
-        onSubmit({ name, description });
+        // Include drawingPage in the submission payload
+        onSubmit({
+            name,
+            description,
+            drawingPage, // Passed as part of data, Service expects this if we pass object 
+            // Note: SupabaseService addArea implementation previously modified to read (description as any).drawingPage 
+            // Better to pass explicit params, but here we are bound by handleStructureSubmit signature in ProductionTab
+        });
     };
 
     // Dynamic Title Logic
@@ -123,6 +133,20 @@ export default function StructureModal({
                                     placeholder="e.g. North Side"
                                     value={description}
                                     onChangeText={setDescription}
+                                />
+                            </>
+                        )}
+
+                        {/* Drawing Page - Only for Areas */}
+                        {type === 'area' && (
+                            <>
+                                <Text style={styles.label}>Drawing Page</Text>
+                                <TextInput
+                                    style={[styles.input, { borderColor: '#fca5a5', backgroundColor: '#fef2f2' }]} // Red styling as requested
+                                    placeholder="e.g. A-101"
+                                    placeholderTextColor="#f87171"
+                                    value={drawingPage}
+                                    onChangeText={setDrawingPage}
                                 />
                             </>
                         )}

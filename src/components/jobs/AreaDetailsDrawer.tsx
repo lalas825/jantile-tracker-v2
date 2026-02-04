@@ -33,6 +33,7 @@ export interface AreaData {
     id: string;
     name: string;
     description: string;
+    drawing_page?: string;
     checklist: ChecklistItem[];
     area_photos?: { id: string; url: string; storage_path: string }[];
     photos?: string[]; // Legacy UI support

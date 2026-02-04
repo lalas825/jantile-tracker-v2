@@ -85,6 +85,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'unit_id', type: ColumnType.TEXT }),
             new Column({ name: 'name', type: ColumnType.TEXT }),
             new Column({ name: 'description', type: ColumnType.TEXT }),
+            new Column({ name: 'drawing_page', type: ColumnType.TEXT }), // New Drawing Page
             new Column({ name: 'status', type: ColumnType.TEXT }),
             new Column({ name: 'progress', type: ColumnType.INTEGER }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
@@ -200,6 +201,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'requested_date', type: ColumnType.TEXT }),
             new Column({ name: 'due_date', type: ColumnType.TEXT }),
             new Column({ name: 'due_time', type: ColumnType.TEXT }),
+            new Column({ name: 'scheduled_time', type: ColumnType.TEXT }), // New for Calendar v2.1
             new Column({ name: 'notes', type: ColumnType.TEXT }),
             new Column({ name: 'created_by', type: ColumnType.TEXT }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
@@ -215,6 +217,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'status', type: ColumnType.TEXT }),
             new Column({ name: 'order_date', type: ColumnType.TEXT }),
             new Column({ name: 'expected_date', type: ColumnType.TEXT }),
+            new Column({ name: 'scheduled_time', type: ColumnType.TEXT }), // New for Calendar v2.1
             new Column({ name: 'total_amount', type: ColumnType.REAL }), // or TEXT if keeping string based
             new Column({ name: 'notes', type: ColumnType.TEXT }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
