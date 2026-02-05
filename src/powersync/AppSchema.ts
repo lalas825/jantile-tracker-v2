@@ -76,6 +76,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'floor_id', type: ColumnType.TEXT }),
             new Column({ name: 'name', type: ColumnType.TEXT }),
             new Column({ name: 'description', type: ColumnType.TEXT }),
+            new Column({ name: 'type', type: ColumnType.TEXT }), // 'production' | 'logistics'
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
         ]
     }),
@@ -85,7 +86,8 @@ export const AppSchema = new Schema([
             new Column({ name: 'unit_id', type: ColumnType.TEXT }),
             new Column({ name: 'name', type: ColumnType.TEXT }),
             new Column({ name: 'description', type: ColumnType.TEXT }),
-            new Column({ name: 'drawing_page', type: ColumnType.TEXT }), // New Drawing Page
+            new Column({ name: 'drawing_page', type: ColumnType.TEXT }),
+            new Column({ name: 'type', type: ColumnType.TEXT }), // 'production' | 'logistics'
             new Column({ name: 'status', type: ColumnType.TEXT }),
             new Column({ name: 'progress', type: ColumnType.INTEGER }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
@@ -186,6 +188,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'dim_length', type: ColumnType.REAL }),
             new Column({ name: 'dim_width', type: ColumnType.REAL }),
             new Column({ name: 'dim_thickness', type: ColumnType.TEXT }),
+            new Column({ name: 'linear_feet', type: ColumnType.REAL }), // New for Base Calculator
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
             new Column({ name: 'updated_at', type: ColumnType.TEXT }),
         ]

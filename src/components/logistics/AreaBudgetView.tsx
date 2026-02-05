@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Platform, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ProjectMaterial } from '../../services/SupabaseService';
 
@@ -12,6 +12,7 @@ interface AreaBudgetViewProps {
     onEditMaterial: (material: ProjectMaterial) => void;
     onDeleteMaterial: (id: string) => void;
     onDeleteArea: (id: string) => void;
+    onEditArea: (id: string) => void;
 }
 
 export default function AreaBudgetView({
@@ -22,14 +23,15 @@ export default function AreaBudgetView({
     onAddMaterial,
     onEditMaterial,
     onDeleteMaterial,
-    onDeleteArea
+    onDeleteArea,
+    onEditArea
 }: AreaBudgetViewProps) {
     return (
         <View>
-            {Object.keys(materialsByArea).map(areaId => {
-                const areaMats = materialsByArea[areaId];
-                const area = allAreas.find((a: any) => a.id === areaId);
-                const areaName = area?.name || 'Project Wide / Global';
+            {allAreas.map(area => {
+                const areaId = area.id;
+                const areaMats = materialsByArea[areaId] || [];
+                const areaName = area?.name || 'New Area';
                 const areaTotal = areaMats.reduce((sum, m) => sum + (m.total_value || 0), 0);
                 const isExpanded = expandedAreas[areaId] !== false; // Default to expanded
 
@@ -117,13 +119,23 @@ export default function AreaBudgetView({
                                 </View>
                                 {renderPcs(toBuy)}
                             </View>
-                            <View className="w-20 flex-row justify-end gap-3">
+                            <View className="w-20 flex-row justify-end gap-3 px-2">
                                 <TouchableOpacity onPress={() => onEditMaterial(m)}>
-                                    <Ionicons name="pencil-outline" size={18} color="#cbd5e1" />
+                                    <Ionicons name="pencil-outline" size={18} color="#94a3b8" />
                                 </TouchableOpacity>
-                                <TouchableOpacity onPress={() => onDeleteMaterial(m.id)}>
-                                    <Ionicons name="trash-outline" size={18} color="#fee2e2" />
-                                </TouchableOpacity>
+                                <Pressable
+                                    onPress={() => {
+                                        console.log("[AreaBudgetView] Delete clicked for material:", m.id);
+                                        onDeleteMaterial(m.id);
+                                    }}
+                                    hitSlop={15}
+                                    style={({ pressed }) => [
+                                        { opacity: pressed ? 0.5 : 1 },
+                                        Platform.OS === 'web' ? { cursor: 'pointer' } : {}
+                                    ]}
+                                >
+                                    <Ionicons name="trash-outline" size={18} color="#f87171" />
+                                </Pressable>
                             </View>
                         </View>
                     );
@@ -141,13 +153,21 @@ export default function AreaBudgetView({
                                 </TouchableOpacity>
                                 <View>
                                     <Text className="text-white font-inter font-black text-lg tracking-tight">{areaName}</Text>
-                                    <Text className="text-blue-400 text-[13px] font-inter font-black uppercase tracking-widest">Area Logistics Breakdown</Text>
+                                    <Text className="text-blue-400 text-[13px] font-inter font-black uppercase tracking-widest">
+                                        {area?.description || 'Area Logistics Breakdown'}
+                                    </Text>
                                 </View>
                             </View>
                             <View className="flex-row items-center gap-2">
                                 <View className="bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 mr-2">
                                     <Text className="text-white font-inter font-black text-xs">Value: ${areaTotal.toLocaleString()}</Text>
                                 </View>
+                                <TouchableOpacity
+                                    onPress={() => onEditArea(areaId)}
+                                    className="bg-white/10 w-8 h-8 rounded-lg items-center justify-center mr-1"
+                                >
+                                    <Ionicons name="pencil" size={14} color="white" />
+                                </TouchableOpacity>
                                 <TouchableOpacity
                                     onPress={() => onAddMaterial(areaId)}
                                     className="bg-blue-600 w-8 h-8 rounded-lg items-center justify-center"
@@ -197,6 +217,37 @@ export default function AreaBudgetView({
                     </View>
                 );
             })}
+
+            {/* Render Unassigned if any */}
+            {materialsByArea['unassigned'] && materialsByArea['unassigned'].length > 0 && (
+                <View key="unassigned" className="bg-white rounded-2xl border border-slate-200 mb-8 overflow-hidden shadow-md">
+                    <View className="p-4 bg-slate-400 flex-row justify-between items-center">
+                        <View className="flex-row items-center gap-4">
+                            <View className="bg-white/10 w-8 h-8 rounded-lg items-center justify-center">
+                                <Ionicons name="help-circle" size={16} color="white" />
+                            </View>
+                            <View>
+                                <Text className="text-white font-inter font-black text-lg tracking-tight">Unassigned / Global Hub</Text>
+                                <Text className="text-slate-100 text-[13px] font-inter font-black uppercase tracking-widest">
+                                    Items not linked to a specific area
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+                    <View className="p-4">
+                        {materialsByArea['unassigned'].map(m => {
+                            // Re-using local render logic would be better but for brevity:
+                            // (Note: this is simplified, ideally we'd extract renderMaterialRow)
+                            return (
+                                <View key={m.id} className="py-2 border-b border-slate-100 flex-row justify-between">
+                                    <Text className="font-bold">{m.product_name}</Text>
+                                    <Text>{m.net_qty} {m.unit}</Text>
+                                </View>
+                            );
+                        })}
+                    </View>
+                </View>
+            )}
         </View>
     );
 }

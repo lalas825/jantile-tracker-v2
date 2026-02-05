@@ -91,6 +91,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='project_materials' AND COLUMN_NAME='dim_thickness') THEN
         ALTER TABLE project_materials ADD COLUMN dim_thickness TEXT;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='project_materials' AND COLUMN_NAME='supplier') THEN
+        ALTER TABLE project_materials ADD COLUMN supplier TEXT;
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='project_materials' AND COLUMN_NAME='updated_at') THEN
         ALTER TABLE project_materials ADD COLUMN updated_at TIMESTAMPTZ DEFAULT now();
     END IF;
@@ -126,6 +129,27 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='updated_at') THEN
         ALTER TABLE delivery_tickets ADD COLUMN updated_at TIMESTAMPTZ DEFAULT now();
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='updated_at') THEN
+        ALTER TABLE delivery_tickets ADD COLUMN updated_at TIMESTAMPTZ DEFAULT now();
+    END IF;
+END $$;
+
+-- 4. Add missing columns to areas (Specific for Drawing Page feature)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='areas' AND COLUMN_NAME='drawing_page') THEN
+        ALTER TABLE areas ADD COLUMN drawing_page TEXT;
+    END IF;
+
+    -- New for Base Calculator
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='project_materials' AND COLUMN_NAME='linear_feet') THEN
+        ALTER TABLE project_materials ADD COLUMN linear_feet NUMERIC DEFAULT 0;
+    END IF;
+
+    -- New for Domain Isolation
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='areas' AND COLUMN_NAME='type') THEN
+        ALTER TABLE areas ADD COLUMN type TEXT DEFAULT 'production';
+    END IF;
 END $$;
 
 -- 4. Re-apply Policies (Safe)
@@ -144,7 +168,15 @@ CREATE POLICY "Allow read access for authenticated users" ON delivery_tickets FO
 DROP POLICY IF EXISTS "Allow write access for PMs/Admins" ON delivery_tickets;
 CREATE POLICY "Allow write access for PMs/Admins" ON delivery_tickets FOR ALL TO authenticated USING (true);
 
--- 5. Publication Update (Safe)
+-- 6. Add missing columns to units
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='units' AND COLUMN_NAME='type') THEN
+        ALTER TABLE units ADD COLUMN type TEXT;
+    END IF;
+END $$;
+
+-- 7. Update Publications
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'powersync' AND tablename = 'project_materials') THEN

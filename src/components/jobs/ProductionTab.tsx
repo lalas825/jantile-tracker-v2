@@ -10,6 +10,9 @@ import { Floor, Unit, Job } from '../../services/MockJobStore';
 import StructureModal from '../modals/StructureModal';
 import AreaDetailsDrawer from './AreaDetailsDrawer';
 import StructureModule from '../StructureModule';
+import CloningModal from '../modals/CloningModal';
+import { db } from '../../powersync/db';
+import { randomUUID } from 'expo-crypto';
 
 type StructureModalMode = 'add-floor' | 'edit-floor' | 'add-unit' | 'edit-unit' | 'edit-area' | 'add-area';
 type StructureModalData = { name: string; unitName?: string; description?: string; areaName?: string };
@@ -32,6 +35,11 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
     const [modalMode, setModalMode] = useState<StructureModalMode>('add-floor');
     const [modalTarget, setModalTarget] = useState<{ floorId?: string, unitId?: string, areaId?: string } | null>(null);
     const [existingData, setExistingData] = useState<StructureModalData | null>(null);
+
+    // Cloning State
+    const [cloningModalVisible, setCloningModalVisible] = useState(false);
+    const [cloningSource, setCloningSource] = useState<{ type: 'floor' | 'unit', data: any } | null>(null);
+    const [cloningLoading, setCloningLoading] = useState(false);
 
     // Drawer State
     const [drawerVisible, setDrawerVisible] = useState(false);
@@ -133,6 +141,119 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
         });
     };
 
+    // --- CLONING ENGINE ---
+    const handleCloneFloor = (floor: Floor) => {
+        setCloningSource({ type: 'floor', data: floor });
+        setCloningModalVisible(true);
+    };
+
+    const handleCloneUnit = (floorId: string, unit: Unit) => {
+        setCloningSource({ type: 'unit', data: unit });
+        setCloningModalVisible(true);
+    };
+
+    const getUUID = () => {
+        try {
+            const uuid = randomUUID();
+            if (!uuid) throw new Error("UUID is empty");
+            return uuid;
+        } catch (e) {
+            // Web fallback for non-secure contexts
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+    };
+
+    const performClone = async (targetFloorIds: string[]) => {
+        console.log("Starting clone for targets:", targetFloorIds, "Source:", cloningSource?.type);
+        if (!cloningSource || !job) {
+            console.error("Missing cloning source or job data", { cloningSource, job: !!job });
+            return;
+        }
+
+        setCloningLoading(true);
+        try {
+            const now = new Date().toISOString();
+            const isMock = !!db.isMock;
+
+            if (!isMock) {
+                // PowerSync Transaction (Native)
+                await db.writeTransaction(async (tx: any) => {
+                    for (const targetFloorId of targetFloorIds) {
+                        const targetFloor = job.floors?.find((f: any) => f.id === targetFloorId);
+                        if (!targetFloor) continue;
+
+                        const unitsToClone = cloningSource.type === 'unit' ? [cloningSource.data] : (cloningSource.data.units || []);
+                        console.log(`Units to clone to floor ${targetFloor.name}:`, unitsToClone.length);
+
+                        for (const sourceUnit of unitsToClone) {
+                            const newUnitId = getUUID();
+                            const newUnitName = `${sourceUnit.name} - ${targetFloor.name}`;
+                            console.log(`  Cloning unit: ${sourceUnit.name} -> ${newUnitName}`);
+
+                            await tx.execute(
+                                `INSERT INTO units (id, floor_id, name, type, created_at) VALUES (?, ?, ?, ?, ?)`,
+                                [newUnitId, targetFloorId, newUnitName, 'production', now]
+                            );
+
+                            if (sourceUnit.areas) {
+                                for (const area of sourceUnit.areas) {
+                                    const newAreaId = getUUID();
+                                    await tx.execute(
+                                        `INSERT INTO areas (id, unit_id, name, description, type, status, progress, drawing_page, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                        [newAreaId, newUnitId, area.name, area.description || '', 'production', area.status || 'NOT_STARTED', area.progress || 0, area.drawing_page || '', now]
+                                    );
+                                }
+                            }
+                        }
+                    }
+                });
+            } else {
+                // Supabase Sequential (Web Fallback)
+                for (const targetFloorId of targetFloorIds) {
+                    const targetFloor = job.floors?.find((f: any) => f.id === targetFloorId);
+                    if (!targetFloor) continue;
+
+                    const unitsToClone = cloningSource.type === 'unit' ? [cloningSource.data] : (cloningSource.data.units || []);
+                    console.log(`Units to clone (Web) to floor ${targetFloor.name}:`, unitsToClone.length);
+
+                    for (const sourceUnit of unitsToClone) {
+                        const newUnitName = `${sourceUnit.name} - ${targetFloor.name}`;
+                        console.log(`  Cloning unit: ${sourceUnit.name} -> ${newUnitName}`);
+                        const newUnitId = await SupabaseService.addUnit(targetFloorId, newUnitName, 'production');
+
+                        if (sourceUnit.areas) {
+                            for (const area of sourceUnit.areas) {
+                                await SupabaseService.addArea(newUnitId, area.name, area.description || '', area.drawing_page || '', 'production');
+                            }
+                        }
+                    }
+                }
+            }
+
+            console.log("Cloning completed successfully");
+            setCloningModalVisible(false);
+            setCloningSource(null);
+            await reloadJob();
+
+            if (Platform.OS === 'web') {
+                alert("Structure cloned successfully");
+            } else {
+                Alert.alert("Success", "Structure cloned successfully");
+            }
+        } catch (error: any) {
+            console.error("Cloning Error Detail:", error);
+            const msg = "Failed to clone structure: " + error.message;
+            if (Platform.OS === 'web') alert(msg);
+            else Alert.alert("Error", msg);
+        } finally {
+            setCloningLoading(false);
+        }
+    };
+
     const handleStructureSubmit = async (data: any) => {
         if (!job) return;
         try {
@@ -187,7 +308,25 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
             </View>
 
             <StructureModule
-                floors={job?.floors || []}
+                floors={job?.floors?.map(f => ({
+                    ...f,
+                    units: f.units?.filter((u: any) => u.type !== 'logistics').map((u: any) => {
+                        const productionAreas = u.areas?.filter((a: any) => !a.type || a.type === 'production');
+
+                        // Hide unit if:
+                        // 1. It only has hidden logistics areas
+                        const hasOnlyHiddenAreas = (u.areas?.length || 0) > 0 && (productionAreas?.length || 0) === 0;
+                        if (hasOnlyHiddenAreas) return null;
+
+                        // 2. It is an empty auto-created unit (name "General")
+                        if ((u.areas?.length || 0) === 0 && u.name === "General") return null;
+
+                        return {
+                            ...u,
+                            areas: productionAreas
+                        };
+                    }).filter(Boolean) as any
+                })) || []}
                 onEditFloor={handleEditFloor}
                 onDeleteFloor={handleDeleteFloor}
                 onAddUnit={handleAddUnit}
@@ -197,6 +336,8 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
                 onEditArea={handleEditArea}
                 onDeleteArea={handleDeleteArea}
                 onAreaPress={handleAreaOpen}
+                onCloneFloor={handleCloneFloor}
+                onCloneUnit={handleCloneUnit}
             />
 
             {(!job?.floors || job.floors.length === 0) && (
@@ -220,6 +361,16 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
                 {...getModalProps() as any}
             />
 
+            <CloningModal
+                isVisible={cloningModalVisible}
+                onClose={() => setCloningModalVisible(false)}
+                onConfirm={performClone}
+                floors={job?.floors?.map(f => ({ id: f.id, name: f.name })) || []}
+                title={cloningSource?.type === 'floor' ? "Clone Floor Structure" : "Clone Unit Structure"}
+                sourceName={cloningSource?.data?.name}
+                loading={cloningLoading}
+            />
+
             <AreaDetailsDrawer
                 isVisible={drawerVisible}
                 onClose={() => setDrawerVisible(false)}
@@ -240,6 +391,9 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
                                 ...floor,
                                 units: floor.units?.map((unit: any) => ({
                                     ...unit,
+                                    // Non-destructive update: Update progress for target, keep others as is
+                                    // Note: This matches local state, which might include logistics areas. 
+                                    // StructureModule filters them out for display.
                                     areas: unit.areas?.map((a: any) =>
                                         a.id === selectedArea.id ? { ...a, progress } : a
                                     )

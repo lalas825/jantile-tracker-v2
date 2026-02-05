@@ -39,6 +39,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
     const [dimLength, setDimLength] = useState('');
     const [dimWidth, setDimWidth] = useState('');
     const [dimThickness, setDimThickness] = useState('');
+    const [linearFeet, setLinearFeet] = useState(''); // New State
     const [netQty, setNetQty] = useState('0'); // Net Qty before waste
     const [wastePercent, setWastePercent] = useState('10'); // Default 10%
     const [manualQty, setManualQty] = useState('0'); // Total Budget Qty
@@ -62,14 +63,9 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
     const [showAreaMenu, setShowAreaMenu] = useState(false);
     const [isCreatingNewArea, setIsCreatingNewArea] = useState(false);
     const [newAreaName, setNewAreaName] = useState('');
+    const [newAreaDescription, setNewAreaDescription] = useState('');
     const [selectedUnitId, setSelectedUnitId] = useState('');
     const [unitSearch, setUnitSearch] = useState('');
-
-    useEffect(() => {
-        if (lockedAreaId) {
-            setAreaId(lockedAreaId);
-        }
-    }, [lockedAreaId, visible]);
 
     useEffect(() => {
         if (initialData) {
@@ -92,19 +88,20 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
             setDimLength(initialData.dim_length?.toString() || '');
             setDimWidth(initialData.dim_width?.toString() || '');
             setDimThickness(initialData.dim_thickness || '');
+            setLinearFeet(initialData.linear_feet?.toString() || '');
             setCostBasis(initialData.unit || 'sqft');
         } else {
-            resetForm();
+            resetForm(lockedAreaId);
         }
-    }, [initialData, visible]);
+    }, [initialData, visible, lockedAreaId]);
 
-    const resetForm = () => {
+    const resetForm = (initialAreaId?: string) => {
         setCode('');
         setCategory('Generic');
         setProductName('');
         setSpecs('');
         setZone('');
-        setAreaId('');
+        setAreaId(initialAreaId || '');
         setSubLocation('');
         setSupplier('');
         setNetQty('0');
@@ -118,8 +115,10 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
         setDimLength('');
         setDimWidth('');
         setDimThickness('');
+        setLinearFeet('');
         setCostBasis('sqft');
         setNewAreaName('');
+        setNewAreaDescription('');
         setSelectedUnitId('');
         setUnitSearch('');
     };
@@ -135,11 +134,39 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
         }
     };
 
-    const handleBaseCalc = (pcLen: string, count: string) => {
-        const len = parseFloat(pcLen) || 0;
-        const c = parseFloat(count) || 0;
-        const lf = (len / 12) * c;
-        setManualQty(lf.toFixed(2));
+    const handleBaseCalc = (pcLen: string, pcHeight: string, totalLF: string) => {
+        const len = parseFloat(pcLen) || 0; // Inches
+        const height = parseFloat(pcHeight) || 0; // Inches (Reusing dimWidth)
+        const lf = parseFloat(totalLF) || 0;
+
+        if (len && lf) {
+            // Count = Total LF / (Length / 12)
+            const count = lf / (len / 12);
+            setManualPcs(Math.ceil(count).toString());
+
+            // SQFT = Total LF * (Height / 12)
+            if (height) {
+                const sqft = lf * (height / 12);
+                setNetQty(sqft.toFixed(2));
+                const w = parseFloat(wastePercent) || 0;
+                setManualQty((sqft * (1 + w / 100)).toFixed(2));
+
+                // Auto Description
+                if (code) {
+                    const desc = `${height}"x${len}" Base`;
+                    if (!productName.includes(desc)) {
+                        setProductName(prev => prev ? `${prev} - ${desc}` : desc);
+                    }
+                }
+            } else {
+                // Fallback if no height: just update Manual Qty based on LF if basis is LF?
+                // But manualQty is usually the budget quantity in units.
+                // If Base, we usually order by LF or Pieces?
+                // Let's assume Manual Qty holds the "Budget Qty" which depends on 'unit'
+                // But requirements say "SQFT Conversion: Automatically calculate the total Square Footage".
+                // So we must prioritize NetQty = SQFT.
+            }
+        }
     };
 
     const totalEstimatedCost = useMemo(() => {
@@ -201,9 +228,11 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
             dim_length: parseFloat(dimLength) || undefined,
             dim_width: parseFloat(dimWidth) || undefined,
             dim_thickness: dimThickness,
+            linear_feet: parseFloat(linearFeet) || undefined,
             ...(isCreatingNewArea ? {
                 _new_area: {
                     name: newAreaName,
+                    description: newAreaDescription,
                     unit_id: linkedUnitId,
                     _new_unit_name: newUnitName
                 }
@@ -359,40 +388,87 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
             return (
                 <View className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 mb-6">
                     <View className="flex-row items-center gap-2 mb-3">
-                        <Ionicons name="git-commit" size={14} color="#6366f1" />
+                        <Ionicons name="resize" size={14} color="#6366f1" />
                         <Text className="text-[10px] font-inter font-black text-indigo-800 uppercase tracking-widest">Base Calculator</Text>
                     </View>
-                    <View className="mb-4">
-                        <Text className="text-[9px] font-bold text-indigo-600 uppercase mb-2">Piece Length (Inches)</Text>
-                        <TextInput
-                            className="bg-white border border-indigo-200 p-2.5 rounded-lg text-sm font-bold text-slate-900"
-                            placeholder='Length (e.g "24 1/2")'
-                            placeholderTextColor={pColor}
-                            value={basePcLength}
-                            onChangeText={(val) => {
-                                setBasePcLength(val);
-                                handleBaseCalc(val, manualPcs);
-                            }}
-                        />
-                    </View>
-                    <View className="flex-row gap-3">
-                        <View className="flex-1">
-                            <Text className="text-[9px] font-bold text-indigo-600 uppercase mb-2">Count (Pieces)</Text>
+                    <View className="flex-row gap-3 mb-4">
+                        <View className="flex-[1]">
+                            <Text className="text-[9px] font-bold text-indigo-600 uppercase mb-2">Piece Length (Inches)</Text>
                             <TextInput
                                 className="bg-white border border-indigo-200 p-2.5 rounded-lg text-sm font-bold text-slate-900"
+                                placeholder='Len (e.g "48")'
+                                placeholderTextColor="#94a3b8"
+                                value={dimLength}
+                                onChangeText={(val) => {
+                                    setDimLength(val);
+                                    handleBaseCalc(val, dimWidth, linearFeet);
+                                }}
+                            />
+                        </View>
+                        <View className="flex-[1]">
+                            <Text className="text-[9px] font-bold text-indigo-600 uppercase mb-2">Piece Height (Inches)</Text>
+                            <TextInput
+                                className="bg-white border border-indigo-200 p-2.5 rounded-lg text-sm font-bold text-slate-900"
+                                placeholder='Hgt (e.g "4")'
+                                placeholderTextColor="#94a3b8"
+                                value={dimWidth}
+                                onChangeText={(val) => {
+                                    setDimWidth(val);
+                                    handleBaseCalc(dimLength, val, linearFeet);
+                                }}
+                            />
+                        </View>
+                    </View>
+                    <View className="flex-row gap-3">
+                        <View className="flex-[2]">
+                            <Text className="text-[9px] font-bold text-indigo-600 uppercase mb-2">Total Linear Feet (LF)</Text>
+                            <TextInput
+                                className="bg-indigo-100 border border-indigo-200 p-2.5 rounded-lg text-lg font-black text-indigo-900"
+                                keyboardType="numeric"
+                                value={linearFeet}
+                                onChangeText={(val) => {
+                                    setLinearFeet(val);
+                                    handleBaseCalc(dimLength, dimWidth, val);
+                                }}
+                            />
+                        </View>
+                        <View className="flex-[1]">
+                            <Text className="text-[9px] font-bold text-indigo-600 uppercase mb-2">Pcs Required</Text>
+                            <TextInput
+                                className="bg-white border border-indigo-200 p-2.5 rounded-lg text-sm font-bold text-slate-400"
                                 keyboardType="numeric"
                                 value={manualPcs}
+                                editable={false}
+                            />
+                        </View>
+                    </View>
+                    <View className="flex-row gap-3 mt-4 pt-4 border-t border-indigo-100">
+                        <View className="flex-1">
+                            <Text className="text-[9px] font-bold text-indigo-600 uppercase mb-2">Net SQFT</Text>
+                            <TextInput
+                                className="bg-white border border-indigo-200 p-2.5 rounded-lg text-xs font-bold text-slate-500"
+                                value={netQty}
+                                editable={false}
+                            />
+                        </View>
+                        <View className="flex-1">
+                            <Text className="text-[9px] font-bold text-indigo-600 uppercase mb-2">Waste %</Text>
+                            <TextInput
+                                className="bg-white border border-indigo-200 p-2.5 rounded-lg text-xs font-bold text-slate-900"
+                                value={wastePercent}
                                 onChangeText={(val) => {
-                                    setManualPcs(val);
-                                    handleBaseCalc(basePcLength, val);
+                                    setWastePercent(val);
+                                    // Recalc
+                                    const net = parseFloat(netQty) || 0;
+                                    const w = parseFloat(val) || 0;
+                                    setManualQty((net * (1 + w / 100)).toFixed(2));
                                 }}
                             />
                         </View>
                         <View className="flex-1">
-                            <Text className="text-[9px] font-bold text-indigo-600 uppercase mb-2">Total Linear Feet</Text>
+                            <Text className="text-[9px] font-bold text-indigo-600 uppercase mb-2">Budget Qty</Text>
                             <TextInput
-                                className="bg-white border border-indigo-200 p-2.5 rounded-lg text-sm font-bold text-slate-900"
-                                keyboardType="numeric"
+                                className="bg-white border border-indigo-200 p-2.5 rounded-lg text-xs font-bold text-slate-900"
                                 value={manualQty}
                                 onChangeText={setManualQty}
                             />
@@ -468,7 +544,9 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                                 className={`p-3 border-b border-slate-50 ${category === cat ? 'bg-blue-50' : ''}`}
                                                 onPress={() => {
                                                     setCategory(cat);
+                                                    setCategory(cat);
                                                     setUnit(cat === 'Base' ? 'lf' : (cat === 'Tile' || cat === 'Stone' ? 'sqft' : 'units'));
+                                                    // Default basis to 'lf' for Base, 'sqft' for Tile/Stone
                                                     setCostBasis(cat === 'Base' ? 'lf' : (cat === 'Tile' || cat === 'Stone' ? 'sqft' : 'units'));
                                                     setShowCategoryMenu(false);
                                                 }}
@@ -555,6 +633,12 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                             placeholder="Area Name (e.g. Unit 101 Bath)"
                                             value={newAreaName}
                                             onChangeText={setNewAreaName}
+                                        />
+                                        <TextInput
+                                            className="bg-white border border-blue-200 px-3 py-2 rounded-lg text-sm font-medium text-slate-900"
+                                            placeholder="Description (e.g. Floor 1, Unit 101)"
+                                            value={newAreaDescription}
+                                            onChangeText={setNewAreaDescription}
                                         />
                                     </View>
                                 )}

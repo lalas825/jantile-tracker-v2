@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Platform, useWindowDimensions } from 'react-native';
-import { ChevronDown, ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Plus, Pencil, Trash2, Copy } from 'lucide-react-native';
 import clsx from 'clsx';
 import { Floor, Unit } from '../services/MockJobStore';
 
@@ -15,6 +15,8 @@ interface StructureModuleProps {
     onEditArea: (floorId: string, unitId: string, area: any) => void;
     onDeleteArea: (floorId: string, unitId: string, areaId: string) => void;
     onAreaPress: (area: any) => void;
+    onCloneFloor?: (floor: Floor) => void;
+    onCloneUnit?: (floorId: string, unitId: Unit) => void;
 }
 
 const calculateFloorProgress = (floor: Floor) => {
@@ -42,7 +44,9 @@ export default function StructureModule({
     onAddArea,
     onEditArea,
     onDeleteArea,
-    onAreaPress
+    onAreaPress,
+    onCloneFloor,
+    onCloneUnit
 }: StructureModuleProps) {
     return (
         <View className="gap-6">
@@ -59,6 +63,8 @@ export default function StructureModule({
                     onEditArea={onEditArea}
                     onDeleteArea={onDeleteArea}
                     onAreaPress={onAreaPress}
+                    onCloneFloor={onCloneFloor}
+                    onCloneUnit={onCloneUnit}
                 />
             ))}
         </View>
@@ -93,6 +99,9 @@ function FloorSection({ floor, ...props }: { floor: Floor } & any) {
                 </View>
 
                 <View className="flex-row items-center gap-2">
+                    <TouchableOpacity onPress={() => props.onCloneFloor?.(floor)} className="p-2 bg-white/50 rounded-full">
+                        <Copy size={18} color="#4A5568" />
+                    </TouchableOpacity>
                     <TouchableOpacity onPress={() => props.onEditFloor(floor)} className="p-2 bg-white/50 rounded-full">
                         <Pencil size={18} color="#4A5568" />
                     </TouchableOpacity>
@@ -100,7 +109,7 @@ function FloorSection({ floor, ...props }: { floor: Floor } & any) {
                         <Trash2 size={18} color="#E53E3E" />
                     </TouchableOpacity>
                 </View>
-            </TouchableOpacity>
+            </TouchableOpacity >
 
             {expanded && (
                 <View className="p-6 gap-6">
@@ -121,8 +130,9 @@ function FloorSection({ floor, ...props }: { floor: Floor } & any) {
                         <Text className="text-slate-500 font-bold ml-2 text-base">Add New Unit to {floor.name}</Text>
                     </TouchableOpacity>
                 </View>
-            )}
-        </View>
+            )
+            }
+        </View >
     );
 }
 
@@ -164,6 +174,9 @@ function UnitCard({ unit, floorId, ...props }: { unit: Unit, floorId: string } &
                 </View>
 
                 <View className="flex-row items-center gap-2">
+                    <TouchableOpacity onPress={() => props.onCloneUnit?.(floorId, unit)} className="p-2 bg-white/50 rounded-full border border-slate-200 hover:bg-white">
+                        <Copy size={18} color="#718096" />
+                    </TouchableOpacity>
                     <TouchableOpacity onPress={() => props.onEditUnit(floorId, unit.id)} className="p-2 bg-white/50 rounded-full border border-slate-200 hover:bg-white">
                         <Pencil size={18} color="#718096" />
                     </TouchableOpacity>

@@ -25,16 +25,17 @@ export default function JobDetailsScreen() {
     const [activeTab, setActiveTab] = useState('PRODUCTION'); // Default to Production
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const fetchJob = async () => {
-            const fetchedJob = await SupabaseService.getJob(id as string);
-            if (fetchedJob) {
-                setJob(fetchedJob);
-            }
-            setLoading(false);
-        };
-        fetchJob();
+    const fetchJob = React.useCallback(async () => {
+        const fetchedJob = await SupabaseService.getJob(id as string);
+        if (fetchedJob) {
+            setJob(fetchedJob);
+        }
+        setLoading(false);
     }, [id]);
+
+    useEffect(() => {
+        fetchJob();
+    }, [fetchJob]);
 
     if (loading) {
         return (
@@ -61,7 +62,34 @@ export default function JobDetailsScreen() {
             case 'PRODUCTION':
                 return <ProductionTab job={job} setJob={setJob} />;
             case 'LOGISTICS':
-                return <LogisticsTab job={job} />;
+                // Optimistic UI updates for Logistics
+                return (
+                    <LogisticsTab
+                        job={job}
+                        onRefreshJob={fetchJob}
+                        onAreaUpdated={(areaId, updates) => {
+                            // OPTIMISTIC UPDATE: Mutate local state immediately
+                            const newJob = { ...job };
+                            if (newJob.floors) {
+                                newJob.floors.forEach((f: any) => {
+                                    if (f.units) {
+                                        f.units.forEach((u: any) => {
+                                            if (u.areas) {
+                                                const area = u.areas.find((a: any) => a.id === areaId);
+                                                if (area) {
+                                                    // Apply updates
+                                                    Object.assign(area, updates);
+                                                }
+                                            }
+                                        });
+                                    }
+                                });
+                            }
+                            setJob(newJob);
+                        }}
+                    />
+                );
+            case 'ISSUES':
             case 'ISSUES':
                 return <JobIssuesTab jobId={job.id} />;
             default:

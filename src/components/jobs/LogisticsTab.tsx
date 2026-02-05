@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SupabaseService, ProjectMaterial, DeliveryTicket, PurchaseOrder } from '../../services/SupabaseService';
 import { usePowerSync } from '@powersync/react';
@@ -11,17 +11,21 @@ import ProjectTotalView from '../logistics/ProjectTotalView';
 import DeliveriesView from '../logistics/DeliveriesView';
 
 // Modals
+// Modals
 import AddBudgetItemModal from '../logistics/AddBudgetItemModal';
 import DeliveryTicketModal from '../logistics/DeliveryTicketModal';
 import PurchaseOrderDrawer from '../logistics/PurchaseOrderDrawer';
+import EditAreaModal from '../logistics/EditAreaModal';
 
 interface LogisticsTabProps {
     job: any;
+    onAreaUpdated?: (areaId: string, updates: any) => void;
+    onRefreshJob?: () => void;
 }
 
 type ViewMode = 'area' | 'project' | 'deliveries';
 
-export default function LogisticsTab({ job }: LogisticsTabProps) {
+export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: LogisticsTabProps) {
     const [viewMode, setViewMode] = useState<ViewMode>('area');
     const [loading, setLoading] = useState(true);
     const powersync = usePowerSync();
@@ -30,6 +34,7 @@ export default function LogisticsTab({ job }: LogisticsTabProps) {
     const [materials, setMaterials] = useState<ProjectMaterial[]>([]);
     const [tickets, setTickets] = useState<DeliveryTicket[]>([]);
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+    const [rawAreas, setRawAreas] = useState<any[]>([]);
 
     // Modal State
     const [addModalVisible, setAddModalVisible] = useState(false);
@@ -37,6 +42,8 @@ export default function LogisticsTab({ job }: LogisticsTabProps) {
     const [poDrawerVisible, setPoDrawerVisible] = useState(false);
     const [selectedMaterial, setSelectedMaterial] = useState<ProjectMaterial | null>(null);
     const [lockedAreaId, setLockedAreaId] = useState<string | undefined>(undefined);
+    const [editAreaModalVisible, setEditAreaModalVisible] = useState(false);
+    const [selectedAreaForEdit, setSelectedAreaForEdit] = useState<any>(null);
 
     // View State
     const [expandedAreas, setExpandedAreas] = useState<Record<string, boolean>>({});
@@ -49,14 +56,16 @@ export default function LogisticsTab({ job }: LogisticsTabProps) {
     // --- DATA LOADING ---
     const loadData = useCallback(async () => {
         try {
-            const [mats, tkts, pos] = await Promise.all([
+            const [mats, tkts, pos, aras] = await Promise.all([
                 SupabaseService.getProjectMaterials(job.id),
                 SupabaseService.getDeliveryTickets(job.id),
-                SupabaseService.getPurchaseOrders(job.id)
+                SupabaseService.getPurchaseOrders(job.id),
+                SupabaseService.getProjectAreas(job.id)
             ]);
             setMaterials(mats);
             setTickets(tkts);
             setPurchaseOrders(pos);
+            setRawAreas(aras);
         } catch (err) {
             console.error("Logistics Load Error:", err);
         } finally {
@@ -68,28 +77,99 @@ export default function LogisticsTab({ job }: LogisticsTabProps) {
         loadData();
     }, [loadData]);
 
-
     // --- COMPUTED DATA ---
     const allAreas = useMemo(() => {
-        return job.floors?.flatMap((f: any) =>
-            f.units?.flatMap((u: any) => u.areas || []) || []
-        ) || [];
-    }, [job]);
+        // 1. Get real areas from DB
+        const areaIds = new Set(rawAreas.map(a => a.id));
+        const realNames = new Set(rawAreas.map(a => (a.name || '').toLowerCase()));
+
+        // 2. Identify materials with NO area_id OR area_id not in rawAreas
+        const virtualAreas: any[] = [];
+        const seenLocations = new Set<string>();
+
+        materials.forEach(m => {
+            const hasRealArea = (m.area_id && areaIds.has(m.area_id)) ||
+                (m.sub_location && realNames.has(m.sub_location.toLowerCase()));
+
+            if (!hasRealArea && m.sub_location && m.sub_location !== 'Unassigned') {
+                const locKey = m.sub_location.toLowerCase();
+                if (!seenLocations.has(locKey)) {
+                    seenLocations.add(locKey);
+                    virtualAreas.push({
+                        id: `loc-${m.sub_location}`,
+                        name: m.sub_location,
+                        description: 'Location from Project Total',
+                        type: 'logistics',
+                        isVirtual: true,
+                        created_at: m.created_at || new Date().toISOString()
+                    });
+                }
+            }
+        });
+
+        // 3. Filter rawAreas:
+        // - Show if it's 'logistics' type
+        // - OR Show if it has materials
+        // - OR Show if name contains "BOH" or "Back of House"
+        const areaIdsWithMats = new Set(materials.map(m => m.area_id).filter(Boolean));
+        const filtered = rawAreas.filter(a => {
+            if (a.type === 'logistics') return true;
+            if (areaIdsWithMats.has(a.id)) return true;
+
+            const name = (a.name || '').toLowerCase();
+            if (name.includes('boh') || name.includes('back of house')) return true;
+
+            return false;
+        });
+
+        // 4. Combine Real + Virtual
+        const combined = [...filtered, ...virtualAreas];
+
+        // 5. Sort by created_at ascending (chronological)
+        return combined.sort((a, b) => {
+            const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return dateA - dateB;
+        });
+    }, [rawAreas, materials]);
+
+    const sortedMaterials = useMemo(() => {
+        return [...materials].sort((a, b) => {
+            const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return dateA - dateB;
+        });
+    }, [materials]);
 
     const materialsByArea = useMemo(() => {
         const groups: Record<string, ProjectMaterial[]> = {};
-        materials.forEach(m => {
-            const key = m.area_id || 'unassigned';
+        const areaIds = new Set(rawAreas.map(a => a.id));
+
+        sortedMaterials.forEach(m => {
+            let key = m.area_id || 'unassigned';
+
+            // If area_id is set but the area record is missing, or no area_id but has sub_location
+            if (!m.area_id || !areaIds.has(m.area_id)) {
+                if (m.sub_location && m.sub_location !== 'Unassigned') {
+                    key = `loc-${m.sub_location}`;
+                } else {
+                    key = 'unassigned';
+                }
+            }
+
             if (!groups[key]) groups[key] = [];
             groups[key].push(m);
         });
         return groups;
-    }, [materials]);
+    }, [sortedMaterials, rawAreas]);
 
     const aggregatedMaterials = useMemo(() => {
         const groups: Record<string, any> = {};
-        materials.forEach(m => {
-            const key = m.product_code || m.product_name;
+        sortedMaterials.forEach(m => {
+            // Grouping Key: Product Code + Dimensions (L x W x T)
+            const dims = [m.dim_length, m.dim_width, m.dim_thickness].map(d => d || '').join('x');
+            const key = `${m.product_code || m.product_name}-${dims}`;
+
             if (!groups[key]) {
                 groups[key] = {
                     ...m,
@@ -115,7 +195,7 @@ export default function LogisticsTab({ job }: LogisticsTabProps) {
             groups[key].total_value += (m.budget_qty || 0) * (m.unit_cost || 0);
         });
         return Object.values(groups);
-    }, [materials]);
+    }, [sortedMaterials]);
 
     const categories = [
         { label: 'TILE & STONE', tags: ['Tile', 'Stone'] },
@@ -128,49 +208,62 @@ export default function LogisticsTab({ job }: LogisticsTabProps) {
     const toggleSection = (id: string) => setExpandedSections(prev => ({ ...prev, [id]: !prev[id] }));
 
     const handleSaveMaterial = async (materialData: any) => {
-        // ... (Keep existing logic, simplified for brevity in this output but needs full implementation)
-        // For now, I'll copy the existing logic from previous file or assume I need to rewrite it.
-        // I will rewrite it to be safe.
         try {
             const db = powersync;
             const { _new_area, ...materialPayload } = materialData;
 
-            if (_new_area && db) {
+            if (db) {
                 await db.writeTransaction(async (tx) => {
-                    const areaId = materialData.area_id || randomUUID();
                     const now = new Date().toISOString();
-                    let finalUnitId = _new_area.unit_id;
-                    if (_new_area._new_unit_name) {
-                        const firstFloorId = job.floors?.[0]?.id;
-                        if (!firstFloorId) throw new Error("Job must have at least one floor");
-                        finalUnitId = randomUUID();
-                        await tx.execute(`INSERT INTO units (id, floor_id, name, created_at) VALUES (?, ?, ?, ?)`, [finalUnitId, firstFloorId, _new_area._new_unit_name, now]);
+                    let areaId = materialData.area_id;
+
+                    if (_new_area) {
+                        areaId = randomUUID();
+                        let finalUnitId = _new_area.unit_id;
+
+                        if (_new_area._new_unit_name) {
+                            const firstFloorId = job.floors?.[0]?.id;
+                            if (!firstFloorId) throw new Error("Job must have at least one floor");
+                            finalUnitId = randomUUID();
+                            await tx.execute(`INSERT INTO units (id, floor_id, name, type, created_at) VALUES (?, ?, ?, 'logistics', ?)`, [finalUnitId, firstFloorId, _new_area._new_unit_name, now]);
+                        }
+
+                        await tx.execute(`INSERT INTO areas (id, unit_id, name, description, type, status, progress, created_at) VALUES (?, ?, ?, ?, 'logistics', 'NOT_STARTED', 0, ?)`, [areaId, finalUnitId, _new_area.name, _new_area.description || '', now]);
                     }
-                    await tx.execute(`INSERT INTO areas (id, unit_id, name, status, progress, created_at) VALUES (?, ?, ?, 'NOT_STARTED', 0, ?)`, [areaId, finalUnitId, _new_area.name, now]);
 
                     const materialId = materialData.id || randomUUID();
                     const finalPayload = { ...materialPayload, id: materialId, area_id: areaId, job_id: job.id };
+
                     await tx.execute(
-                        `INSERT INTO project_materials (id, job_id, area_id, sub_location, category, product_code, product_name, product_specs, zone, net_qty, waste_percent, budget_qty, unit_cost, total_value, ordered_qty, shop_stock, in_transit, received_at_job, unit, pcs_per_unit, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                        [finalPayload.id, finalPayload.job_id, finalPayload.area_id, finalPayload.sub_location, finalPayload.category, finalPayload.product_code, finalPayload.product_name, finalPayload.product_specs, finalPayload.zone, finalPayload.net_qty || 0, finalPayload.waste_percent || 0, finalPayload.budget_qty || 0, finalPayload.unit_cost || 0, finalPayload.total_value || 0, 0, finalPayload.shop_stock || 0, finalPayload.in_transit || 0, finalPayload.received_at_job || 0, finalPayload.unit || 'sqft', finalPayload.pcs_per_unit || 1, now]
+                        `INSERT INTO project_materials (id, job_id, area_id, sub_location, category, supplier, product_code, product_name, product_specs, zone, net_qty, waste_percent, budget_qty, unit_cost, total_value, ordered_qty, shop_stock, in_transit, received_at_job, unit, pcs_per_unit, grout_info, caulk_info, linear_feet, dim_length, dim_width, dim_thickness, expected_date, updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [
+                            finalPayload.id, finalPayload.job_id, finalPayload.area_id, finalPayload.sub_location, finalPayload.category, finalPayload.supplier || '',
+                            finalPayload.product_code, finalPayload.product_name, finalPayload.product_specs, finalPayload.zone,
+                            finalPayload.net_qty || 0, finalPayload.waste_percent || 0, finalPayload.budget_qty || 0,
+                            finalPayload.unit_cost || 0, finalPayload.total_value || 0, 0, finalPayload.shop_stock || 0,
+                            finalPayload.in_transit || 0, finalPayload.received_at_job || 0, finalPayload.unit || 'sqft',
+                            finalPayload.pcs_per_unit || 1, finalPayload.grout_info || '', finalPayload.caulk_info || '',
+                            finalPayload.linear_feet || 0, finalPayload.dim_length || 0, finalPayload.dim_width || 0, finalPayload.dim_thickness || '',
+                            finalPayload.expected_date || null,
+                            now, now
+                        ]
                     );
                 });
             } else {
+                // Supabase fallback
                 let areaId = materialData.area_id;
                 if (_new_area) {
-                    // Supabase fallback logic omitted for brevity as we rely on PowerSync mostly. 
-                    // But strictly I should include it. I'll just rely on the fact user is likely online or using PowerSync.
-                    // Actually I should just use SupabaseService.saveProjectMaterial if powersync fails/not present.
                     if (_new_area._new_unit_name) {
                         const firstFloorId = job.floors?.[0]?.id;
                         const unitId = await SupabaseService.addUnit(firstFloorId, _new_area._new_unit_name);
-                        areaId = await SupabaseService.addArea(unitId, _new_area.name);
+                        areaId = await SupabaseService.addArea(unitId, _new_area.name, _new_area.description || '', '', 'logistics');
                     } else {
-                        areaId = await SupabaseService.addArea(_new_area.unit_id, _new_area.name);
+                        areaId = await SupabaseService.addArea(_new_area.unit_id, _new_area.name, _new_area.description || '', '', 'logistics');
                     }
                 }
                 await SupabaseService.saveProjectMaterial({ ...materialPayload, area_id: areaId, job_id: job.id });
             }
+
             setAddModalVisible(false);
             setLockedAreaId(undefined);
             setSelectedMaterial(null);
@@ -178,19 +271,109 @@ export default function LogisticsTab({ job }: LogisticsTabProps) {
         } catch (err: any) {
             console.error("Save Material Error:", err);
             Alert.alert("Error", "Failed to save material");
+            setAddModalVisible(false);
+            setLockedAreaId(undefined);
+            setSelectedMaterial(null);
         }
     };
 
     const handleDeleteMaterial = async (id: string) => {
-        if (!confirm("Delete this budget item?")) return;
-        await SupabaseService.deleteProjectMaterial(id);
-        loadData();
+        console.log("[LogisticsTab] handleDeleteMaterial called for:", id);
+
+        const performDelete = async () => {
+            try {
+                console.log("[LogisticsTab] Confirmed deletion for material:", id);
+                await SupabaseService.deleteProjectMaterial(id);
+                await loadData();
+                if (onRefreshJob) onRefreshJob();
+            } catch (err: any) {
+                console.error("Delete Material Error:", err);
+                const msg = "Failed to delete material: " + err.message;
+                if (Platform.OS === 'web') window.alert(msg);
+                else Alert.alert("Error", msg);
+            }
+        };
+
+        if (Platform.OS === 'web') {
+            if (window.confirm("Are you sure you want to delete this budget item?")) {
+                performDelete();
+            }
+        } else {
+            Alert.alert(
+                "Delete Item",
+                "Are you sure you want to delete this budget item?",
+                [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Delete", style: "destructive", onPress: performDelete }
+                ]
+            );
+        }
     };
 
     const handleDeleteArea = async (id: string) => {
-        if (!confirm("Delete area and all items?")) return;
-        await SupabaseService.deleteArea(id);
-        loadData();
+        console.log("[LogisticsTab] handleDeleteArea called for:", id);
+
+        const performDelete = async () => {
+            try {
+                console.log("[LogisticsTab] Confirmed deletion for area:", id);
+                await SupabaseService.deleteArea(id);
+                await loadData();
+                if (onRefreshJob) onRefreshJob();
+            } catch (err: any) {
+                console.error("Delete Area Error:", err);
+                const msg = "Failed to delete area: " + err.message;
+                if (Platform.OS === 'web') window.alert(msg);
+                else Alert.alert("Error", msg);
+            }
+        };
+
+        if (Platform.OS === 'web') {
+            if (window.confirm("Delete this area and all items? This cannot be undone.")) {
+                performDelete();
+            }
+        } else {
+            Alert.alert(
+                "Delete Area",
+                "Delete this area and all items? This cannot be undone.",
+                [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Delete", style: "destructive", onPress: performDelete }
+                ]
+            );
+        }
+    };
+
+    const handleEditArea = (id: string) => {
+        const area = allAreas.find((a: any) => a.id === id);
+        if (area) {
+            setSelectedAreaForEdit(area);
+            setEditAreaModalVisible(true);
+        }
+    };
+
+    const handleUpdateArea = async (id: string, updates: any) => {
+        try {
+            console.log("[LogisticsTab] Updating area:", id, updates);
+
+            // Optimistic Update Local State
+            setRawAreas(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+
+            await SupabaseService.updateArea(id, updates);
+            setEditAreaModalVisible(false);
+            setSelectedAreaForEdit(null);
+
+            // Optimistic Update Parent
+            if (onAreaUpdated) {
+                onAreaUpdated(id, updates);
+            }
+
+            await loadData();
+        } catch (err: any) {
+            console.error("Update Area Error:", err);
+            const msg = "Failed to update area: " + err.message;
+            if (Platform.OS === 'web') window.alert(msg);
+            else Alert.alert("Error", msg);
+        }
     };
 
     const handleSaveOrder = async (poData: any) => {
@@ -337,6 +520,7 @@ export default function LogisticsTab({ job }: LogisticsTabProps) {
                             }}
                             onDeleteMaterial={handleDeleteMaterial}
                             onDeleteArea={handleDeleteArea}
+                            onEditArea={handleEditArea}
                         />
                     </View>
                 )}
@@ -376,6 +560,8 @@ export default function LogisticsTab({ job }: LogisticsTabProps) {
                 onClose={() => setAddModalVisible(false)}
                 onSave={handleSaveMaterial}
                 initialData={selectedMaterial}
+                areas={rawAreas}
+                units={job.floors?.flatMap((f: any) => f.units || []) || []}
                 lockedAreaId={lockedAreaId}
             />
 
@@ -394,6 +580,13 @@ export default function LogisticsTab({ job }: LogisticsTabProps) {
                 jobId={job.id}
                 materials={materials}
                 onSuccess={loadData}
+            />
+
+            <EditAreaModal
+                visible={editAreaModalVisible}
+                onClose={() => setEditAreaModalVisible(false)}
+                onSave={handleUpdateArea}
+                area={selectedAreaForEdit}
             />
 
         </ScrollView>

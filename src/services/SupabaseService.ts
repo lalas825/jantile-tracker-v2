@@ -22,6 +22,16 @@ export interface Worker {
     avatar?: string;
 }
 
+export interface ChecklistItem {
+    id: string;
+    area_id: string;
+    text: string;
+    completed: number; // 0 or 1
+    status: string;
+    position: number;
+    created_at: string;
+}
+
 export interface Job {
     id: string;
     name: string;
@@ -73,6 +83,18 @@ export interface ProductionLog {
 }
 
 // UI Types (Mapped)
+export interface Area {
+    id: string;
+    unit_id: string;
+    name: string;
+    description?: string;
+    drawing_page?: string;
+    type?: 'production' | 'logistics';
+    status: string;
+    progress: number;
+    checklist_items?: ChecklistItem[];
+    area_photos?: any[];
+}
 export interface UICrewMember {
     id: string;
     name: string;
@@ -139,6 +161,7 @@ export interface ProjectMaterial {
     dim_length?: number;
     dim_width?: number;
     dim_thickness?: string;
+    linear_feet?: number;
     created_at?: string;
     updated_at?: string;
 }
@@ -364,6 +387,42 @@ export const SupabaseService = {
         await db.execute(query, params);
     },
 
+    async getProjectAreas(jobId: string): Promise<Area[]> {
+        try {
+            if (useSupabase) {
+                // Fetch floors first
+                const { data: floors } = await supabase.from('floors').select('id').eq('job_id', jobId);
+                if (!floors || floors.length === 0) return [];
+                const floorIds = floors.map(f => f.id);
+
+                // Fetch units for those floors
+                const { data: units } = await supabase.from('units').select('id').in('floor_id', floorIds);
+                if (!units || units.length === 0) return [];
+                const unitIds = units.map(u => u.id);
+
+                // Fetch areas for those units
+                const { data: areas, error } = await supabase
+                    .from('areas')
+                    .select('*, area_photos(id, url)')
+                    .in('unit_id', unitIds);
+
+                if (error) throw error;
+                return areas || [];
+            }
+
+            // SQLite / PowerSync path
+            return await db.getAll(`
+                SELECT a.* FROM areas a
+                JOIN units u ON a.unit_id = u.id
+                JOIN floors f ON u.floor_id = f.id
+                WHERE f.job_id = ?
+            `, [jobId]);
+        } catch (e) {
+            console.error("Error in getProjectAreas:", e);
+            return []; // Fail gracefully
+        }
+    },
+
     async deleteJob(id: string) {
         if (useSupabase) {
             const { error } = await supabase.from('jobs').delete().eq('id', id);
@@ -384,7 +443,7 @@ export const SupabaseService = {
                     units (
                         id, name, description,
                         areas (
-                            id, name, description, drawing_page, status, progress,
+                            id, name, description, drawing_page, type, status, progress,
                             area_photos (
                                 id, url, storage_path
                             )
@@ -559,35 +618,49 @@ export const SupabaseService = {
         );
     },
 
-    async addUnit(floorId: string, name: string): Promise<string> {
+    async addUnit(floorId: string, name: string, type: 'production' | 'logistics' = 'production'): Promise<string> {
         const id = Crypto.randomUUID();
         if (useSupabase) {
             const { error } = await supabase.from('units').insert({
                 id,
                 floor_id: floorId,
-                name: name
+                name: name,
+                type: type
             });
             if (error) throw error;
             return id;
         }
 
         await db.execute(
-            `INSERT INTO units (id, floor_id, name, created_at) VALUES (?, ?, ?, datetime('now'))`,
-            [id, floorId, name]
+            `INSERT INTO units (id, floor_id, name, type, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
+            [id, floorId, name, type]
         );
         return id;
     },
 
     async deleteUnit(unitId: string) {
         if (useSupabase) {
+            // 1. Fetch areas to delete them properly with their items
+            const { data: areas } = await supabase.from('areas').select('id').eq('unit_id', unitId);
+            if (areas && areas.length > 0) {
+                for (const area of areas) {
+                    await this.deleteArea(area.id);
+                }
+            }
             const { error } = await supabase.from('units').delete().eq('id', unitId);
             if (error) throw error;
             return;
         }
+
+        // SQLite: Trigger areas deletion first
+        const areas = await db.getAll(`SELECT id FROM areas WHERE unit_id = ?`, [unitId]);
+        for (const area of areas) {
+            await this.deleteArea(area.id);
+        }
         await db.execute(`DELETE FROM units WHERE id = ?`, [unitId]);
     },
 
-    async addArea(unitId: string, name: string, description: string = '', drawingPage: string = ''): Promise<string> {
+    async addArea(unitId: string, name: string, description: string = '', drawingPage: string = '', type: 'production' | 'logistics' = 'production'): Promise<string> {
         // 2. Determine Preset
         const areaNameLower = name.toLowerCase();
         let preset = CHECKLIST_PRESETS[areaNameLower];
@@ -600,68 +673,67 @@ export const SupabaseService = {
             else preset = CHECKLIST_PRESETS['master bathroom'];
         }
 
+        const id = Crypto.randomUUID();
+        const now = new Date().toISOString();
+
         if (useSupabase) {
             // 1. Insert Area
             if (!unitId || unitId === '') {
                 throw new Error("Cannot create area: unit_id is required");
             }
-            const areaId = Crypto.randomUUID();
             console.log(`[SupabaseService] creating area: ${name} for unit: ${unitId}`);
-            const { data: newArea, error: areaError } = await supabase
+            const { error: areaError } = await supabase
                 .from('areas')
                 .insert({
-                    id: areaId,
+                    id,
                     unit_id: unitId,
-                    name: name,
-                    description: description,
+                    name,
+                    description,
                     drawing_page: drawingPage,
+                    type,
                     status: 'NOT_STARTED',
                     progress: 0
-                })
-                .select()
-                .single();
+                });
 
             if (areaError) throw areaError;
 
             // 3. Insert Items
             if (preset && preset.length > 0) {
-                const now = new Date();
+                const nowData = new Date();
                 const items = preset.map((text, index) => ({
-                    area_id: newArea.id,
+                    area_id: id,
                     text: text,
                     completed: 0,
                     status: 'NOT_STARTED',
                     position: index,
-                    created_at: new Date(now.getTime() + index * 10).toISOString()
+                    created_at: new Date(nowData.getTime() + index * 10).toISOString()
                 }));
                 const { error: itemsError } = await supabase.from('checklist_items').insert(items);
                 if (itemsError) throw itemsError;
             }
-            return areaId;
-        }
+        } else {
+            // SQLite
+            await db.execute(
+                `INSERT INTO areas (id, unit_id, name, description, drawing_page, type, status, progress, created_at) VALUES (?, ?, ?, ?, ?, ?, 'NOT_STARTED', 0, ?)`,
+                [id, unitId, name, description, drawingPage, type, now]
+            );
 
-        // 1. Insert Area
-        const areaId = Crypto.randomUUID();
-        await db.execute(
-            `INSERT INTO areas (id, unit_id, name, description, drawing_page, status, progress, created_at) VALUES (?, ?, ?, ?, ?, 'NOT_STARTED', 0, datetime('now'))`,
-            [areaId, unitId, name, description, drawingPage]
-        );
-
-        // 3. Insert Items
-        if (preset && preset.length > 0) {
-            const baseTime = Date.now();
-            let i = 0;
-            for (const text of preset) {
-                const id = Crypto.randomUUID();
-                const pos = i;
-                const now = new Date(baseTime + (i++) * 10).toISOString();
-                await db.execute(
-                    `INSERT INTO checklist_items (id, area_id, text, completed, status, position, created_at) VALUES (?, ?, ?, 0, 'NOT_STARTED', ?, ?)`,
-                    [id, areaId, text, pos, now]
-                );
+            // 3. Insert Items
+            if (preset && preset.length > 0) {
+                const baseTime = Date.now();
+                let i = 0;
+                for (const text of preset) {
+                    const itemId = Crypto.randomUUID();
+                    const pos = i;
+                    const itemNow = new Date(baseTime + (i++) * 10).toISOString();
+                    await db.execute(
+                        `INSERT INTO checklist_items (id, area_id, text, completed, status, position, created_at) VALUES (?, ?, ?, 0, 'NOT_STARTED', ?, ?)`,
+                        [itemId, id, text, pos, itemNow]
+                    );
+                }
             }
         }
-        return areaId;
+        return id;
     },
 
     async updateArea(areaId: string, updates: any) {
@@ -693,10 +765,31 @@ export const SupabaseService = {
 
     async deleteArea(areaId: string) {
         if (useSupabase) {
+            console.log(`[SupabaseService] Deep deleting area: ${areaId}`);
+            // 1. Delete Child Records
+            await Promise.all([
+                supabase.from('project_materials').delete().eq('area_id', areaId),
+                supabase.from('checklist_items').delete().eq('area_id', areaId),
+                supabase.from('area_photos').delete().eq('area_id', areaId),
+                supabase.from('job_issues').delete().eq('area_id', areaId),
+                // offline_photos is localOnly, handled below
+            ]);
+
+            // 2. Delete Area
             const { error } = await supabase.from('areas').delete().eq('id', areaId);
             if (error) throw error;
+
+            // Cleanup local offline photos if on web (though unlikely to have them)
+            await db.execute(`DELETE FROM offline_photos WHERE area_id = ?`, [areaId]);
             return;
         }
+
+        // PowerSync path
+        await db.execute(`DELETE FROM project_materials WHERE area_id = ?`, [areaId]);
+        await db.execute(`DELETE FROM checklist_items WHERE area_id = ?`, [areaId]);
+        await db.execute(`DELETE FROM area_photos WHERE area_id = ?`, [areaId]);
+        await db.execute(`DELETE FROM job_issues WHERE area_id = ?`, [areaId]);
+        await db.execute(`DELETE FROM offline_photos WHERE area_id = ?`, [areaId]);
         await db.execute(`DELETE FROM areas WHERE id = ?`, [areaId]);
     },
 
