@@ -162,6 +162,11 @@ export interface ProjectMaterial {
     dim_width?: number;
     dim_thickness?: string;
     linear_feet?: number;
+    trowel_preset?: string;
+    yield_factor?: number;
+    joint_width?: string;
+    bag_weight?: number;
+    parent_material_id?: string;
     created_at?: string;
     updated_at?: string;
 }
@@ -621,13 +626,28 @@ export const SupabaseService = {
     async addUnit(floorId: string, name: string, type: 'production' | 'logistics' = 'production'): Promise<string> {
         const id = Crypto.randomUUID();
         if (useSupabase) {
-            const { error } = await supabase.from('units').insert({
-                id,
-                floor_id: floorId,
-                name: name,
-                type: type
-            });
-            if (error) throw error;
+            try {
+                const { error } = await supabase.from('units').insert({
+                    id,
+                    floor_id: floorId,
+                    name: name,
+                    type: type
+                });
+                if (error) throw error;
+            } catch (err: any) {
+                // FALLBACK: If 'type' column doesn't exist yet (Migration hasn't run)
+                if (err.message?.includes("column \"type\" of relation \"units\" does not exist") || (err.code === 'PGRST204')) {
+                    console.warn("[SupabaseService] 'type' column missing in units table, retrying without it...");
+                    const { error: retryError } = await supabase.from('units').insert({
+                        id,
+                        floor_id: floorId,
+                        name: name
+                    });
+                    if (retryError) throw retryError;
+                } else {
+                    throw err;
+                }
+            }
             return id;
         }
 
@@ -682,20 +702,41 @@ export const SupabaseService = {
                 throw new Error("Cannot create area: unit_id is required");
             }
             console.log(`[SupabaseService] creating area: ${name} for unit: ${unitId}`);
-            const { error: areaError } = await supabase
-                .from('areas')
-                .insert({
-                    id,
-                    unit_id: unitId,
-                    name,
-                    description,
-                    drawing_page: drawingPage,
-                    type,
-                    status: 'NOT_STARTED',
-                    progress: 0
-                });
+            try {
+                const { error: areaError } = await supabase
+                    .from('areas')
+                    .insert({
+                        id,
+                        unit_id: unitId,
+                        name,
+                        description,
+                        drawing_page: drawingPage,
+                        type,
+                        status: 'NOT_STARTED',
+                        progress: 0
+                    });
 
-            if (areaError) throw areaError;
+                if (areaError) throw areaError;
+            } catch (err: any) {
+                // FALLBACK: If 'type' column doesn't exist yet
+                if (err.message?.includes("column \"type\" of relation \"areas\" does not exist") || (err.code === 'PGRST204')) {
+                    console.warn("[SupabaseService] 'type' column missing in areas table, retrying without it...");
+                    const { error: retryError } = await supabase
+                        .from('areas')
+                        .insert({
+                            id,
+                            unit_id: unitId,
+                            name,
+                            description,
+                            drawing_page: drawingPage,
+                            status: 'NOT_STARTED',
+                            progress: 0
+                        });
+                    if (retryError) throw retryError;
+                } else {
+                    throw err;
+                }
+            }
 
             // 3. Insert Items
             if (preset && preset.length > 0) {
@@ -1490,7 +1531,22 @@ export const SupabaseService = {
     },
 
     async saveProjectMaterial(material: Partial<ProjectMaterial>): Promise<void> {
-        const id = material.id && material.id !== '' ? material.id : Crypto.randomUUID();
+        // Robust UUID fallback for web
+        const generateId = () => {
+            if (material.id && material.id !== '') return material.id;
+            if (Platform.OS === 'web') {
+                try {
+                    // Try native Web Crypto if available (requires secure context)
+                    return (self as any).crypto.randomUUID();
+                } catch (e) {
+                    // Fallback random string
+                    return 'id-' + Math.random().toString(36).substring(2, 15) + '-' + Date.now().toString(36);
+                }
+            }
+            return Crypto.randomUUID();
+        };
+
+        const id = generateId();
         const now = new Date().toISOString();
 
         if (useSupabase) {
@@ -1499,10 +1555,25 @@ export const SupabaseService = {
             // Defensive: ensure empty strings aren't sent to UUID columns
             if (cleanMaterial.area_id === '') cleanMaterial.area_id = null;
             if (cleanMaterial.job_id === '') cleanMaterial.job_id = null;
+            if (cleanMaterial.parent_material_id === '') cleanMaterial.parent_material_id = null;
 
-            const payload = { ...cleanMaterial, id, updated_at: now };
-            const { error } = await supabase.from('project_materials').upsert(payload);
-            if (error) throw error;
+            // Ensure created_at is set for new items
+            const payload = {
+                ...cleanMaterial,
+                id,
+                updated_at: now,
+                created_at: cleanMaterial.created_at || now
+            };
+
+            try {
+                const { error } = await supabase.from('project_materials').upsert(payload);
+                if (error) throw error;
+            } catch (err: any) {
+                if (Platform.OS === 'web') {
+                    window.alert(`SUPABASE SAVE ERROR:\n${err.message || JSON.stringify(err)}`);
+                }
+                throw err;
+            }
             return;
         }
 
@@ -1513,8 +1584,10 @@ export const SupabaseService = {
                     net_qty, waste_percent, budget_qty, unit_cost, total_value, supplier, ordered_qty, shop_stock, in_transit, 
                     received_at_job, unit, pcs_per_unit, expected_date,
                     grout_info, caulk_info, dim_length, dim_width, dim_thickness,
+                    trowel_preset, yield_factor,
+                    joint_width, bag_weight, parent_material_id,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     id, material.job_id, material.area_id || null, material.sub_location || null, material.category,
                     material.product_code || null, material.product_name, material.product_specs || null, material.zone || null,
@@ -1525,6 +1598,8 @@ export const SupabaseService = {
                     material.expected_date || null,
                     material.grout_info || null, material.caulk_info || null,
                     material.dim_length || null, material.dim_width || null, material.dim_thickness || null,
+                    material.trowel_preset || null, material.yield_factor || null,
+                    material.joint_width || null, material.bag_weight || null, material.parent_material_id || null,
                     now
                 ]
             );

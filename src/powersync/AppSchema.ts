@@ -189,6 +189,11 @@ export const AppSchema = new Schema([
             new Column({ name: 'dim_width', type: ColumnType.REAL }),
             new Column({ name: 'dim_thickness', type: ColumnType.TEXT }),
             new Column({ name: 'linear_feet', type: ColumnType.REAL }), // New for Base Calculator
+            new Column({ name: 'trowel_preset', type: ColumnType.TEXT }),
+            new Column({ name: 'yield_factor', type: ColumnType.REAL }),
+            new Column({ name: 'parent_material_id', type: ColumnType.TEXT }),
+            new Column({ name: 'joint_width', type: ColumnType.TEXT }),
+            new Column({ name: 'bag_weight', type: ColumnType.REAL }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
             new Column({ name: 'updated_at', type: ColumnType.TEXT }),
         ]

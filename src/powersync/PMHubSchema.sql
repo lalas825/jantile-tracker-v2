@@ -29,6 +29,12 @@ CREATE TABLE IF NOT EXISTS project_materials (
     dim_length NUMERIC,
     dim_width NUMERIC,
     dim_thickness TEXT,
+    linear_feet NUMERIC,
+    trowel_preset TEXT,
+    yield_factor NUMERIC,
+    parent_material_id UUID,
+    joint_width TEXT,
+    bag_weight NUMERIC,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );

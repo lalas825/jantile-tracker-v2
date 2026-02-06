@@ -35,9 +35,19 @@ export default function AreaBudgetView({
                 const areaTotal = areaMats.reduce((sum, m) => sum + (m.total_value || 0), 0);
                 const isExpanded = expandedAreas[areaId] !== false; // Default to expanded
 
-                // Split into Main and Sundries
-                const mainMaterials = areaMats.filter(m => !['Grout', 'Setting Materials', 'Sundries', 'Consumable'].includes(m.category));
-                const sundries = areaMats.filter(m => ['Grout', 'Setting Materials', 'Sundries', 'Consumable', 'Grout/Caulk'].includes(m.category));
+                // Split into Main and Sundries (Robust case-insensitive check)
+                const mainCategories = ['tile', 'stone', 'base'];
+                const sundryCategories = ['grout', 'setting materials', 'sundries', 'consumable', 'grout/caulk', 'tools'];
+
+                const mainMaterials = areaMats.filter(m => {
+                    const cat = (m.category || '').toLowerCase();
+                    return mainCategories.includes(cat) || (!sundryCategories.includes(cat) && cat !== 'generic');
+                });
+
+                const sundries = areaMats.filter(m => sundryCategories.includes((m.category || '').toLowerCase()));
+
+                // Catch any remaining (e.g. 'Generic' if not matching main)
+                const others = areaMats.filter(m => !mainMaterials.includes(m) && !sundries.includes(m));
 
                 const renderMaterialRow = (m: ProjectMaterial) => {
                     const wasteQty = (m.net_qty || 0) * ((m.waste_percent || 0) / 100);
@@ -46,10 +56,33 @@ export default function AreaBudgetView({
 
                     // Helper for Piece Count
                     const renderPcs = (qty: number) => {
+                        const cat = (m.category || '').toLowerCase();
+                        const isSundry = sundryCategories.includes(cat);
+
+                        // Don't show piece counts for sundries/grout
+                        if (isSundry) return null;
+
                         if (!m.pcs_per_unit || m.pcs_per_unit === 0) return null;
+
                         const pcs = Math.round(qty * m.pcs_per_unit);
+                        // Hide if result is 1 piece (redundant for non-tile)
+                        if (pcs === 1 && !mainCategories.includes(cat)) return null;
+
                         return (
                             <Text className="text-[10px] text-slate-400 font-medium text-center leading-tight">({pcs.toLocaleString()} Pcs)</Text>
+                        );
+                    };
+
+                    const renderQuantityWithUnit = (qty: number, isNet: boolean = false) => {
+                        const cat = (m.category || '').toLowerCase();
+                        // For Net Qty on Grout/Setting Materials, always show 'sqft'
+                        const displayUnit = (isNet && (cat === 'grout' || cat === 'setting materials')) ? 'sqft' : unit;
+
+                        return (
+                            <View className="flex-row items-baseline justify-center">
+                                <Text className="text-[14px] font-inter font-bold text-slate-600">{qty?.toLocaleString() || 0}</Text>
+                                <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{displayUnit}</Text>
+                            </View>
                         );
                     };
 
@@ -76,40 +109,25 @@ export default function AreaBudgetView({
                                 <Text className="text-[13px] text-slate-600 font-inter font-bold text-center" numberOfLines={2}>{m.caulk_info || '--'}</Text>
                             </View>
                             <View className="flex-[0.8] items-center">
-                                <View className="flex-row items-baseline justify-center">
-                                    <Text className="text-[14px] font-inter font-bold text-slate-600">{m.net_qty?.toLocaleString() || 0}</Text>
-                                    <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{unit}</Text>
-                                </View>
+                                {renderQuantityWithUnit(m.net_qty, true)}
                                 {renderPcs(m.net_qty || 0)}
                             </View>
                             <View className="flex-[0.7] items-center">
                                 <Text className="text-[13px] font-inter font-bold text-slate-400">{m.waste_percent || 0}%</Text>
                             </View>
                             <View className="flex-[0.8] items-center">
-                                <View className="flex-row items-baseline justify-center">
-                                    <Text className="text-[14px] font-inter font-bold text-slate-400">{wasteQty.toFixed(1)}</Text>
-                                    <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{unit}</Text>
-                                </View>
+                                {renderQuantityWithUnit(wasteQty, true)}
                             </View>
                             <View className="flex-[1] items-center">
-                                <View className="flex-row items-baseline justify-center">
-                                    <Text className="text-[15px] font-inter font-black text-slate-900">{m.budget_qty.toLocaleString()}</Text>
-                                    <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{unit}</Text>
-                                </View>
+                                {renderQuantityWithUnit(m.budget_qty)}
                                 {renderPcs(m.budget_qty)}
                             </View>
                             <View className="flex-[1] items-center">
-                                <View className="flex-row items-baseline justify-center">
-                                    <Text className="text-[14px] font-inter font-bold text-blue-600">{m.shop_stock.toLocaleString()}</Text>
-                                    <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{unit}</Text>
-                                </View>
+                                {renderQuantityWithUnit(m.shop_stock)}
                                 {renderPcs(m.shop_stock)}
                             </View>
                             <View className="flex-[1] items-center">
-                                <View className="flex-row items-baseline justify-center">
-                                    <Text className="text-[14px] font-inter font-bold text-emerald-600">{m.received_at_job.toLocaleString()}</Text>
-                                    <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{unit}</Text>
-                                </View>
+                                {renderQuantityWithUnit(m.received_at_job)}
                                 {renderPcs(m.received_at_job)}
                             </View>
                             <View className="flex-[1] items-center">
@@ -160,7 +178,10 @@ export default function AreaBudgetView({
                             </View>
                             <View className="flex-row items-center gap-2">
                                 <View className="bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 mr-2">
-                                    <Text className="text-white font-inter font-black text-xs">Value: ${areaTotal.toLocaleString()}</Text>
+                                    <View>
+                                        <Text className="text-white font-inter font-black text-xs">Value: ${areaTotal.toLocaleString()}</Text>
+                                        <Text className="text-[8px] text-white/40 font-bold">M:{mainMaterials.length} S:{sundries.length} O:{others.length}</Text>
+                                    </View>
                                 </View>
                                 <TouchableOpacity
                                     onPress={() => onEditArea(areaId)}
@@ -212,42 +233,22 @@ export default function AreaBudgetView({
                                         {sundries.map(renderMaterialRow)}
                                     </>
                                 )}
+
+                                {others.length > 0 && (
+                                    <>
+                                        <View className="px-3 py-3 bg-slate-100 border-y border-slate-200 flex-row items-center gap-2">
+                                            <Ionicons name="help-circle" size={16} color="#64748b" />
+                                            <Text className="text-[14px] font-inter font-black text-slate-600 uppercase tracking-widest">MISC / OTHER ITEMS</Text>
+                                        </View>
+                                        {others.map(renderMaterialRow)}
+                                    </>
+                                )}
                             </>
                         )}
                     </View>
                 );
             })}
 
-            {/* Render Unassigned if any */}
-            {materialsByArea['unassigned'] && materialsByArea['unassigned'].length > 0 && (
-                <View key="unassigned" className="bg-white rounded-2xl border border-slate-200 mb-8 overflow-hidden shadow-md">
-                    <View className="p-4 bg-slate-400 flex-row justify-between items-center">
-                        <View className="flex-row items-center gap-4">
-                            <View className="bg-white/10 w-8 h-8 rounded-lg items-center justify-center">
-                                <Ionicons name="help-circle" size={16} color="white" />
-                            </View>
-                            <View>
-                                <Text className="text-white font-inter font-black text-lg tracking-tight">Unassigned / Global Hub</Text>
-                                <Text className="text-slate-100 text-[13px] font-inter font-black uppercase tracking-widest">
-                                    Items not linked to a specific area
-                                </Text>
-                            </View>
-                        </View>
-                    </View>
-                    <View className="p-4">
-                        {materialsByArea['unassigned'].map(m => {
-                            // Re-using local render logic would be better but for brevity:
-                            // (Note: this is simplified, ideally we'd extract renderMaterialRow)
-                            return (
-                                <View key={m.id} className="py-2 border-b border-slate-100 flex-row justify-between">
-                                    <Text className="font-bold">{m.product_name}</Text>
-                                    <Text>{m.net_qty} {m.unit}</Text>
-                                </View>
-                            );
-                        })}
-                    </View>
-                </View>
-            )}
         </View>
     );
 }

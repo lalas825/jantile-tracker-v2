@@ -125,8 +125,24 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
         // 4. Combine Real + Virtual
         const combined = [...filtered, ...virtualAreas];
 
-        // 5. Sort by created_at ascending (chronological)
+        // 5. Add Global/Unassigned if items exist
+        if (materials.some(m => !m.area_id || !areaIds.has(m.area_id))) {
+            if (!combined.some(a => a.id === 'unassigned')) {
+                combined.unshift({
+                    id: 'unassigned',
+                    name: 'UNASSIGNED / GLOBAL HUB',
+                    description: 'Items without an area assignment',
+                    type: 'logistics',
+                    isVirtual: true,
+                    created_at: new Date(0).toISOString()
+                });
+            }
+        }
+
+        // 6. Sort remaining by created_at ascending (chronological)
         return combined.sort((a, b) => {
+            if (a.id === 'unassigned') return -1;
+            if (b.id === 'unassigned') return 1;
             const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
             const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
             return dateA - dateB;
@@ -166,9 +182,12 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
     const aggregatedMaterials = useMemo(() => {
         const groups: Record<string, any> = {};
         sortedMaterials.forEach(m => {
-            // Grouping Key: Product Code + Dimensions (L x W x T)
-            const dims = [m.dim_length, m.dim_width, m.dim_thickness].map(d => d || '').join('x');
-            const key = `${m.product_code || m.product_name}-${dims}`;
+            // Grouping Key: Product Code + Dimensions (L x W x T) + Unit
+            // For Grout: Group by Product Code + Specs (Color) + Unit
+            const dims = m.category === 'Grout' ? '' : [m.dim_length, m.dim_width, m.dim_thickness].map(d => d || '').join('x');
+            const key = m.category === 'Grout'
+                ? `${m.product_code || m.product_name}-${m.product_specs || 'nospecs'}-${m.unit || 'unit'}`
+                : `${m.product_code || m.product_name}-${dims}-${m.unit || 'unit'}`;
 
             if (!groups[key]) {
                 groups[key] = {
@@ -199,7 +218,7 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
 
     const categories = [
         { label: 'TILE & STONE', tags: ['Tile', 'Stone'] },
-        { label: 'SETTING MATERIALS & SUNDRIES', tags: ['Setting Materials', 'Sundries', 'Misc'] }
+        { label: 'SETTING MATERIALS & SUNDRIES', tags: ['Setting Materials', 'Sundries', 'Misc', 'Grout', 'Consumable', 'Grout/Caulk'] }
     ];
 
 
@@ -212,7 +231,11 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
             const db = powersync;
             const { _new_area, ...materialPayload } = materialData;
 
-            if (db) {
+            // PowerSync is only used on Native (iOS/Android). 
+            // On Web, we MUST use Supabase fallback.
+            const usePowerSyncPath = Platform.OS !== 'web' && db;
+
+            if (usePowerSyncPath) {
                 await db.writeTransaction(async (tx) => {
                     const now = new Date().toISOString();
                     let areaId = materialData.area_id;
@@ -261,7 +284,9 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                         areaId = await SupabaseService.addArea(_new_area.unit_id, _new_area.name, _new_area.description || '', '', 'logistics');
                     }
                 }
-                await SupabaseService.saveProjectMaterial({ ...materialPayload, area_id: areaId, job_id: job.id });
+
+                const finalPayload = { ...materialPayload, area_id: areaId, job_id: job.id };
+                await SupabaseService.saveProjectMaterial(finalPayload);
             }
 
             setAddModalVisible(false);
@@ -451,60 +476,109 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
 
     return (
         <ScrollView className="flex-1 bg-slate-100">
-            {/* TOP HEADER */}
-            <View className="p-8 pb-4 flex-row justify-between items-start">
-                <View>
-                    <View className="flex-row items-center gap-4 mb-1">
-                        <Text className="text-3xl font-inter font-black text-slate-900 tracking-tight">Logistics</Text>
+            {/* HEADER SLEEK */}
+            <View className="px-8 pt-8 pb-6 bg-white border-b border-slate-200">
+                <View className="flex-row justify-between items-center mb-6">
+                    <View>
+                        <Text className="text-3xl font-inter font-black text-slate-900 tracking-tight italic">Logistics</Text>
+                        <Text className="text-slate-400 font-inter font-bold mt-1 uppercase tracking-widest text-[11px]">{job.name}</Text>
 
-                        {/* 3-WAY TOGGLE */}
-                        <View className="flex-row bg-slate-200 p-1 rounded-xl">
-                            <TouchableOpacity onPress={() => setViewMode('area')} className={`px-4 py-1.5 rounded-lg flex-row items-center gap-2 ${viewMode === 'area' ? 'bg-white shadow-sm' : ''}`}>
-                                <Ionicons name="grid-outline" size={14} color={viewMode === 'area' ? '#3b82f6' : '#64748b'} />
-                                <Text className={`text-[10px] font-inter font-black uppercase tracking-widest ${viewMode === 'area' ? 'text-blue-600' : 'text-slate-500'}`}>Area Budget</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => setViewMode('project')} className={`px-4 py-1.5 rounded-lg flex-row items-center gap-2 ${viewMode === 'project' ? 'bg-white shadow-sm' : ''}`}>
-                                <Ionicons name="globe-outline" size={14} color={viewMode === 'project' ? '#3b82f6' : '#64748b'} />
-                                <Text className={`text-[10px] font-inter font-black uppercase tracking-widest ${viewMode === 'project' ? 'text-blue-600' : 'text-slate-500'}`}>Project Total</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => setViewMode('deliveries')} className={`px-4 py-1.5 rounded-lg flex-row items-center gap-2 ${viewMode === 'deliveries' ? 'bg-white shadow-sm' : ''}`}>
-                                <Ionicons name="car-outline" size={14} color={viewMode === 'deliveries' ? '#3b82f6' : '#64748b'} />
-                                <Text className={`text-[10px] font-inter font-black uppercase tracking-widest ${viewMode === 'deliveries' ? 'text-blue-600' : 'text-slate-500'}`}>Deliveries</Text>
+                        {/* GLOBAL STATS OVERVIEW */}
+                        <View className="flex-row gap-4 mt-4">
+                            <View className="flex-row items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                                <Ionicons name="grid-outline" size={14} color="#64748b" />
+                                <Text className="text-[10px] font-black text-slate-600 uppercase">Materials: {materials.length}</Text>
+                            </View>
+                            <View className="flex-row items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+                                <Ionicons name="cube-outline" size={14} color="#2563eb" />
+                                <Text className="text-[10px] font-black text-blue-600 uppercase">Tiles: {materials.filter(m => ['Tile', 'Stone'].includes(m.category)).length}</Text>
+                            </View>
+                            <View className="flex-row items-center gap-1.5 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">
+                                <Ionicons name="layers-outline" size={14} color="#4f46e5" />
+                                <Text className="text-[10px] font-black text-indigo-600 uppercase">Sundries: {materials.filter(m => ['setting materials', 'grout', 'sundries', 'consumable'].includes((m.category || '').toLowerCase())).length}</Text>
+                            </View>
+                            {materials.filter(m => !m.area_id).length > 0 && (
+                                <View className="flex-row items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
+                                    <Ionicons name="alert-circle-outline" size={14} color="#d97706" />
+                                    <Text className="text-[10px] font-black text-amber-700 uppercase">Unassigned: {materials.filter(m => !m.area_id).length}</Text>
+                                </View>
+                            )}
+
+                            {/* DEBUG BUTTON */}
+                            <TouchableOpacity
+                                onPress={() => {
+                                    const catMap = materials.reduce((acc: any, m) => {
+                                        acc[m.category] = (acc[m.category] || 0) + 1;
+                                        return acc;
+                                    }, {});
+                                    const debugInfo = `Total: ${materials.length}\nJob ID: ${job.id}\nFirst Mat Job ID: ${materials[0]?.job_id || 'N/A'}\nCategories: ${JSON.stringify(catMap)}`;
+                                    window.alert(debugInfo);
+                                }}
+                                className="bg-slate-800 px-3 py-1.5 rounded-lg"
+                            >
+                                <Text className="text-[8px] text-white font-bold uppercase">Debug Data</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
-                    <Text className="text-slate-500 font-inter font-bold text-sm">{job.name}</Text>
+
+                    {/* 3-WAY TOGGLE */}
+                    <View className="flex-row bg-slate-100 p-1 rounded-xl border border-slate-200">
+                        <TouchableOpacity
+                            onPress={() => setViewMode('area')}
+                            className={`px-4 py-2 rounded-lg flex-row items-center gap-2 ${viewMode === 'area' ? 'bg-white shadow-sm' : ''}`}
+                        >
+                            <Ionicons name="grid-outline" size={14} color={viewMode === 'area' ? '#2563eb' : '#64748b'} />
+                            <Text className={`text-[10px] font-inter font-black uppercase tracking-widest ${viewMode === 'area' ? 'text-blue-600' : 'text-slate-500'}`}>Area Budget</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => setViewMode('project')}
+                            className={`px-4 py-2 rounded-lg flex-row items-center gap-2 ${viewMode === 'project' ? 'bg-white shadow-sm' : ''}`}
+                        >
+                            <Ionicons name="globe-outline" size={14} color={viewMode === 'project' ? '#2563eb' : '#64748b'} />
+                            <Text className={`text-[10px] font-inter font-black uppercase tracking-widest ${viewMode === 'project' ? 'text-blue-600' : 'text-slate-500'}`}>Project Total</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => setViewMode('deliveries')}
+                            className={`px-4 py-2 rounded-lg flex-row items-center gap-2 ${viewMode === 'deliveries' ? 'bg-white shadow-sm' : ''}`}
+                        >
+                            <Ionicons name="car-outline" size={14} color={viewMode === 'deliveries' ? '#2563eb' : '#64748b'} />
+                            <Text className={`text-[10px] font-inter font-black uppercase tracking-widest ${viewMode === 'deliveries' ? 'text-blue-600' : 'text-slate-500'}`}>Deliveries</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
-                {/* GLOBAL ACTIONS - Context sensitive? */}
-                <View className="flex-row gap-3">
-                    {viewMode === 'deliveries' ? (
-                        <TouchableOpacity
-                            onPress={() => setTicketModalVisible(true)}
-                            className="bg-blue-600 px-6 py-2.5 rounded-xl flex-row items-center gap-2 shadow-lg shadow-blue-200"
-                        >
-                            <Ionicons name="add-circle" size={20} color="white" />
-                            <Text className="text-white font-inter font-black uppercase tracking-widest text-xs">Create Ticket</Text>
-                        </TouchableOpacity>
-                    ) : (
-                        <TouchableOpacity
-                            onPress={() => {
-                                setSelectedMaterial(null);
-                                setAddModalVisible(true);
-                            }}
-                            className="bg-white px-5 py-2.5 rounded-xl border border-slate-200 flex-row items-center gap-2 shadow-sm"
-                        >
-                            <Ionicons name="add" size={20} color="#64748b" />
-                            <Text className="text-slate-600 font-inter font-bold">Add Item</Text>
-                        </TouchableOpacity>
-                    )}
+                {/* HEADER ACTIONS */}
+                <View className="flex-row justify-between items-center">
+                    <View className="flex-row gap-3">
+                        {viewMode === 'deliveries' ? (
+                            <TouchableOpacity
+                                onPress={() => setTicketModalVisible(true)}
+                                className="bg-blue-600 px-6 py-2.5 rounded-xl flex-row items-center gap-2 shadow-lg shadow-blue-200"
+                            >
+                                <Ionicons name="add-circle" size={20} color="white" />
+                                <Text className="text-white font-inter font-black uppercase tracking-widest text-xs">Create Ticket</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity
+                                onPress={() => {
+                                    setSelectedMaterial(null);
+                                    setLockedAreaId('');
+                                    setAddModalVisible(true);
+                                }}
+                                className="bg-slate-900 px-6 py-2.5 rounded-xl flex-row items-center gap-2 shadow-lg shadow-slate-200"
+                            >
+                                <Ionicons name="add" size={20} color="white" />
+                                <Text className="text-white font-inter font-black uppercase tracking-widest text-xs">Add Item</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
                 </View>
             </View>
 
             {/* CONTENT AREA */}
-            <View>
+            <View className="pb-20">
                 {viewMode === 'area' && (
-                    <View className="px-8 mt-6">
+                    <View className="px-8 mt-8">
                         <AreaBudgetView
                             materialsByArea={materialsByArea}
                             allAreas={allAreas}
@@ -512,10 +586,12 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                             toggleArea={toggleArea}
                             onAddMaterial={(areaId) => {
                                 setLockedAreaId(areaId);
+                                setSelectedMaterial(null);
                                 setAddModalVisible(true);
                             }}
                             onEditMaterial={(m) => {
                                 setSelectedMaterial(m);
+                                setLockedAreaId(m.area_id || '');
                                 setAddModalVisible(true);
                             }}
                             onDeleteMaterial={handleDeleteMaterial}
@@ -533,13 +609,8 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                         toggleSection={toggleSection}
                         purchaseOrders={purchaseOrders}
                         onOrder={(m) => {
-                            // Find original material or representative for ordering
-                            // m in aggregatedMaterials is not a real DB record (has synthetic props), but has 'all_ids'. 
-                            // Order logic needs a real material_id. 
-                            // We can use the first one from m.all_ids? Or let user pick?
-                            // For simplicity, let's select the first 'id' we find or the object itself if it has one (m.id might still be valid from first match).
                             setSelectedMaterial(m);
-                            setPoDrawerVisible(true);
+                            setPoDrawerVisible?.(true); // Defensive check if Drawer setter exists
                         }}
                     />
                 )}
@@ -589,6 +660,6 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                 area={selectedAreaForEdit}
             />
 
-        </ScrollView>
+        </ScrollView >
     );
 }

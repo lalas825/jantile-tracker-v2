@@ -49,7 +49,7 @@ export default function ProjectTotalView({
             </View>
 
             {categories.map(group => {
-                const groupMats = aggregatedMaterials.filter(m => group.tags.includes(m.category) && !['Grout', 'Caulk', 'Grout/Caulk'].includes(m.category));
+                const groupMats = aggregatedMaterials.filter(m => group.tags.includes(m.category));
 
                 // Skip rendering if no materials match (and it wasn't just empties filtered out)
                 if (groupMats.length === 0 && aggregatedMaterials.filter(m => group.tags.includes(m.category)).length > 0) {
