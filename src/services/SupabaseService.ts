@@ -153,6 +153,8 @@ export interface ProjectMaterial {
     shop_stock: number;
     in_transit: number;
     received_at_job: number;
+    in_warehouse_qty: number;
+    in_warehouse_pieces: number;
     unit: string;
     pcs_per_unit?: number;
     pieces_per_crate?: number;
@@ -170,6 +172,7 @@ export interface ProjectMaterial {
     joint_width?: string;
     bag_weight?: number;
     parent_material_id?: string;
+    sqft_per_piece?: number;
     created_at?: string;
     updated_at?: string;
 }
@@ -197,8 +200,21 @@ export interface PurchaseOrderItem {
     po_id: string;
     material_id: string;
     quantity_ordered: number;
+    received_qty?: number;
     item_cost: number;
     created_at?: string;
+    // Enriched fields from project_materials
+    product_name?: string;
+    product_code?: string;
+    material_category?: string;
+    unit?: string;
+    pcs_per_unit?: number;
+    pieces_per_crate?: number;
+    dims?: {
+        length?: number;
+        width?: number;
+        thickness?: string;
+    } | null;
 }
 
 export interface PurchaseOrder {
@@ -1759,7 +1775,7 @@ export const SupabaseService = {
         if (useSupabase) {
             const { data, error } = await supabase
                 .from('purchase_orders')
-                .select('*, jobs(name), po_items(*, project_materials(product_name, product_code, category, unit, pcs_per_unit, pieces_per_crate, dim_length, dim_width, dim_thickness))')
+                .select('*, jobs(name), po_items(*, project_materials(product_name, product_code, category, unit, pcs_per_unit, pieces_per_crate, dim_length, dim_width, dim_thickness, sqft_per_piece))')
                 .not('status', 'in', '("Received","Received with Discrepancy")')
                 .order('created_at', { ascending: false });
             if (error) throw error;
@@ -1773,6 +1789,10 @@ export const SupabaseService = {
                     material_category: pi.project_materials?.category,
                     unit: pi.project_materials?.unit,
                     pcs_per_unit: pi.project_materials?.pcs_per_unit,
+                    pieces_per_crate: pi.project_materials?.pieces_per_crate,
+                    sqft_per_piece: pi.project_materials?.sqft_per_piece,
+                    dim_length: pi.project_materials?.dim_length,
+                    dim_width: pi.project_materials?.dim_width,
                     dims: pi.project_materials ? {
                         length: pi.project_materials.dim_length,
                         width: pi.project_materials.dim_width,
@@ -1794,7 +1814,7 @@ export const SupabaseService = {
         const pos = [];
         for (const po of result) {
             const items = await db.getAll(`
-                SELECT pi.*, pm.product_name, pm.product_code, pm.category as material_category, pm.unit, pm.pcs_per_unit, pm.pieces_per_crate, pm.dim_length, pm.dim_width, pm.dim_thickness
+                SELECT pi.*, pm.product_name, pm.product_code, pm.category as material_category, pm.unit, pm.pcs_per_unit, pm.pieces_per_crate, pm.dim_length, pm.dim_width, pm.dim_thickness, pm.sqft_per_piece
                 FROM po_items pi
                 JOIN project_materials pm ON pi.material_id = pm.id
                 WHERE pi.po_id = ?
@@ -1814,7 +1834,7 @@ export const SupabaseService = {
                     po_items (
                         *,
                         *,
-                        project_materials ( product_name, product_code, category, unit, pcs_per_unit, pieces_per_crate, dim_length, dim_width, dim_thickness )
+                        project_materials ( product_name, product_code, category, unit, pcs_per_unit, pieces_per_crate, dim_length, dim_width, dim_thickness, sqft_per_piece )
                     ),
                     material_claims ( * )
                 `)
@@ -1833,6 +1853,10 @@ export const SupabaseService = {
                     material_category: pi.project_materials?.category,
                     unit: pi.project_materials?.unit,
                     pcs_per_unit: pi.project_materials?.pcs_per_unit,
+                    pieces_per_crate: pi.project_materials?.pieces_per_crate,
+                    sqft_per_piece: pi.project_materials?.sqft_per_piece,
+                    dim_length: pi.project_materials?.dim_length,
+                    dim_width: pi.project_materials?.dim_width,
                     dims: pi.project_materials ? {
                         length: pi.project_materials.dim_length,
                         width: pi.project_materials.dim_width,
@@ -1882,54 +1906,80 @@ export const SupabaseService = {
             pieces_received?: number,
             pieces_ordered?: number,
             crates_received?: number, // NEW: Bulk input
-            pieces_per_crate?: number // NEW: For calculation
+            pieces_per_crate?: number, // NEW: For calculation
+            receipt_mode?: 'Bulk' | 'Granular'
         }[],
         userId?: string
     ) {
         if (useSupabase) {
+            console.log(`[Supabase SERVICE] receivePurchaseOrder START for PO: ${poId}`, itemReceipts);
             for (const receipt of itemReceipts) {
                 // 1. Update Project Materials Stock
-                const { data: mat } = await supabase.from('project_materials')
-                    .select('shop_stock, in_warehouse_qty, ordered_qty, unit, pcs_per_unit, pieces_per_crate, in_transit, qty_damaged, qty_missing')
+                console.log(`[Supabase SERVICE] Processing material: ${receipt.material_id}`);
+                const { data: mat, error: fetchError } = await supabase.from('project_materials')
+                    .select('*, jobs(name)')
                     .eq('id', receipt.material_id)
                     .single();
 
+                if (fetchError) {
+                    console.error(`[Supabase SERVICE] Error fetching material ${receipt.material_id}:`, fetchError);
+                    continue;
+                }
+
                 if (mat) {
-                    let finalReceivedQty: number;
+                    let finalReceivedQty: number; // SQFT
+                    let finalReceivedPieces: number;
 
-                    // BULK LOGIC: If Crates provided, calculate SQFT/Pieces
+                    // 1. DATA HYDRATION: Ensure sqft_per_piece is derived if missing
+                    const derivedSqftPerPiece = mat.sqft_per_piece ||
+                        ((mat.dim_length && mat.dim_width) ? (mat.dim_length * mat.dim_width) / 144 : (1 / (mat.pcs_per_unit || 1)));
+
+                    // 2. MISSION FORMULAS: Bulk vs Granular
                     if (receipt.crates_received !== undefined && receipt.crates_received > 0 && receipt.pieces_per_crate) {
-                        const totalPieces = receipt.crates_received * receipt.pieces_per_crate;
-                        // For Tile: SQFT = Pieces * SQFT_Per_Piece (1/pcs_per_unit usually reversed in Jantile, check calc)
-                        // Actually Jantile: pcs_per_unit = SQFT per Piece? No, pcs_per_unit is Pieces Per Unit (1 / sqft_per_piece).
-                        // Let's assume standard Jantile Logic: Unit = SQFT.
-                        // So SQFT = TotalPieces / PcsPerSQFT OR TotalPieces * SQFTPerPiece.
-
-                        // IF unit is SQFT: 
-                        // mat.pcs_per_unit is typically "Pieces per Box" or "Pieces per SQFT"? 
-                        // In previous tasks we saw: ~Math.round(qty * pcs_per_unit) PCS. So pcs_per_unit is Pieces Per Unit (SQFT).
-                        // So SQFT = TotalPieces / pcs_per_unit.
-
-                        // Wait, if 1 SQFT = 2 Pieces, then pcs_per_unit = 2.
-                        // If we have 100 pieces, SQFT = 100 / 2 = 50.
-                        finalReceivedQty = totalPieces / (mat.pcs_per_unit || 1);
+                        // REACTIVE BULK ENGINE
+                        finalReceivedPieces = Math.round(receipt.crates_received * receipt.pieces_per_crate);
+                        finalReceivedQty = finalReceivedPieces * derivedSqftPerPiece;
+                        console.log(`[Supabase SERVICE] BULK Mode - Crates: ${receipt.crates_received}, PPC: ${receipt.pieces_per_crate} => ${finalReceivedPieces} Pcs, ${finalReceivedQty} Qty`);
                     } else {
+                        // GRANULAR MODE
                         finalReceivedQty = Number(receipt.qty_received);
+                        finalReceivedPieces = receipt.pieces_received || Math.round(finalReceivedQty / (derivedSqftPerPiece || 1));
+                        console.log(`[Supabase SERVICE] GRANULAR Mode - Qty: ${finalReceivedQty} => ${finalReceivedPieces} Pcs`);
                     }
 
-                    await supabase.from('project_materials').update({
+                    const updatePayload = {
                         shop_stock: (mat.shop_stock || 0) + (receipt.condition === 'Verified' ? finalReceivedQty : 0),
                         in_warehouse_qty: (mat.in_warehouse_qty || 0) + (receipt.condition === 'Verified' ? finalReceivedQty : 0),
+                        in_warehouse_pieces: (mat.in_warehouse_pieces || 0) + (receipt.condition === 'Verified' ? finalReceivedPieces : 0),
                         qty_damaged: (mat.qty_damaged || 0) + (receipt.condition === 'Damaged' ? finalReceivedQty : 0),
                         qty_missing: (mat.qty_missing || 0) + (receipt.condition === 'Missing' ? finalReceivedQty : 0),
                         in_transit: Math.max(0, (mat.in_transit || 0) - finalReceivedQty),
-                        ordered_qty: Math.max(0, (mat.ordered_qty || 0) - receipt.qty_ordered)
-                    }).eq('id', receipt.material_id);
+                        // BUG FIX: Decrement only by what was actually received, not the total order
+                        ordered_qty: Math.max(0, (mat.ordered_qty || 0) - finalReceivedQty),
+                        updated_at: new Date().toISOString()
+                    };
+
+                    console.log(`[Supabase SERVICE] Updating project_materials:`, updatePayload);
+                    const { error: updateError } = await supabase.from('project_materials')
+                        .update(updatePayload)
+                        .eq('id', receipt.material_id);
+
+                    if (updateError) {
+                        console.error(`[Supabase SERVICE] Update Error for ${receipt.material_id}:`, updateError);
+                        // Fallback attempt: Try without in_warehouse_pieces if the column migration failed
+                        if (updateError.message?.includes('column "in_warehouse_pieces" does not exist')) {
+                            console.warn("[Supabase SERVICE] Fallback: Retrying update without in_warehouse_pieces...");
+                            const { in_warehouse_pieces, ...fallbackPayload } = updatePayload;
+                            await supabase.from('project_materials').update(fallbackPayload).eq('id', receipt.material_id);
+                        }
+                    } else {
+                        console.log(`[Supabase SERVICE] Material ${receipt.material_id} updated successfully.`);
+                    }
 
                     // 2. Log Discrepancies if any
                     const hasDiscrepancy = receipt.condition !== 'Verified' || finalReceivedQty < (receipt.qty_ordered - 0.01);
                     if (hasDiscrepancy) {
-                        await supabase.from('material_claims').insert({
+                        const { error: claimError } = await supabase.from('material_claims').insert({
                             po_id: poId,
                             material_id: receipt.material_id,
                             expected_qty: receipt.qty_ordered,
@@ -1939,27 +1989,34 @@ export const SupabaseService = {
                             pieces_received: receipt.pieces_received,
                             pieces_difference: (receipt.pieces_ordered || 0) - (receipt.pieces_received || 0),
                             condition_flag: receipt.condition === 'Verified' ? 'V' : (receipt.condition === 'Damaged' ? 'D' : 'M'),
+                            receipt_mode: receipt.receipt_mode || 'Granular',
                             notes: receipt.notes,
                             photo_url: receipt.photo_url,
                             created_by: userId
                         });
+                        if (claimError) console.error("[Supabase SERVICE] Claim Error:", claimError);
                     }
 
                     // 3. Update PO Item received qty
                     await supabase.from('po_items')
                         .update({ received_qty: finalReceivedQty })
                         .match({ po_id: poId, material_id: receipt.material_id });
+                } else {
+                    console.warn(`[Supabase SERVICE] Material not found in project_materials: ${receipt.material_id}`);
                 }
             }
 
             const overallHasDiscrepancy = itemReceipts.some(r => r.condition !== 'Verified' || (r.pieces_received !== undefined ? r.pieces_received < (r.pieces_ordered || 0) : r.qty_received < r.qty_ordered));
 
-            await supabase.from('purchase_orders').update({
+            console.log(`[Supabase SERVICE] Updating PO status. Discrepancy: ${overallHasDiscrepancy}`);
+            const { error: poError } = await supabase.from('purchase_orders').update({
                 status: overallHasDiscrepancy ? 'Received with Discrepancy' : 'Received',
                 received_at: new Date().toISOString(),
                 received_by: userId,
                 updated_at: new Date().toISOString()
             }).eq('id', poId);
+
+            if (poError) console.error("[Supabase SERVICE] PO Update Error:", poError);
 
             // Automated PM Alerts
             if (overallHasDiscrepancy) {
@@ -1983,29 +2040,53 @@ export const SupabaseService = {
                     }
                 }
             }
+            console.log(`[Supabase SERVICE] receivePurchaseOrder COMPLETE for PO: ${poId}`);
             return;
         }
 
         return db.writeTransaction(async (tx: any) => {
             for (const receipt of itemReceipts) {
-                const mat = await tx.get('SELECT shop_stock, in_warehouse_qty, ordered_qty, unit, pcs_per_unit FROM project_materials WHERE id = ?', [receipt.material_id]);
+                const mat = await tx.get('SELECT shop_stock, in_warehouse_qty, in_warehouse_pieces, ordered_qty, unit, pcs_per_unit, dim_length, dim_width, sqft_per_piece FROM project_materials WHERE id = ?', [receipt.material_id]);
                 if (mat) {
-                    const finalReceivedQty = Number(receipt.qty_received);
+                    let finalReceivedQty: number;
+                    let finalReceivedPieces: number;
+
+                    // 1. DATA HYDRATION: Ensure sqft_per_piece is derived if missing
+                    const derivedSqftPerPiece = mat.sqft_per_piece ||
+                        ((mat.dim_length && mat.dim_width) ? (mat.dim_length * mat.dim_width) / 144 : (1 / (mat.pcs_per_unit || 1)));
+
+                    // 2. MISSION FORMULAS: Bulk vs Granular
+                    if (receipt.crates_received !== undefined && receipt.crates_received > 0 && receipt.pieces_per_crate) {
+                        // REACTIVE BULK ENGINE
+                        finalReceivedPieces = Math.round(receipt.crates_received * receipt.pieces_per_crate);
+                        finalReceivedQty = finalReceivedPieces * derivedSqftPerPiece;
+                    } else {
+                        // GRANULAR MODE
+                        finalReceivedQty = Number(receipt.qty_received);
+                        finalReceivedPieces = receipt.pieces_received || Math.round(finalReceivedQty / (derivedSqftPerPiece || 1));
+                    }
 
                     // Update Project Materials
                     await tx.execute(`
                         UPDATE project_materials 
                         SET shop_stock = COALESCE(shop_stock, 0) + ?,
                             in_warehouse_qty = COALESCE(in_warehouse_qty, 0) + ?,
+                            in_warehouse_pieces = COALESCE(in_warehouse_pieces, 0) + ?,
                             ordered_qty = MAX(0, COALESCE(ordered_qty, 0) - ?)
                         WHERE id = ?
-                    `, [finalReceivedQty, finalReceivedQty, receipt.qty_ordered, receipt.material_id]);
+                    `, [
+                        receipt.condition === 'Verified' ? finalReceivedQty : 0,
+                        receipt.condition === 'Verified' ? finalReceivedQty : 0,
+                        receipt.condition === 'Verified' ? finalReceivedPieces : 0,
+                        finalReceivedQty, // Fixed to finalReceivedQty
+                        receipt.material_id
+                    ]);
 
                     // Log Discrepancy
                     if (receipt.condition !== 'Verified' || finalReceivedQty < (receipt.qty_ordered - 0.01)) {
                         await tx.execute(`
-                            INSERT INTO material_claims (po_id, material_id, expected_qty, received_qty, difference, pieces_expected, pieces_received, pieces_difference, condition_flag, notes, photo_url, created_by, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                            INSERT INTO material_claims (po_id, material_id, expected_qty, received_qty, difference, pieces_expected, pieces_received, pieces_difference, condition_flag, receipt_mode, notes, photo_url, created_by, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                         `, [
                             poId,
                             receipt.material_id,
@@ -2016,6 +2097,7 @@ export const SupabaseService = {
                             receipt.pieces_received,
                             (receipt.pieces_ordered || 0) - (receipt.pieces_received || 0),
                             receipt.condition === 'Verified' ? 'V' : (receipt.condition === 'Damaged' ? 'D' : 'M'),
+                            receipt.receipt_mode || 'Granular',
                             receipt.notes,
                             receipt.photo_url,
                             userId

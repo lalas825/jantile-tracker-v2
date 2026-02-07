@@ -9,8 +9,12 @@ type ItemCondition = 'Verified' | 'Damaged' | 'Missing';
 interface GranularReceipt {
     qty_received: string;
     pieces_received?: string;
-    crates_received?: string; // NEW: Bulk input state
+    crates_received?: string;
+    multiplier_mode?: 'Pcs' | 'SQFT';
+    pieces_per_crate_override?: string;
+    sqft_per_crate_override?: string;
     pieces_ordered?: number;
+    receipt_mode: 'Bulk' | 'Granular';
     condition: ItemCondition;
     notes: string;
     photo_url?: string;
@@ -54,10 +58,15 @@ export default function ReceivingList() {
                     const pcsPerUnit = item.pcs_per_unit || 1;
                     const expectedPcs = Math.round(item.quantity_ordered * pcsPerUnit);
 
+                    const category = item.material_category?.toLowerCase() || '';
+                    const defaultMode = (category.includes('tile') || category.includes('stone')) ? 'Bulk' : 'Granular';
+
                     initialReceipts[p.id][item.id] = {
                         qty_received: String(item.quantity_ordered),
                         pieces_received: isTile ? String(expectedPcs) : undefined,
                         pieces_ordered: isTile ? expectedPcs : undefined,
+                        multiplier_mode: 'Pcs',
+                        receipt_mode: defaultMode,
                         condition: 'Verified',
                         notes: ''
                     };
@@ -107,7 +116,10 @@ export default function ReceivingList() {
                     notes: data.notes,
                     photo_url: data.photo_url,
                     pieces_received: data.pieces_received !== undefined ? parseInt(data.pieces_received) : undefined,
-                    pieces_ordered: data.pieces_ordered
+                    pieces_ordered: data.pieces_ordered,
+                    receipt_mode: data.receipt_mode,
+                    crates_received: data.crates_received ? parseFloat(data.crates_received) : undefined,
+                    pieces_per_crate: item.pieces_per_crate
                 };
             });
 
@@ -176,23 +188,25 @@ export default function ReceivingList() {
         return (
             <View key={p.id} className={`${cardWidth} mb-4 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm`}>
                 {/* Card Header - Optimized for TV */}
-                <View className="p-5 border-b border-slate-100 bg-slate-50/50">
-                    <View className="flex-row justify-between items-center mb-2">
-                        <View className="flex-row items-center gap-2">
+                <View className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex-row justify-between items-center">
+                    <View className="flex-row items-center gap-3">
+                        <View className="flex-row items-baseline gap-1">
+                            <Text className="text-[10px] font-black text-slate-400 uppercase">PO</Text>
                             <Text className="text-xl font-inter font-black text-slate-900">#{p.po_number}</Text>
-                            <Text className={`px-2 py-0.5 rounded-md uppercase text-[9px] font-black ${poStatus === 'Overdue' ? 'bg-red-100 text-red-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                                {poStatus}
-                            </Text>
-                            <Text className="text-slate-400 font-black text-[9px] uppercase tracking-tighter">Inbound PO</Text>
                         </View>
-                        <View className="flex-row items-center gap-1.5 bg-white px-2 py-1 rounded-lg border border-slate-100 shadow-sm">
-                            <Clock size={10} color={poStatus === 'Overdue' ? '#dc2626' : '#4f46e5'} strokeWidth={3} />
-                            <Text className={`font-black text-[10px] uppercase ${poStatus === 'Overdue' ? 'text-red-600' : 'text-indigo-600'}`}>
-                                {formatDisplayDate(p.expected_date)}
-                            </Text>
-                        </View>
+
+                        <View className="w-[1px] h-4 bg-slate-200" />
+
+                        <Text className="text-[11px] font-inter font-black text-slate-600 uppercase tracking-tight">{p.vendor}</Text>
                     </View>
-                    <Text className="text-sm font-inter font-bold text-slate-600 uppercase tracking-tight">{p.vendor}</Text>
+
+                    <View className="flex-row items-center gap-1.5 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-sm">
+                        <Clock size={10} color={poStatus === 'Overdue' ? '#dc2626' : '#4f46e5'} strokeWidth={3} />
+                        <Text className={`font-black text-[10px] uppercase ${poStatus === 'Overdue' ? 'text-red-600' : 'text-indigo-600'}`}>
+                            {formatDisplayDate(p.expected_date)}
+                        </Text>
+                        <Text className="text-[9px] font-black text-slate-400 border-l border-slate-100 pl-1.5 uppercase">Expected</Text>
+                    </View>
                 </View>
 
                 {/* Material Checklist - Granular Verification */}
@@ -245,13 +259,57 @@ export default function ReceivingList() {
                                         <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-tight mt-1">{item.material_category}</Text>
                                     </View>
 
-                                    {/* Granular Controls */}
-                                    <View className="flex-row items-end gap-3 mb-3">
-                                        {/* 1. Bulk Input (Crates) - Only if applicable */}
-                                        {(item.pieces_per_crate && item.pieces_per_crate > 0) && (
-                                            <View className="w-[28%]">
+                                    {/* Dual-Mode Intake & Condition Verification */}
+                                    <View className="flex-row justify-between items-center mb-4">
+                                        <View className="flex-row bg-slate-200/50 p-1 rounded-xl self-start">
+                                            {(['Bulk', 'Granular'] as const).map(m => (
+                                                <TouchableOpacity
+                                                    key={m}
+                                                    onPress={() => {
+                                                        const current = receiptData[p.id]?.[item.id];
+                                                        let updates: any = { receipt_mode: m };
+
+                                                        if (m === 'Bulk' && current?.pieces_received) {
+                                                            // Carry over from Granular to Bulk
+                                                            const pcs = Number(current.pieces_received);
+                                                            const ppc = item.pieces_per_crate || 0;
+                                                            if (ppc > 0) {
+                                                                updates.crates_received = String(pcs / ppc);
+                                                            }
+                                                        }
+
+                                                        updateItemReceipt(p.id, item.id, updates);
+                                                    }}
+                                                    className={`px-4 py-1.5 rounded-lg ${data.receipt_mode === m ? 'bg-white shadow-sm' : ''}`}
+                                                >
+                                                    <Text className={`text-[9px] font-black uppercase ${data.receipt_mode === m ? 'text-indigo-600' : 'text-slate-500'}`}>
+                                                        {m === 'Bulk' ? 'Bulk (Crates)' : 'Granular (SQFT/Pcs)'}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+
+                                        {/* Condition Toggle relocated to top */}
+                                        <View className="flex-row bg-slate-200/50 p-1 rounded-xl h-8 items-center">
+                                            {(['Verified', 'Damaged', 'Missing'] as ItemCondition[]).map(cond => (
+                                                <TouchableOpacity
+                                                    key={cond}
+                                                    onPress={() => updateItemReceipt(p.id, item.id, { condition: cond })}
+                                                    className={`px-3 h-full items-center justify-center rounded-lg ${data.condition === cond ? 'bg-white shadow-sm' : ''}`}
+                                                >
+                                                    <Text className={`text-[9px] font-black uppercase ${data.condition === cond ? (cond === 'Verified' ? 'text-green-600' : 'text-red-600') : 'text-slate-500'}`}>
+                                                        {cond.charAt(0)}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    </View>
+
+                                    <View className="flex-row items-end gap-3 mb-4">
+                                        {data.receipt_mode === 'Bulk' ? (
+                                            <View className="flex-1">
                                                 <Text className="text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">
-                                                    Crates / Pallets
+                                                    {item.unit?.toLowerCase() === 'sqft' ? 'Crates / Skids Received' : `${item.unit} Received (Bulk)`}
                                                 </Text>
                                                 <View className="bg-white rounded-xl h-10 border border-slate-200 shadow-sm overflow-hidden flex-row items-center">
                                                     <TextInput
@@ -260,15 +318,21 @@ export default function ReceivingList() {
                                                         value={data.crates_received || ''}
                                                         onChangeText={(val) => {
                                                             const crates = Number(val);
-                                                            const totalPieces = Math.round(crates * (item.pieces_per_crate || 0));
-                                                            // Calculate SQFT from Pieces (TotalPieces / PcsPerSQFT)
-                                                            // OR if pcs_per_unit is 1 (like stone), SQFT = Pieces * SQFT_Per_Piece?? 
-                                                            // Standard Jantile: pcs_per_unit = Pieces Per SQFT.
-                                                            const sqft = totalPieces / (item.pcs_per_unit || 1);
+                                                            const ppc_from_db = item.pieces_per_crate || 0;
+                                                            const ppc_override = Number(data.pieces_per_crate_override) || 0;
+
+                                                            // Logic: DB value > Override value > Fallback to 1
+                                                            const effective_ppc = ppc_from_db > 0 ? ppc_from_db : (ppc_override > 0 ? ppc_override : 1);
+
+                                                            const sqft_per_piece = item.sqft_per_piece ||
+                                                                ((item.dims?.length && item.dims?.width) ? (item.dims.length * item.dims.width) / 144 : (1 / (item.pcs_per_unit || 1)));
+
+                                                            const totalPieces = Math.round(crates * effective_ppc);
+                                                            const totalSqft = totalPieces * (sqft_per_piece || 1);
 
                                                             updateItemReceipt(p.id, item.id, {
                                                                 crates_received: val,
-                                                                qty_received: sqft.toFixed(2), // Update main input logic
+                                                                qty_received: totalSqft.toFixed(2),
                                                                 pieces_received: String(totalPieces)
                                                             });
                                                         }}
@@ -276,71 +340,160 @@ export default function ReceivingList() {
                                                         placeholder="0"
                                                         placeholderTextColor="#cbd5e1"
                                                     />
-                                                    <View className="bg-slate-50 h-full px-2 justify-center border-l border-slate-100">
-                                                        <Box size={12} color="#94a3b8" />
+                                                    {(!item.pieces_per_crate || item.pieces_per_crate === 0) && (
+                                                        <View className="flex-row items-center border-l border-slate-100 bg-amber-50/20">
+                                                            <View className="w-[1px] h-6 bg-slate-200" />
+
+                                                            {/* Multiplier Mode Selection Dropdown (Styled as toggle) */}
+                                                            <TouchableOpacity
+                                                                onPress={() => {
+                                                                    const currentMode = data.multiplier_mode || 'Pcs';
+                                                                    const nextMode = currentMode === 'Pcs' ? 'SQFT' : 'Pcs';
+                                                                    updateItemReceipt(p.id, item.id, { multiplier_mode: nextMode });
+                                                                }}
+                                                                className="flex-row items-center px-2 h-full border-r border-slate-100 bg-amber-100/30"
+                                                            >
+                                                                <Text className="text-[10px] font-black text-amber-600 uppercase mr-1">
+                                                                    {data.multiplier_mode || 'Pcs'}/Crt
+                                                                </Text>
+                                                                <ChevronDown size={10} color="#d97706" />
+                                                            </TouchableOpacity>
+
+                                                            {/* Unified Multiplier Input with improved visibility */}
+                                                            <TextInput
+                                                                className="w-20 font-inter font-black text-[12px] text-amber-900 h-full px-2 text-center"
+                                                                style={{ outlineStyle: 'none' } as any}
+                                                                value={(data.multiplier_mode === 'SQFT') ? (data.sqft_per_crate_override || '') : (data.pieces_per_crate_override || '')}
+                                                                onChangeText={(val) => {
+                                                                    const isPcsMode = (data.multiplier_mode || 'Pcs') === 'Pcs';
+                                                                    const sqft_per_piece = item.sqft_per_piece ||
+                                                                        ((item.dims?.length && item.dims?.width) ? (item.dims.length * item.dims.width) / 144 : (1 / (item.pcs_per_unit || 1)));
+
+                                                                    if (isPcsMode) {
+                                                                        const ppc = Number(val) || 0;
+                                                                        const spc = ppc * sqft_per_piece;
+                                                                        updateItemReceipt(p.id, item.id, {
+                                                                            pieces_per_crate_override: val,
+                                                                            sqft_per_crate_override: spc > 0 ? spc.toFixed(2) : ''
+                                                                        });
+
+                                                                        if (data.crates_received) {
+                                                                            const crates = Number(data.crates_received);
+                                                                            const totalPieces = Math.round(crates * ppc);
+                                                                            const totalSqft = totalPieces * (sqft_per_piece || 1);
+                                                                            updateItemReceipt(p.id, item.id, {
+                                                                                qty_received: totalSqft.toFixed(2),
+                                                                                pieces_received: String(totalPieces)
+                                                                            });
+                                                                        }
+                                                                    } else {
+                                                                        const spc = Number(val) || 0;
+                                                                        const ppc = Math.round(spc / (sqft_per_piece || 1));
+                                                                        updateItemReceipt(p.id, item.id, {
+                                                                            sqft_per_crate_override: val,
+                                                                            pieces_per_crate_override: ppc > 0 ? String(ppc) : ''
+                                                                        });
+
+                                                                        if (data.crates_received) {
+                                                                            const crates = Number(data.crates_received);
+                                                                            const totalSqft = crates * spc;
+                                                                            const totalPieces = Math.round(totalSqft / (sqft_per_piece || 1));
+                                                                            updateItemReceipt(p.id, item.id, {
+                                                                                qty_received: totalSqft.toFixed(2),
+                                                                                pieces_received: String(totalPieces)
+                                                                            });
+                                                                        }
+                                                                    }
+                                                                }}
+                                                                keyboardType="numeric"
+                                                                placeholder="Value"
+                                                                placeholderTextColor="#d97706"
+                                                            />
+                                                        </View>
+                                                    )}
+                                                    <View className="bg-slate-50 h-full px-3 justify-center border-l border-slate-100">
+                                                        <Box size={14} color="#94a3b8" />
                                                     </View>
                                                 </View>
-                                                {/* Reactive Label */}
-                                                {(data.crates_received && Number(data.crates_received) > 0) && (
-                                                    <View className="mt-1 ml-1">
-                                                        <Text className="text-[8px] font-bold text-slate-400">
-                                                            = <Text className="text-indigo-600 font-black">{Math.round(Number(data.crates_received) * (item.pieces_per_crate || 0))} Pcs</Text>
-                                                        </Text>
-                                                    </View>
-                                                )}
+                                                <View className="flex-row items-center gap-1 mt-1.5 ml-1">
+                                                    <Text className="text-[9px] font-bold text-slate-400 uppercase">Real-time Summary:</Text>
+                                                    <Text className="text-[10px] font-black text-indigo-600">
+                                                        {item.unit?.toLowerCase() === 'sqft'
+                                                            ? `${data.qty_received} ${item.unit} | ${data.pieces_received || 0} Pcs`
+                                                            : `${data.pieces_received || 0} ${item.unit || 'units'}`
+                                                        }
+                                                    </Text>
+                                                </View>
                                             </View>
+                                        ) : (
+                                            <>
+                                                <View className="flex-1">
+                                                    <Text className="text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">
+                                                        {item.unit?.toLowerCase() === 'sqft' ? 'SQFT Received' : `${item.unit} Received`}
+                                                    </Text>
+                                                    <View className="bg-white rounded-xl h-10 border border-slate-200 shadow-sm overflow-hidden">
+                                                        <TextInput
+                                                            className="flex-1 font-inter font-black text-sm text-slate-900 h-full px-3"
+                                                            style={{ outlineStyle: 'none' } as any}
+                                                            value={data.qty_received}
+                                                            onChangeText={(val) => {
+                                                                const isTile = item.unit?.toLowerCase() === 'sqft';
+                                                                if (isTile) {
+                                                                    const sqft = Number(val);
+                                                                    const sqft_per_piece = item.sqft_per_piece ||
+                                                                        ((item.dims?.length && item.dims?.width) ? (item.dims.length * item.dims.width) / 144 : (1 / (item.pcs_per_unit || 1)));
+                                                                    const pcs = Math.round(sqft / (sqft_per_piece || 1));
+                                                                    updateItemReceipt(p.id, item.id, {
+                                                                        qty_received: val,
+                                                                        pieces_received: String(pcs)
+                                                                    });
+                                                                } else {
+                                                                    // For bags/boxes, qty and pieces are the same
+                                                                    updateItemReceipt(p.id, item.id, {
+                                                                        qty_received: val,
+                                                                        pieces_received: val
+                                                                    });
+                                                                }
+                                                            }}
+                                                            keyboardType="numeric"
+                                                            placeholder="0.00"
+                                                        />
+                                                    </View>
+                                                </View>
+                                                <View className="flex-1">
+                                                    <Text className="text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">Pieces Received</Text>
+                                                    <View className="bg-white rounded-xl h-10 border border-slate-200 shadow-sm overflow-hidden">
+                                                        <TextInput
+                                                            className="flex-1 font-inter font-black text-sm text-slate-900 h-full px-3"
+                                                            style={{ outlineStyle: 'none' } as any}
+                                                            value={data.pieces_received || ''}
+                                                            onChangeText={(val) => {
+                                                                const isTile = item.unit?.toLowerCase() === 'sqft';
+                                                                if (isTile) {
+                                                                    const pcs = Number(val);
+                                                                    const sqft_per_piece = item.sqft_per_piece ||
+                                                                        ((item.dims?.length && item.dims?.width) ? (item.dims.length * item.dims.width) / 144 : (1 / (item.pcs_per_unit || 1)));
+                                                                    const sqft = pcs * sqft_per_piece;
+                                                                    updateItemReceipt(p.id, item.id, {
+                                                                        pieces_received: val,
+                                                                        qty_received: sqft.toFixed(2)
+                                                                    });
+                                                                } else {
+                                                                    // For bags/boxes, qty and pieces are the same
+                                                                    updateItemReceipt(p.id, item.id, {
+                                                                        pieces_received: val,
+                                                                        qty_received: val
+                                                                    });
+                                                                }
+                                                            }}
+                                                            keyboardType="numeric"
+                                                            placeholder="0"
+                                                        />
+                                                    </View>
+                                                </View>
+                                            </>
                                         )}
 
-                                        {/* 2. Main Qty Input (SQFT Priority) */}
-                                        <View className="flex-1">
-                                            <Text className="text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">
-                                                Qty Received ({item.unit || 'pcs'})
-                                            </Text>
-                                            <View className="flex-row items-center bg-white rounded-xl h-10 border border-slate-100 shadow-sm overflow-hidden">
-                                                <TextInput
-                                                    className="flex-1 font-inter font-black text-sm text-slate-900 h-full px-3 border-0"
-                                                    style={{ outlineStyle: 'none' } as any}
-                                                    value={data.qty_received}
-                                                    onChangeText={(val) => {
-                                                        const updates: Partial<GranularReceipt> = { qty_received: val, crates_received: '' }; // Clear crates if manual override
-                                                        if (isTile) {
-                                                            updates.pieces_received = String(Math.round(Number(val) * pcsPerUnit));
-                                                        }
-                                                        updateItemReceipt(p.id, item.id, updates);
-                                                    }}
-                                                    keyboardType="numeric"
-                                                    placeholder="0"
-                                                    placeholderTextColor="#cbd5e1"
-                                                />
-                                                <View className="bg-slate-50 h-full px-3 justify-center border-l border-slate-100">
-                                                    <Text className="text-[10px] font-black text-slate-400 uppercase">{item.unit || 'pcs'}</Text>
-                                                </View>
-                                            </View>
-                                            {isTile && (
-                                                <View className="flex-row items-center gap-1 mt-1.5 ml-1">
-                                                    <Text className="text-[9px] font-bold text-slate-400 uppercase">Net Units:</Text>
-                                                    <Text className="text-[10px] font-black text-indigo-600">{calculatedPcs} PCS</Text>
-                                                </View>
-                                            )}
-                                        </View>
-
-                                        {/* 3. Condition Toggle */}
-                                        <View className="w-[30%]">
-                                            <Text className="text-[9px] font-black text-slate-400 uppercase mb-1 ml-1">Condition</Text>
-                                            <View className="flex-row bg-slate-200/50 p-1 rounded-xl h-10">
-                                                {(['Verified', 'Damaged', 'Missing'] as ItemCondition[]).map(cond => (
-                                                    <TouchableOpacity
-                                                        key={cond}
-                                                        onPress={() => updateItemReceipt(p.id, item.id, { condition: cond })}
-                                                        className={`flex-1 items-center justify-center rounded-lg ${data.condition === cond ? 'bg-white shadow-sm' : ''}`}
-                                                    >
-                                                        <Text className={`text-[9px] font-black uppercase ${data.condition === cond ? (cond === 'Verified' ? 'text-green-600' : 'text-red-600') : 'text-slate-500'}`}>
-                                                            {cond.charAt(0)}
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                ))}
-                                            </View>
-                                        </View>
                                     </View>
 
                                     {/* Line Item Actions */}
@@ -359,7 +512,7 @@ export default function ReceivingList() {
                                                 <Edit3 size={14} color={data.notes ? '#4f46e5' : '#64748b'} />
                                             </TouchableOpacity>
                                         </View>
-                                        {data.condition !== 'Verified' && (
+                                        {(data.condition !== 'Verified' || (parseFloat(data.qty_received) < (item.quantity_ordered - 0.01))) && (
                                             <View className="flex-row items-center gap-1.5">
                                                 <AlertCircle size={14} color="#dc2626" strokeWidth={2.5} />
                                                 <Text className="text-red-600 font-black text-[9px] uppercase tracking-wider">Discrepancy Detected</Text>
@@ -383,7 +536,7 @@ export default function ReceivingList() {
                             </Text>
                         </TouchableOpacity>
                         <Text className="text-slate-400 text-[8px] font-bold uppercase text-center mt-2 tracking-widest">
-                            Verified items will update project stock instantly
+                            REAL-TIME SUMMARY: Verified items will update project stock instantly
                         </Text>
                     </View>
                 </View>

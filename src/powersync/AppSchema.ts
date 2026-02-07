@@ -179,6 +179,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'ordered_qty', type: ColumnType.REAL }),
             new Column({ name: 'shop_stock', type: ColumnType.REAL }),
             new Column({ name: 'in_warehouse_qty', type: ColumnType.REAL }),
+            new Column({ name: 'in_warehouse_pieces', type: ColumnType.REAL }),
             new Column({ name: 'in_transit', type: ColumnType.REAL }),
             new Column({ name: 'received_at_job', type: ColumnType.REAL }),
             new Column({ name: 'unit', type: ColumnType.TEXT }),
@@ -198,6 +199,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'parent_material_id', type: ColumnType.TEXT }),
             new Column({ name: 'joint_width', type: ColumnType.TEXT }),
             new Column({ name: 'bag_weight', type: ColumnType.REAL }),
+            new Column({ name: 'sqft_per_piece', type: ColumnType.REAL }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
             new Column({ name: 'updated_at', type: ColumnType.TEXT }),
         ]

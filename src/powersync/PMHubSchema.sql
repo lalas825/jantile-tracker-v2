@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS project_materials (
     ordered_qty NUMERIC DEFAULT 0,
     shop_stock NUMERIC DEFAULT 0,
     in_warehouse_qty NUMERIC DEFAULT 0,
+    in_warehouse_pieces NUMERIC DEFAULT 0, -- Separated piece-level tracking
     in_transit NUMERIC DEFAULT 0,
     received_at_job NUMERIC DEFAULT 0,
     unit TEXT DEFAULT 'sqft',
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS project_materials (
     parent_material_id UUID,
     joint_width TEXT,
     bag_weight NUMERIC,
+    sqft_per_piece NUMERIC, -- High-precision conversion factor
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -103,6 +105,7 @@ CREATE TABLE IF NOT EXISTS material_claims (
     pieces_received NUMERIC, -- New for Tile
     pieces_difference NUMERIC, -- New for Tile
     condition_flag TEXT NOT NULL, -- 'V' | 'D' | 'M'
+    receipt_mode TEXT DEFAULT 'Granular', -- 'Bulk' | 'Granular'
     notes TEXT,
     photo_url TEXT,
     created_by UUID,

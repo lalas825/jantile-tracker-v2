@@ -97,7 +97,14 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='project_materials' AND COLUMN_NAME='updated_at') THEN
         ALTER TABLE project_materials ADD COLUMN updated_at TIMESTAMPTZ DEFAULT now();
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='project_materials' AND COLUMN_NAME='in_warehouse_pieces') THEN
+        ALTER TABLE project_materials ADD COLUMN in_warehouse_pieces NUMERIC DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='project_materials' AND COLUMN_NAME='sqft_per_piece') THEN
+        ALTER TABLE project_materials ADD COLUMN sqft_per_piece NUMERIC;
+    END IF;
 END $$;
+
 
 -- 3. Add missing columns to delivery_tickets
 DO $$ 
