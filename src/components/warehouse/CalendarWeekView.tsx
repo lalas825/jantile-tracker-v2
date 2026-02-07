@@ -35,26 +35,38 @@ const DraggableEvent = ({ event, children }: { event: CalendarEvent; children: R
         opacity: 0.8
     } : undefined;
 
+    // Destructure tabIndex and role out to avoid View prop error
+    const { tabIndex, role, ...validAttributes } = attributes;
+
     return (
-        <View ref={setNodeRef as any} {...listeners} {...attributes} style={style as any} className="absolute w-full px-1">
+        <View ref={setNodeRef as any} {...listeners} {...validAttributes} style={style as any} className="absolute w-full px-1">
             {children}
         </View>
     );
 };
 
-// Droppable Time Slot
+// Droppable Time Slot with Conflict Detection
 const DroppableSlot = ({ date, hour, children }: { date: string, hour: number, children?: React.ReactNode }) => {
     const { setNodeRef, isOver } = useDroppable({
-        id: `${date}|${hour}`, // Encode date and hour in ID
+        id: `${date}|${hour}`,
         data: { date, hour }
     });
+
+    // Count children to detect conflict (React.Children.count might count nulls, so array filter is safer if children is array)
+    const eventCount = React.Children.count(children);
+    const hasConflict = eventCount > 3;
 
     return (
         <View
             ref={setNodeRef as any}
-            className={`h-24 border-b border-r border-slate-100 relative ${isOver ? 'bg-blue-50' : ''}`}
+            className={`h-24 border-b border-r border-slate-100 relative ${isOver ? 'bg-blue-50' : hasConflict ? 'bg-red-50' : ''}`}
         >
-            {/* Hour Marker (Optional visual aid inside slot) */}
+            {/* Visual Conflict Indicator */}
+            {hasConflict && (
+                <View className="absolute top-1 right-1 bg-red-100 rounded-full p-1 z-10">
+                    <Text className="text-[8px] font-black text-red-600 px-1">BUSY</Text>
+                </View>
+            )}
             {children}
         </View>
     );
