@@ -14,7 +14,7 @@ interface AddBudgetItemModalProps {
 }
 
 const CATEGORIES = [
-    'Generic', 'Tile', 'Stone', 'Base', 'Setting Materials', 'Grout', 'Tools', 'Consumable'
+    'Generic', 'Tile', 'Stone', 'Base', 'Setting Materials', 'Grout', 'Tools', 'Consumable', 'Misc'
 ];
 
 const COST_BASIS_OPTIONS = [

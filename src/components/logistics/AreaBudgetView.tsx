@@ -50,8 +50,8 @@ export default function AreaBudgetView({
                 const others = areaMats.filter(m => !mainMaterials.includes(m) && !sundries.includes(m));
 
                 const renderMaterialRow = (m: ProjectMaterial) => {
-                    const wasteQty = (m.net_qty || 0) * ((m.waste_percent || 0) / 100);
-                    const toBuy = Math.max(0, m.budget_qty - (m.shop_stock + m.received_at_job));
+                    const wasteQty = Number(m.net_qty || 0) * (Number(m.waste_percent || 0) / 100);
+                    const toBuy = Math.max(0, Number(m.budget_qty || 0) - (Number(m.shop_stock || 0) + Number(m.received_at_job || 0) + Number(m.in_transit || 0)));
                     const unit = m.unit || 'sqft';
 
                     // Helper for Piece Count
@@ -127,8 +127,24 @@ export default function AreaBudgetView({
                                 {renderPcs(m.shop_stock)}
                             </View>
                             <View className="flex-[1] items-center">
-                                {renderQuantityWithUnit(m.received_at_job)}
-                                {renderPcs(m.received_at_job)}
+                                {renderQuantityWithUnit((m.received_at_job || 0) + (m.in_transit || 0))}
+                                {renderPcs((m.received_at_job || 0) + (m.in_transit || 0))}
+                            </View>
+                            {/* NEW: DMG/MISS COLUMN */}
+                            <View className="flex-[1] items-center">
+                                {(m.qty_damaged || 0) + (m.qty_missing || 0) > 0 ? (
+                                    <View>
+                                        <View className="flex-row items-baseline justify-center">
+                                            <Text className="text-[14px] font-inter font-black text-red-500">
+                                                {((m.qty_damaged || 0) + (m.qty_missing || 0)).toLocaleString()}
+                                            </Text>
+                                            <Text className="text-[10px] text-red-300 font-medium ml-0.5">{unit}</Text>
+                                        </View>
+                                        {/* Optional breakdown if space permits, for now total is enough */}
+                                    </View>
+                                ) : (
+                                    <Text className="text-[13px] text-slate-200 font-black">--</Text>
+                                )}
                             </View>
                             <View className="flex-[1] items-center">
                                 <View className="flex-row items-baseline justify-center">
@@ -218,6 +234,7 @@ export default function AreaBudgetView({
                                     <Text className="flex-[1] text-[11px] font-inter font-black text-slate-900 uppercase text-center">BUDGET</Text>
                                     <Text className="flex-[1] text-[11px] font-inter font-black text-blue-600 uppercase text-center">STOCK</Text>
                                     <Text className="flex-[1] text-[11px] font-inter font-black text-emerald-600 uppercase text-center">SHIPPED</Text>
+                                    <Text className="flex-[1] text-[11px] font-inter font-black text-red-400 uppercase text-center">DMG / MISS</Text>
                                     <Text className="flex-[1] text-[11px] font-inter font-black text-slate-900 uppercase text-center">TO BUY</Text>
                                     <View className="w-20" />
                                 </View>
@@ -228,7 +245,7 @@ export default function AreaBudgetView({
                                     <>
                                         <View className="px-3 py-3 bg-indigo-50/30 border-y border-indigo-100 flex-row items-center gap-2">
                                             <Ionicons name="layers" size={16} color="#6366f1" />
-                                            <Text className="text-[14px] font-inter font-black text-indigo-800 uppercase tracking-widest">SETTING MATERIALS & SUNDRIES</Text>
+                                            <Text className="text-[14px] font-inter font-black text-indigo-800 uppercase tracking-widest">SETTING MATERIALS</Text>
                                         </View>
                                         {sundries.map(renderMaterialRow)}
                                     </>

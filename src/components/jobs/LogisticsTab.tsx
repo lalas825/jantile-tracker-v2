@@ -49,6 +49,8 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
     const [expandedAreas, setExpandedAreas] = useState<Record<string, boolean>>({});
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
         'TILE & STONE': true,
+        'SETTING MATERIALS': true,
+        'MISC / OTHER ITEMS': true,
         'DELIVERY MANAGEMENT': true,
         'VENDOR ORDERS': true
     });
@@ -204,21 +206,22 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
             if (m.zone) groups[key].zones.add(m.zone);
             groups[key].all_ids.add(m.id);
 
-            groups[key].net_qty += m.net_qty || 0;
-            groups[key].waste_qty += (m.net_qty || 0) * ((m.waste_percent || 0) / 100);
-            groups[key].budget_qty += m.budget_qty || 0;
-            groups[key].ordered_qty += m.ordered_qty || 0; // Note: ordered_qty logic might need review if it comes from POs
-            groups[key].shop_stock += m.shop_stock || 0;
-            groups[key].in_transit += m.in_transit || 0;
-            groups[key].received_at_job += m.received_at_job || 0;
-            groups[key].total_value += (m.budget_qty || 0) * (m.unit_cost || 0);
+            groups[key].net_qty += Number(m.net_qty || 0);
+            groups[key].waste_qty += Number(m.net_qty || 0) * (Number(m.waste_percent || 0) / 100);
+            groups[key].budget_qty += Number(m.budget_qty || 0);
+            groups[key].ordered_qty += Number(m.ordered_qty || 0);
+            groups[key].shop_stock += Number(m.shop_stock || 0);
+            groups[key].in_transit += Number(m.in_transit || 0);
+            groups[key].received_at_job += Number(m.received_at_job || 0);
+            groups[key].total_value += Number(m.budget_qty || 0) * Number(m.unit_cost || 0);
         });
         return Object.values(groups);
     }, [sortedMaterials]);
 
     const categories = [
-        { label: 'TILE & STONE', tags: ['Tile', 'Stone'] },
-        { label: 'SETTING MATERIALS & SUNDRIES', tags: ['Setting Materials', 'Sundries', 'Misc', 'Grout', 'Consumable', 'Grout/Caulk'] }
+        { label: 'TILE & STONE', tags: ['Tile', 'Stone', 'Base'] },
+        { label: 'SETTING MATERIALS', tags: ['Setting Materials', 'Sundries', 'Grout', 'Consumable', 'Grout/Caulk'] },
+        { label: 'MISC / OTHER ITEMS', tags: ['Misc', 'Generic', 'Tools'] }
     ];
 
 
@@ -495,7 +498,11 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                             </View>
                             <View className="flex-row items-center gap-1.5 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100">
                                 <Ionicons name="layers-outline" size={14} color="#4f46e5" />
-                                <Text className="text-[10px] font-black text-indigo-600 uppercase">Sundries: {materials.filter(m => ['setting materials', 'grout', 'sundries', 'consumable'].includes((m.category || '').toLowerCase())).length}</Text>
+                                <Text className="text-[10px] font-black text-indigo-600 uppercase">Setting Materials: {materials.filter(m => ['setting materials', 'grout', 'sundries', 'consumable'].includes((m.category || '').toLowerCase())).length}</Text>
+                            </View>
+                            <View className="flex-row items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
+                                <Ionicons name="help-circle-outline" size={14} color="#64748b" />
+                                <Text className="text-[10px] font-black text-slate-500 uppercase">Misc: {materials.filter(m => !['tile', 'stone', 'base', 'setting materials', 'grout', 'sundries', 'consumable'].includes((m.category || '').toLowerCase())).length}</Text>
                             </View>
                             {materials.filter(m => !m.area_id).length > 0 && (
                                 <View className="flex-row items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
@@ -507,11 +514,10 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                             {/* DEBUG BUTTON */}
                             <TouchableOpacity
                                 onPress={() => {
-                                    const catMap = materials.reduce((acc: any, m) => {
-                                        acc[m.category] = (acc[m.category] || 0) + 1;
-                                        return acc;
-                                    }, {});
-                                    const debugInfo = `Total: ${materials.length}\nJob ID: ${job.id}\nFirst Mat Job ID: ${materials[0]?.job_id || 'N/A'}\nCategories: ${JSON.stringify(catMap)}`;
+                                    const firstAgg = aggregatedMaterials.find(m => m.category === 'Tile' || m.category === 'Stone');
+                                    const debugInfo = firstAgg
+                                        ? `AGGREGATED DEBUG:\nName: ${firstAgg.product_name}\nBudget: ${firstAgg.budget_qty}\nStock: ${firstAgg.shop_stock}\nTransit: ${firstAgg.in_transit}\nRecv@Job: ${firstAgg.received_at_job}\nToBuy Calc: ${firstAgg.budget_qty - (firstAgg.shop_stock + firstAgg.in_transit + firstAgg.received_at_job)}`
+                                        : "No Tile/Stone found";
                                     window.alert(debugInfo);
                                 }}
                                 className="bg-slate-800 px-3 py-1.5 rounded-lg"

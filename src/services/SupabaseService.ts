@@ -155,6 +155,9 @@ export interface ProjectMaterial {
     received_at_job: number;
     unit: string;
     pcs_per_unit?: number;
+    pieces_per_crate?: number;
+    qty_damaged?: number;
+    qty_missing?: number;
     expected_date?: string;
     grout_info?: string;
     caulk_info?: string;
@@ -174,17 +177,19 @@ export interface ProjectMaterial {
 export interface DeliveryTicket {
     id: string;
     job_id: string;
+    job_name?: string;
     ticket_number: string;
     status: string;
     items: any[]; // Decoded JSON
     destination: string;
     requested_date: string;
+    scheduled_time?: string;
     due_date?: string;
     due_time?: string;
     notes?: string;
     created_by: string;
-    created_at?: string;
-    updated_at?: string;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface PurchaseOrderItem {
@@ -199,13 +204,17 @@ export interface PurchaseOrderItem {
 export interface PurchaseOrder {
     id: string;
     job_id: string;
+    job_name?: string;
     po_number: string;
     vendor: string;
     status: 'Ordered' | 'Partial' | 'Received';
     order_date: string;
     expected_date?: string;
+    scheduled_time?: string;
     total_amount: number;
     notes?: string;
+    received_at?: string;
+    received_by?: string;
     items?: PurchaseOrderItem[];
     created_at?: string;
     updated_at?: string;
@@ -225,6 +234,13 @@ export const formatDate = (date: Date) => {
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
+};
+
+export const formatDisplayDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return 'TBD';
+    const [y, m, d] = dateStr.split('-');
+    if (!y || !m || !d) return dateStr;
+    return `${m}/${d}/${y}`;
 };
 
 // Helper to determine if we should use Supabase directly
@@ -1582,19 +1598,19 @@ export const SupabaseService = {
                 `INSERT OR REPLACE INTO project_materials (
                     id, job_id, area_id, sub_location, category, product_code, product_name, product_specs, zone, 
                     net_qty, waste_percent, budget_qty, unit_cost, total_value, supplier, ordered_qty, shop_stock, in_transit, 
-                    received_at_job, unit, pcs_per_unit, expected_date,
+                    received_at_job, unit, pcs_per_unit, pieces_per_crate, expected_date,
                     grout_info, caulk_info, dim_length, dim_width, dim_thickness,
                     trowel_preset, yield_factor,
                     joint_width, bag_weight, parent_material_id,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     id, material.job_id, material.area_id || null, material.sub_location || null, material.category,
                     material.product_code || null, material.product_name, material.product_specs || null, material.zone || null,
                     material.net_qty || 0, material.waste_percent || 10, material.budget_qty || 0,
                     material.unit_cost || 0, material.total_value || 0, material.supplier || null,
                     material.ordered_qty || 0, material.shop_stock || 0, material.in_transit || 0,
-                    material.received_at_job || 0, material.unit || 'sqft', material.pcs_per_unit || 1,
+                    material.received_at_job || 0, material.unit || 'sqft', material.pcs_per_unit || 1, material.pieces_per_crate || 0,
                     material.expected_date || null,
                     material.grout_info || null, material.caulk_info || null,
                     material.dim_length || null, material.dim_width || null, material.dim_thickness || null,
@@ -1712,20 +1728,392 @@ export const SupabaseService = {
         if (useSupabase) {
             const { data, error } = await supabase
                 .from('delivery_tickets')
-                .select('*')
+                .select('*, jobs(name)')
                 .order('created_at', { ascending: false });
             if (error) throw error;
             return (data || []).map((t: any) => ({
                 ...t,
+                job_name: t.jobs?.name,
                 items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items
             }));
         }
 
-        const result = await db.getAll(`SELECT * FROM delivery_tickets ORDER BY created_at DESC`);
+        const result = await db.getAll(`
+            SELECT dt.*, j.name as job_name 
+            FROM delivery_tickets dt
+            LEFT JOIN jobs j ON dt.job_id = j.id
+            ORDER BY dt.created_at DESC
+        `);
         return result.map((t: any) => ({
             ...t,
             items: t.items ? JSON.parse(t.items) : []
         }));
+    },
+
+    async getOutboundTickets(): Promise<DeliveryTicket[]> {
+        // This is essentially getAllDeliveryTickets but we want to be explicit for the Warehouse Hub
+        return this.getAllDeliveryTickets();
+    },
+
+    async getReceivingPOs(): Promise<PurchaseOrder[]> {
+        if (useSupabase) {
+            const { data, error } = await supabase
+                .from('purchase_orders')
+                .select('*, jobs(name), po_items(*, project_materials(product_name, product_code, category, unit, pcs_per_unit, pieces_per_crate, dim_length, dim_width, dim_thickness))')
+                .not('status', 'in', '("Received","Received with Discrepancy")')
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return (data || []).map((po: any) => ({
+                ...po,
+                job_name: po.jobs?.name,
+                items: po.po_items.map((pi: any) => ({
+                    ...pi,
+                    product_name: pi.project_materials?.product_name,
+                    product_code: pi.project_materials?.product_code,
+                    material_category: pi.project_materials?.category,
+                    unit: pi.project_materials?.unit,
+                    pcs_per_unit: pi.project_materials?.pcs_per_unit,
+                    dims: pi.project_materials ? {
+                        length: pi.project_materials.dim_length,
+                        width: pi.project_materials.dim_width,
+                        thickness: pi.project_materials.dim_thickness
+                    } : null
+                }))
+            }));
+        }
+
+        const result = await db.getAll(`
+            SELECT po.*, j.name as job_name 
+            FROM purchase_orders po
+            LEFT JOIN jobs j ON po.job_id = j.id
+            WHERE po.status NOT IN ('Received', 'Received with Discrepancy')
+            ORDER BY po.created_at DESC
+        `);
+
+        // Join items separately for PowerSync
+        const pos = [];
+        for (const po of result) {
+            const items = await db.getAll(`
+                SELECT pi.*, pm.product_name, pm.product_code, pm.category as material_category, pm.unit, pm.pcs_per_unit, pm.pieces_per_crate, pm.dim_length, pm.dim_width, pm.dim_thickness
+                FROM po_items pi
+                JOIN project_materials pm ON pi.material_id = pm.id
+                WHERE pi.po_id = ?
+            `, [po.id]);
+            pos.push({ ...po, items });
+        }
+        return pos;
+    },
+
+    async getProcessedPOs() {
+        if (useSupabase) {
+            const { data, error } = await supabase
+                .from('purchase_orders')
+                .select(`
+                    *,
+                    jobs ( name ),
+                    po_items (
+                        *,
+                        *,
+                        project_materials ( product_name, product_code, category, unit, pcs_per_unit, pieces_per_crate, dim_length, dim_width, dim_thickness )
+                    ),
+                    material_claims ( * )
+                `)
+                .in('status', ['Received', 'Received with Discrepancy'])
+                .order('received_at', { ascending: false })
+                .limit(20);
+
+            if (error) throw error;
+            return (data || []).map((po: any) => ({
+                ...po,
+                job_name: po.jobs?.name,
+                items: po.po_items.map((pi: any) => ({
+                    ...pi,
+                    product_name: pi.project_materials?.product_name,
+                    product_code: pi.project_materials?.product_code,
+                    material_category: pi.project_materials?.category,
+                    unit: pi.project_materials?.unit,
+                    pcs_per_unit: pi.project_materials?.pcs_per_unit,
+                    dims: pi.project_materials ? {
+                        length: pi.project_materials.dim_length,
+                        width: pi.project_materials.dim_width,
+                        thickness: pi.project_materials.dim_thickness
+                    } : null
+                })),
+                discrepancies: po.material_claims
+            }));
+        }
+
+        const result = await db.getAll(`
+            SELECT po.*, j.name as job_name 
+            FROM purchase_orders po
+            LEFT JOIN jobs j ON po.job_id = j.id
+            WHERE po.status IN ('Received', 'Received with Discrepancy')
+            ORDER BY po.received_at DESC
+            LIMIT 20
+        `);
+
+        const pos = [];
+        for (const po of result) {
+            const items = await db.getAll(`
+                SELECT pi.*, pm.product_name, pm.product_code, pm.category as material_category, pm.dim_length, pm.dim_width, pm.dim_thickness
+                FROM po_items pi
+                JOIN project_materials pm ON pi.material_id = pm.id
+                WHERE pi.po_id = ?
+            `, [po.id]);
+
+            const discrepancies = await db.getAll(`
+                SELECT * FROM material_claims WHERE po_id = ?
+            `, [po.id]);
+
+            pos.push({ ...po, items, discrepancies });
+        }
+        return pos;
+    },
+
+    async receivePurchaseOrder(
+        poId: string,
+        itemReceipts: {
+            material_id: string,
+            qty_received: number, // SQFT for tiles, Qty for others
+            qty_ordered: number,
+            condition: 'Verified' | 'Damaged' | 'Missing',
+            notes?: string,
+            photo_url?: string,
+            pieces_received?: number,
+            pieces_ordered?: number,
+            crates_received?: number, // NEW: Bulk input
+            pieces_per_crate?: number // NEW: For calculation
+        }[],
+        userId?: string
+    ) {
+        if (useSupabase) {
+            for (const receipt of itemReceipts) {
+                // 1. Update Project Materials Stock
+                const { data: mat } = await supabase.from('project_materials')
+                    .select('shop_stock, in_warehouse_qty, ordered_qty, unit, pcs_per_unit, pieces_per_crate, in_transit, qty_damaged, qty_missing')
+                    .eq('id', receipt.material_id)
+                    .single();
+
+                if (mat) {
+                    let finalReceivedQty: number;
+
+                    // BULK LOGIC: If Crates provided, calculate SQFT/Pieces
+                    if (receipt.crates_received !== undefined && receipt.crates_received > 0 && receipt.pieces_per_crate) {
+                        const totalPieces = receipt.crates_received * receipt.pieces_per_crate;
+                        // For Tile: SQFT = Pieces * SQFT_Per_Piece (1/pcs_per_unit usually reversed in Jantile, check calc)
+                        // Actually Jantile: pcs_per_unit = SQFT per Piece? No, pcs_per_unit is Pieces Per Unit (1 / sqft_per_piece).
+                        // Let's assume standard Jantile Logic: Unit = SQFT.
+                        // So SQFT = TotalPieces / PcsPerSQFT OR TotalPieces * SQFTPerPiece.
+
+                        // IF unit is SQFT: 
+                        // mat.pcs_per_unit is typically "Pieces per Box" or "Pieces per SQFT"? 
+                        // In previous tasks we saw: ~Math.round(qty * pcs_per_unit) PCS. So pcs_per_unit is Pieces Per Unit (SQFT).
+                        // So SQFT = TotalPieces / pcs_per_unit.
+
+                        // Wait, if 1 SQFT = 2 Pieces, then pcs_per_unit = 2.
+                        // If we have 100 pieces, SQFT = 100 / 2 = 50.
+                        finalReceivedQty = totalPieces / (mat.pcs_per_unit || 1);
+                    } else {
+                        finalReceivedQty = Number(receipt.qty_received);
+                    }
+
+                    await supabase.from('project_materials').update({
+                        shop_stock: (mat.shop_stock || 0) + (receipt.condition === 'Verified' ? finalReceivedQty : 0),
+                        in_warehouse_qty: (mat.in_warehouse_qty || 0) + (receipt.condition === 'Verified' ? finalReceivedQty : 0),
+                        qty_damaged: (mat.qty_damaged || 0) + (receipt.condition === 'Damaged' ? finalReceivedQty : 0),
+                        qty_missing: (mat.qty_missing || 0) + (receipt.condition === 'Missing' ? finalReceivedQty : 0),
+                        in_transit: Math.max(0, (mat.in_transit || 0) - finalReceivedQty),
+                        ordered_qty: Math.max(0, (mat.ordered_qty || 0) - receipt.qty_ordered)
+                    }).eq('id', receipt.material_id);
+
+                    // 2. Log Discrepancies if any
+                    const hasDiscrepancy = receipt.condition !== 'Verified' || finalReceivedQty < (receipt.qty_ordered - 0.01);
+                    if (hasDiscrepancy) {
+                        await supabase.from('material_claims').insert({
+                            po_id: poId,
+                            material_id: receipt.material_id,
+                            expected_qty: receipt.qty_ordered,
+                            received_qty: finalReceivedQty,
+                            difference: receipt.qty_ordered - finalReceivedQty,
+                            pieces_expected: receipt.pieces_ordered,
+                            pieces_received: receipt.pieces_received,
+                            pieces_difference: (receipt.pieces_ordered || 0) - (receipt.pieces_received || 0),
+                            condition_flag: receipt.condition === 'Verified' ? 'V' : (receipt.condition === 'Damaged' ? 'D' : 'M'),
+                            notes: receipt.notes,
+                            photo_url: receipt.photo_url,
+                            created_by: userId
+                        });
+                    }
+
+                    // 3. Update PO Item received qty
+                    await supabase.from('po_items')
+                        .update({ received_qty: finalReceivedQty })
+                        .match({ po_id: poId, material_id: receipt.material_id });
+                }
+            }
+
+            const overallHasDiscrepancy = itemReceipts.some(r => r.condition !== 'Verified' || (r.pieces_received !== undefined ? r.pieces_received < (r.pieces_ordered || 0) : r.qty_received < r.qty_ordered));
+
+            await supabase.from('purchase_orders').update({
+                status: overallHasDiscrepancy ? 'Received with Discrepancy' : 'Received',
+                received_at: new Date().toISOString(),
+                received_by: userId,
+                updated_at: new Date().toISOString()
+            }).eq('id', poId);
+
+            // Automated PM Alerts
+            if (overallHasDiscrepancy) {
+                const { data: poData } = await supabase.from('purchase_orders')
+                    .select('po_number, vendor, job_id, jobs(name, assigned_pm)')
+                    .eq('id', poId)
+                    .single();
+
+                const typedPO = poData as any;
+                if (typedPO?.jobs?.assigned_pm) {
+                    const damagedItems = itemReceipts.filter(r => r.condition === 'Damaged' || r.condition === 'Missing');
+                    if (damagedItems.length > 0) {
+                        const conditionStr = damagedItems.map(d => `${d.qty_ordered - d.qty_received} ${d.condition}`).join(', ');
+                        await this.sendNotification({
+                            user_id: typedPO.jobs.assigned_pm,
+                            title: 'Discrepancy Alert',
+                            message: `Discrepancy Alert: PO #${typedPO.po_number} from ${typedPO.vendor} arrived with issues: ${conditionStr}.`,
+                            link: `/warehouse/receiving?po=${poId}`,
+                            type: 'alert'
+                        });
+                    }
+                }
+            }
+            return;
+        }
+
+        return db.writeTransaction(async (tx: any) => {
+            for (const receipt of itemReceipts) {
+                const mat = await tx.get('SELECT shop_stock, in_warehouse_qty, ordered_qty, unit, pcs_per_unit FROM project_materials WHERE id = ?', [receipt.material_id]);
+                if (mat) {
+                    const finalReceivedQty = Number(receipt.qty_received);
+
+                    // Update Project Materials
+                    await tx.execute(`
+                        UPDATE project_materials 
+                        SET shop_stock = COALESCE(shop_stock, 0) + ?,
+                            in_warehouse_qty = COALESCE(in_warehouse_qty, 0) + ?,
+                            ordered_qty = MAX(0, COALESCE(ordered_qty, 0) - ?)
+                        WHERE id = ?
+                    `, [finalReceivedQty, finalReceivedQty, receipt.qty_ordered, receipt.material_id]);
+
+                    // Log Discrepancy
+                    if (receipt.condition !== 'Verified' || finalReceivedQty < (receipt.qty_ordered - 0.01)) {
+                        await tx.execute(`
+                            INSERT INTO material_claims (po_id, material_id, expected_qty, received_qty, difference, pieces_expected, pieces_received, pieces_difference, condition_flag, notes, photo_url, created_by, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                        `, [
+                            poId,
+                            receipt.material_id,
+                            receipt.qty_ordered,
+                            finalReceivedQty,
+                            receipt.qty_ordered - finalReceivedQty,
+                            receipt.pieces_ordered,
+                            receipt.pieces_received,
+                            (receipt.pieces_ordered || 0) - (receipt.pieces_received || 0),
+                            receipt.condition === 'Verified' ? 'V' : (receipt.condition === 'Damaged' ? 'D' : 'M'),
+                            receipt.notes,
+                            receipt.photo_url,
+                            userId
+                        ]);
+                    }
+
+                    // Update PO Item
+                    await tx.execute(`
+                        UPDATE po_items SET received_qty = ? WHERE po_id = ? AND material_id = ?
+                    `, [finalReceivedQty, poId, receipt.material_id]);
+                }
+            }
+
+            const overallHasDiscrepancy = itemReceipts.some(r => r.condition !== 'Verified' || (r.pieces_received !== undefined ? r.pieces_received < (r.pieces_ordered || 0) : r.qty_received < r.qty_ordered));
+
+            await tx.execute(`
+                UPDATE purchase_orders 
+                SET status = ?, received_at = datetime('now'), received_by = ?, updated_at = datetime('now')
+                WHERE id = ?
+            `, [overallHasDiscrepancy ? 'Received with Discrepancy' : 'Received', userId, poId]);
+        });
+    },
+
+    async sendNotification(notification: { user_id: string, title: string, message: string, link?: string, type?: string }) {
+        if (useSupabase) {
+            await supabase.from('system_notifications').insert(notification);
+            return;
+        }
+        await db.execute(`
+            INSERT INTO system_notifications (user_id, title, message, link, type, created_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+        `, [notification.user_id, notification.title, notification.message, notification.link, notification.type || 'alert']);
+    },
+
+    async createReorderPO(originalPoId: string, shortfallItems: { material_id: string, qty: number }[], userId: string) {
+        if (useSupabase) {
+            const { data: original } = await supabase.from('purchase_orders').select('*').eq('id', originalPoId).single();
+            if (!original) throw new Error("Original PO not found");
+
+            const { data: newPO, error: poErr } = await supabase.from('purchase_orders').insert({
+                job_id: original.job_id,
+                po_number: `${original.po_number}-R1`,
+                vendor: original.vendor,
+                status: 'Draft',
+                order_date: new Date().toISOString().split('T')[0],
+                parent_po_id: originalPoId,
+                notes: `Re-order for shortfall from PO #${original.po_number}`
+            }).select().single();
+
+            if (poErr) throw poErr;
+
+            for (const item of shortfallItems) {
+                await supabase.from('po_items').insert({
+                    po_id: newPO.id,
+                    material_id: item.material_id,
+                    quantity_ordered: item.qty,
+                    item_cost: 0 // PM to verify cost
+                });
+            }
+            return newPO;
+        }
+
+        return db.writeTransaction(async (tx: any) => {
+            const original = await tx.get('SELECT * FROM purchase_orders WHERE id = ?', [originalPoId]);
+            if (!original) throw new Error("Original PO not found");
+
+            const newId = original.id + "-R1"; // Simplified for PowerSync demo
+            await tx.execute(`
+                INSERT INTO purchase_orders (id, job_id, po_number, vendor, status, order_date, parent_po_id, notes, created_at)
+                VALUES (?, ?, ?, ?, 'Draft', date('now'), ?, ?, datetime('now'))
+            `, [newId, original.job_id, original.po_number + "-R1", original.vendor, originalPoId, `Re-order for shortfall from PO #${original.po_number}`]);
+
+            for (const item of shortfallItems) {
+                await tx.execute(`
+                    INSERT INTO po_items (po_id, material_id, quantity_ordered, item_cost, created_at)
+                    VALUES (?, ?, ?, 0, datetime('now'))
+                `, [newId, item.material_id, item.qty]);
+            }
+        });
+    },
+
+    async getDiscrepancyAnalytics() {
+        if (useSupabase) {
+            const { data, error } = await supabase.rpc('get_vendor_damage_leaderboard');
+            if (!error) return data;
+
+            // Fallback to manual aggregation if RPC missing
+            const { data: claims } = await supabase.from('material_claims').select('po_id, condition_flag, purchase_orders(vendor)');
+            const stats: any = {};
+            claims?.forEach((c: any) => {
+                const vendor = c.purchase_orders?.vendor || 'Unknown';
+                if (!stats[vendor]) stats[vendor] = { vendor, total: 0, damaged: 0 };
+                stats[vendor].total++;
+                if (c.condition_flag === 'D' || c.condition_flag === 'M') stats[vendor].damaged++;
+            });
+            return Object.values(stats).sort((a: any, b: any) => (b.damaged / b.total) - (a.damaged / a.total));
+        }
+        return [];
     },
 
     async getAllPurchaseOrders(): Promise<PurchaseOrder[]> {
@@ -1888,21 +2276,50 @@ export const SupabaseService = {
 
     async getWarehouseInventory(): Promise<any[]> {
         if (useSupabase) {
-            const { data, error } = await supabase
+            // Priority: Try the full query with new tracking column
+            try {
+                const { data, error } = await supabase
+                    .from('project_materials')
+                    .select(`
+                        *,
+                        jobs (name)
+                    `)
+                    .or('in_warehouse_qty.gt.0,shop_stock.gt.0,received_at_job.gt.0,ordered_qty.gt.0')
+                    .order('created_at', { ascending: false });
+
+                if (!error) {
+                    console.log("DEBUG: getWarehouseInventory (Primary) length:", data?.length);
+                    return data || [];
+                }
+
+                console.warn("DEBUG: Primary inventory query failed, trying fallback...", error.message);
+            } catch (e) {
+                console.warn("DEBUG: Primary inventory query crashed, trying fallback...");
+            }
+
+            // Fallback: Use only shop_stock if the new column isn't ready
+            const { data, error: fallbackError } = await supabase
                 .from('project_materials')
                 .select(`
                     *,
-                    jobs (name, job_number)
+                    jobs (name)
                 `)
                 .gt('shop_stock', 0)
                 .order('created_at', { ascending: false });
 
-            if (error) throw error;
+            if (fallbackError) {
+                console.error("DEBUG: getWarehouseInventory (Fallback) error:", fallbackError);
+                throw fallbackError;
+            }
+            console.log("DEBUG: getWarehouseInventory (Fallback) length:", data?.length);
             return data || [];
         }
 
         // Native
-        const materials = await db.getAll(`SELECT * FROM project_materials WHERE shop_stock > 0`);
+        const materials = await db.getAll(`
+            SELECT * FROM project_materials 
+            WHERE in_warehouse_qty > 0 OR shop_stock > 0 OR received_at_job > 0 OR ordered_qty > 0
+        `);
         if (materials.length === 0) return [];
 
         // Enrich with Job Name (manual join for local)
@@ -1917,6 +2334,31 @@ export const SupabaseService = {
             ...m,
             jobs: jobMap.get(m.job_id) || { name: 'Unknown Job', job_number: 'N/A' }
         }));
+    },
+    async manualStockUpdate(materialId: string, adjustment: number) {
+        if (useSupabase) {
+            const { data: mat } = await supabase.from('project_materials')
+                .select('in_warehouse_qty, shop_stock')
+                .eq('id', materialId)
+                .single();
+
+            if (mat) {
+                await supabase.from('project_materials').update({
+                    in_warehouse_qty: (mat.in_warehouse_qty || 0) + adjustment,
+                    shop_stock: (mat.shop_stock || 0) + adjustment,
+                    updated_at: new Date().toISOString()
+                }).eq('id', materialId);
+            }
+            return;
+        }
+
+        await db.execute(`
+            UPDATE project_materials 
+            SET in_warehouse_qty = COALESCE(in_warehouse_qty, 0) + ?,
+                shop_stock = COALESCE(shop_stock, 0) + ?,
+                updated_at = datetime('now')
+            WHERE id = ?
+        `, [adjustment, adjustment, materialId]);
     }
 };
 

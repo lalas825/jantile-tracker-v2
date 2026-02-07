@@ -120,6 +120,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='due_time') THEN
         ALTER TABLE delivery_tickets ADD COLUMN due_time TIME;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='scheduled_time') THEN
+        ALTER TABLE delivery_tickets ADD COLUMN scheduled_time TEXT;
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='notes') THEN
         ALTER TABLE delivery_tickets ADD COLUMN notes TEXT;
     END IF;
@@ -152,6 +155,112 @@ BEGIN
     END IF;
 END $$;
 
+-- 5. Create Purchase Orders & Items if missing
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID NOT NULL,
+    po_number TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS po_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    po_id UUID NOT NULL,
+    material_id UUID NOT NULL,
+    quantity_ordered NUMERIC NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Add missing columns to PO tables
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_orders' AND COLUMN_NAME='vendor') THEN
+        ALTER TABLE purchase_orders ADD COLUMN vendor TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_orders' AND COLUMN_NAME='status') THEN
+        ALTER TABLE purchase_orders ADD COLUMN status TEXT DEFAULT 'Ordered';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_orders' AND COLUMN_NAME='order_date') THEN
+        ALTER TABLE purchase_orders ADD COLUMN order_date DATE DEFAULT CURRENT_DATE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_orders' AND COLUMN_NAME='expected_date') THEN
+        ALTER TABLE purchase_orders ADD COLUMN expected_date DATE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_orders' AND COLUMN_NAME='scheduled_time') THEN
+        ALTER TABLE purchase_orders ADD COLUMN scheduled_time TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_orders' AND COLUMN_NAME='total_amount') THEN
+        ALTER TABLE purchase_orders ADD COLUMN total_amount NUMERIC DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_orders' AND COLUMN_NAME='notes') THEN
+        ALTER TABLE purchase_orders ADD COLUMN notes TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_orders' AND COLUMN_NAME='received_at') THEN
+        ALTER TABLE purchase_orders ADD COLUMN received_at TIMESTAMPTZ;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_orders' AND COLUMN_NAME='received_by') THEN
+        ALTER TABLE purchase_orders ADD COLUMN received_by UUID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_orders' AND COLUMN_NAME='updated_at') THEN
+        ALTER TABLE purchase_orders ADD COLUMN updated_at TIMESTAMPTZ DEFAULT now();
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='po_items' AND COLUMN_NAME='item_cost') THEN
+        ALTER TABLE po_items ADD COLUMN item_cost NUMERIC DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='po_items' AND COLUMN_NAME='received_qty') THEN
+        ALTER TABLE po_items ADD COLUMN received_qty NUMERIC;
+    END IF;
+END $$;
+
+-- Material Claims (Discrepancy Tracking)
+DO $$ 
+BEGIN 
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename  = 'material_discrepancies') THEN
+        ALTER TABLE material_discrepancies RENAME TO material_claims;
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_orders' AND COLUMN_NAME='parent_po_id') THEN
+        ALTER TABLE purchase_orders ADD COLUMN parent_po_id UUID;
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS material_claims (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    po_id UUID NOT NULL,
+    material_id UUID NOT NULL,
+    expected_qty NUMERIC NOT NULL,
+    received_qty NUMERIC NOT NULL,
+    difference NUMERIC NOT NULL,
+    condition_flag TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='material_claims' AND COLUMN_NAME='notes') THEN
+        ALTER TABLE material_claims ADD COLUMN notes TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='material_claims' AND COLUMN_NAME='photo_url') THEN
+        ALTER TABLE material_claims ADD COLUMN photo_url TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='material_claims' AND COLUMN_NAME='created_by') THEN
+        ALTER TABLE material_claims ADD COLUMN created_by UUID;
+    END IF;
+END $$;
+
+-- System Notifications
+CREATE TABLE IF NOT EXISTS system_notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    link TEXT,
+    type TEXT DEFAULT 'alert',
+    is_read BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- 4. Re-apply Policies (Safe)
 ALTER TABLE project_materials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE delivery_tickets ENABLE ROW LEVEL SECURITY;
@@ -167,6 +276,19 @@ CREATE POLICY "Allow read access for authenticated users" ON delivery_tickets FO
 
 DROP POLICY IF EXISTS "Allow write access for PMs/Admins" ON delivery_tickets;
 CREATE POLICY "Allow write access for PMs/Admins" ON delivery_tickets FOR ALL TO authenticated USING (true);
+
+ALTER TABLE purchase_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE po_items ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow read access for authenticated users" ON purchase_orders;
+CREATE POLICY "Allow read access for authenticated users" ON purchase_orders FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "Allow write access for PMs/Admins" ON purchase_orders;
+CREATE POLICY "Allow write access for PMs/Admins" ON purchase_orders FOR ALL TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Allow read access for authenticated users" ON po_items;
+CREATE POLICY "Allow read access for authenticated users" ON po_items FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "Allow write access for PMs/Admins" ON po_items;
+CREATE POLICY "Allow write access for PMs/Admins" ON po_items FOR ALL TO authenticated USING (true);
 
 -- 6. Add missing columns to units
 DO $$ 
@@ -184,6 +306,15 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'powersync' AND tablename = 'delivery_tickets') THEN
         ALTER PUBLICATION powersync ADD TABLE delivery_tickets;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'powersync' AND tablename = 'purchase_orders') THEN
+        ALTER PUBLICATION powersync ADD TABLE purchase_orders;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'powersync' AND tablename = 'po_items') THEN
+        ALTER PUBLICATION powersync ADD TABLE po_items;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'powersync' AND tablename = 'material_discrepancies') THEN
+        ALTER PUBLICATION powersync ADD TABLE material_discrepancies;
     END IF;
 EXCEPTION WHEN OTHERS THEN
     -- Publication might not exist yet, or other issues

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Modal, ScrollView, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ProjectMaterial, SupabaseService } from '../../services/SupabaseService';
+import { ProjectMaterial, SupabaseService, formatDisplayDate } from '../../services/SupabaseService';
 import { useAuth } from '../../context/AuthContext';
 
 interface DeliveryTicketModalProps {
@@ -116,7 +116,7 @@ export default function DeliveryTicketModal({ visible, onClose, materials, jobId
             case 'MATERIALS':
                 const groups = [
                     { label: 'Tile & Stone', tags: ['Tile', 'Stone'] },
-                    { label: 'Setting Materials & Sundries', tags: ['Setting Materials', 'Sundries', 'Misc'] }
+                    { label: 'Setting Materials', tags: ['Setting Materials', 'Sundries', 'Misc'] }
                 ];
                 return (
                     <View className="flex-1">
@@ -220,7 +220,7 @@ export default function DeliveryTicketModal({ visible, onClose, materials, jobId
                                     </View>
                                     <View className="bg-white px-4 py-2.5 rounded-xl border border-slate-200 flex-row items-center gap-2">
                                         <Text className="text-[10px] font-bold text-slate-400">Due:</Text>
-                                        <Text className="text-[10px] font-black text-slate-900">{dueDate}</Text>
+                                        <Text className="text-[10px] font-black text-slate-900">{formatDisplayDate(dueDate)}</Text>
                                         <Ionicons name="calendar-outline" size={12} color="#94a3b8" />
                                     </View>
                                     <View className="bg-white px-4 py-2.5 rounded-xl border border-slate-200 flex-row items-center gap-2">

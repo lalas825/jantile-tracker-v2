@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { DeliveryTicket } from '../../services/SupabaseService';
+import { DeliveryTicket, formatDisplayDate } from '../../services/SupabaseService';
 
 interface DeliveriesViewProps {
     tickets: DeliveryTicket[];
@@ -56,7 +56,7 @@ export default function DeliveriesView({
                                             <View className="flex-row justify-between items-start mb-2">
                                                 <View>
                                                     <Text className="font-black text-slate-900 text-sm">#{t.ticket_number}</Text>
-                                                    <Text className="text-[10px] font-bold text-slate-400 mt-0.5">{new Date(t.requested_date).toLocaleDateString()}</Text>
+                                                    <Text className="text-[10px] font-bold text-slate-400 mt-0.5">{formatDisplayDate(t.requested_date)}</Text>
                                                 </View>
                                                 <TouchableOpacity onPress={() => onDeleteTicket(t.id)}>
                                                     <Ionicons name="ellipsis-horizontal" size={16} color="#94a3b8" />

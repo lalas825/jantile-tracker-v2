@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { PurchaseOrder } from '../../services/SupabaseService';
+import { PurchaseOrder, formatDisplayDate } from '../../services/SupabaseService';
 
 interface ProjectTotalViewProps {
     aggregatedMaterials: any[];
@@ -48,16 +48,31 @@ export default function ProjectTotalView({
                 </View>
             </View>
 
-            {categories.map(group => {
-                const groupMats = aggregatedMaterials.filter(m => group.tags.includes(m.category));
+            {categories.map((group, idx) => {
+                const lowerTags = group.tags.map(t => t.toLowerCase());
 
-                // Skip rendering if no materials match (and it wasn't just empties filtered out)
-                if (groupMats.length === 0 && aggregatedMaterials.filter(m => group.tags.includes(m.category)).length > 0) {
-                    // If we have items but they were all filtered out (e.g. only grout existed), we might want to hide the section or show empty? 
-                    // Current logic matches original behavior of showing based on filtered set. 
+                // If it's the last category (Misc), treat it as a catch-all for items not matched by previous groups
+                const groupMats = aggregatedMaterials.filter(m => {
+                    const cat = (m.category || '').toLowerCase();
+                    const matchedByCurrent = lowerTags.includes(cat);
+
+                    if (idx === categories.length - 1) {
+                        // Catch-all: Check if it was matched by ANY previous category
+                        const matchedByPrevious = categories.slice(0, idx).some(prev =>
+                            prev.tags.map(t => t.toLowerCase()).includes(cat)
+                        );
+                        return matchedByCurrent || !matchedByPrevious;
+                    }
+
+                    return matchedByCurrent;
+                });
+
+                // Skip rendering if no materials match and it's not the catch-all
+                if (groupMats.length === 0 && idx < categories.length - 1) {
+                    return null;
                 }
 
-                const total = groupMats.reduce((sum, m) => sum + (m.total_value || 0), 0);
+                const total = groupMats.reduce((sum, m) => sum + Number(m.total_value || 0), 0);
                 const isExpanded = expandedSections[group.label];
 
                 return (
@@ -91,6 +106,7 @@ export default function ProjectTotalView({
                                     <Text className="flex-[1] text-[11px] font-inter font-black text-orange-500 uppercase text-center">Ordered</Text>
                                     <Text className="flex-1 text-[11px] font-inter font-black text-orange-400 uppercase text-center">Expected</Text>
                                     <Text className="flex-[1] text-[11px] font-inter font-black text-emerald-600 uppercase text-center">Recv.</Text>
+                                    <Text className="flex-[1] text-[11px] font-inter font-black text-red-500 uppercase text-center">DMG / MISS</Text>
                                     <Text className="flex-[1] text-[11px] font-inter font-black text-slate-900 uppercase text-center">To Buy</Text>
                                     <Text className="flex-[1.2] text-[11px] font-inter font-black text-slate-500 uppercase text-center">Supplier</Text>
                                     <View className="w-24" />
@@ -102,7 +118,7 @@ export default function ProjectTotalView({
                                     </View>
                                 ) : (
                                     groupMats.map(m => {
-                                        const toBuy = Math.max(0, m.budget_qty - (m.shop_stock + m.in_transit + m.received_at_job));
+                                        const toBuy = Math.max(0, Number(m.budget_qty || 0) - (Number(m.shop_stock || 0) + Number(m.in_transit || 0) + Number(m.received_at_job || 0)));
                                         return (
                                             <View key={m.product_code || m.product_name} className="flex-row px-3 py-3 border-b border-slate-50 items-center min-h-[50px]">
                                                 <View className="flex-[1.5] px-2">
@@ -162,7 +178,7 @@ export default function ProjectTotalView({
                                                 </View>
 
                                                 <View className="flex-1 items-center px-1">
-                                                    <Text className="text-[13px] text-slate-500 font-inter font-bold text-center">{m.in_transit > 0 ? (m.expected_date || 'TBD') : '--'}</Text>
+                                                    <Text className="text-[13px] text-slate-500 font-inter font-bold text-center">{m.in_transit > 0 ? formatDisplayDate(m.expected_date) : '--'}</Text>
                                                 </View>
 
                                                 <View className="flex-[1] items-center">
@@ -171,6 +187,22 @@ export default function ProjectTotalView({
                                                         <Text className="text-[10px] text-slate-400 font-medium ml-0.5">{m.unit}</Text>
                                                     </View>
                                                     {renderPcs(m, m.received_at_job)}
+                                                </View>
+
+                                                <View className="flex-[1] items-center">
+                                                    {(m.qty_damaged || 0) + (m.qty_missing || 0) > 0 ? (
+                                                        <View>
+                                                            <View className="flex-row items-baseline justify-center">
+                                                                <Text className="text-[15px] font-inter font-black text-red-500">
+                                                                    {((m.qty_damaged || 0) + (m.qty_missing || 0)).toLocaleString()}
+                                                                </Text>
+                                                                <Text className="text-[10px] text-red-300 font-medium ml-0.5">{m.unit}</Text>
+                                                            </View>
+                                                            {renderPcs(m, (m.qty_damaged || 0) + (m.qty_missing || 0))}
+                                                        </View>
+                                                    ) : (
+                                                        <Text className="text-[10px] text-slate-300 font-bold">--</Text>
+                                                    )}
                                                 </View>
 
                                                 <View className="flex-[1] items-center">
