@@ -27,7 +27,7 @@ export default function DeliveriesView({
 
     return (
         <ScrollView horizontal className="flex-1 bg-slate-50">
-            <View className="flex-row p-6 gap-4 min-w-full">
+            <View className="flex-row p-8 gap-6 min-w-full">
                 {STATUS_COLUMNS.map(col => {
                     const colTickets = tickets.filter(t => t.status === col.id);
 

@@ -103,6 +103,12 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='project_materials' AND COLUMN_NAME='sqft_per_piece') THEN
         ALTER TABLE project_materials ADD COLUMN sqft_per_piece NUMERIC;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='project_materials' AND COLUMN_NAME='qty_damaged') THEN
+        ALTER TABLE project_materials ADD COLUMN qty_damaged NUMERIC DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='project_materials' AND COLUMN_NAME='qty_missing') THEN
+        ALTER TABLE project_materials ADD COLUMN qty_missing NUMERIC DEFAULT 0;
+    END IF;
 END $$;
 
 
@@ -159,6 +165,9 @@ BEGIN
     -- New for Domain Isolation
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='areas' AND COLUMN_NAME='type') THEN
         ALTER TABLE areas ADD COLUMN type TEXT DEFAULT 'production';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='areas' AND COLUMN_NAME='description') THEN
+        ALTER TABLE areas ADD COLUMN description TEXT;
     END IF;
 END $$;
 
@@ -218,6 +227,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='po_items' AND COLUMN_NAME='received_qty') THEN
         ALTER TABLE po_items ADD COLUMN received_qty NUMERIC;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='po_items' AND COLUMN_NAME='unit_cost') THEN
+        ALTER TABLE po_items ADD COLUMN unit_cost NUMERIC DEFAULT 0;
+    END IF;
 END $$;
 
 -- Material Claims (Discrepancy Tracking)
@@ -253,6 +265,18 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='material_claims' AND COLUMN_NAME='created_by') THEN
         ALTER TABLE material_claims ADD COLUMN created_by UUID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='material_claims' AND COLUMN_NAME='pieces_expected') THEN
+        ALTER TABLE material_claims ADD COLUMN pieces_expected NUMERIC;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='material_claims' AND COLUMN_NAME='pieces_received') THEN
+        ALTER TABLE material_claims ADD COLUMN pieces_received NUMERIC;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='material_claims' AND COLUMN_NAME='pieces_difference') THEN
+        ALTER TABLE material_claims ADD COLUMN pieces_difference NUMERIC;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='material_claims' AND COLUMN_NAME='receipt_mode') THEN
+        ALTER TABLE material_claims ADD COLUMN receipt_mode TEXT DEFAULT 'Granular';
     END IF;
 END $$;
 

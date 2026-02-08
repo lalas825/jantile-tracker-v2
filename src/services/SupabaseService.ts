@@ -36,6 +36,7 @@ export interface Job {
     id: string;
     name: string;
     status?: string;
+    floors?: any[]; // For complex fetching
 }
 
 export interface JobIssue {
@@ -94,6 +95,15 @@ export interface Area {
     progress: number;
     checklist_items?: ChecklistItem[];
     area_photos?: any[];
+}
+
+export interface Unit {
+    id: string;
+    floor_id: string;
+    name: string;
+    description?: string;
+    type?: 'production' | 'logistics';
+    areas?: Area[];
 }
 export interface UICrewMember {
     id: string;
@@ -223,7 +233,7 @@ export interface PurchaseOrder {
     job_name?: string;
     po_number: string;
     vendor: string;
-    status: 'Ordered' | 'Partial' | 'Received';
+    status: 'Draft' | 'Ordered' | 'Partial' | 'Received';
     order_date: string;
     expected_date?: string;
     scheduled_time?: string;
@@ -478,7 +488,7 @@ export const SupabaseService = {
                 floors (
                     id, name, description,
                     units (
-                        id, name, description,
+                        id, name, description, type,
                         areas (
                             id, name, description, drawing_page, type, status, progress,
                             area_photos (
