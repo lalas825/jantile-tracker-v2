@@ -1,7 +1,11 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, useWindowDimensions, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { DeliveryTicket, formatDisplayDate } from '../../services/SupabaseService';
+import { DeliveryTicket, formatDisplayDate, SupabaseService, Worker } from '../../services/SupabaseService';
+import LiveDeliveryTracker from './LiveDeliveryTracker';
+import KanbanCard from './KanbanCard';
+import clsx from 'clsx';
+import { DndContext, DragOverlay, useSensor, useSensors, PointerSensor, KeyboardSensor, closestCorners, DragEndEvent, useDroppable, useDraggable } from '@dnd-kit/core';
 
 interface DeliveriesViewProps {
     tickets: DeliveryTicket[];
@@ -10,13 +14,84 @@ interface DeliveriesViewProps {
     onDeleteTicket: (id: string) => void;
 }
 
-const STATUS_COLUMNS = [
-    { id: 'draft', label: 'Drafts', color: 'bg-slate-100', dot: 'bg-slate-400' },
-    { id: 'pending_approval', label: 'PM Approval', color: 'bg-orange-50', dot: 'bg-orange-400' },
-    { id: 'scheduled', label: 'Scheduled', color: 'bg-blue-50', dot: 'bg-blue-500' },
-    { id: 'in_transit', label: 'In Transit', color: 'bg-indigo-50', dot: 'bg-indigo-500' },
-    { id: 'received', label: 'Received', color: 'bg-emerald-50', dot: 'bg-emerald-500' }
+const KANBAN_COLUMNS = [
+    { id: 'DRAFTS', label: 'Drafts', color: 'bg-slate-100', text: 'text-slate-600' },
+    { id: 'PENDING_FIELD_REVIEW', label: 'Awaiting Field Review', color: 'bg-orange-100', text: 'text-orange-600' },
+    { id: 'FIELD_APPROVED', label: 'Ready for Warehouse', color: 'bg-emerald-100', text: 'text-emerald-600' },
+    { id: 'QUEUED', label: 'Scheduled Queue', color: 'bg-blue-100', text: 'text-blue-600' },
+    { id: 'DISPATCHED', label: 'Dispatched / In Transit', color: 'bg-blue-100', text: 'text-blue-700' },
+    { id: 'RECEIVED', label: 'Received', color: 'bg-emerald-100', text: 'text-emerald-600' }
 ];
+
+// Helper: Droppable Column
+function DroppableColumn({ id, label, color, textColor, children, count }: any) {
+    const { isOver, setNodeRef } = useDroppable({ id });
+    return (
+        <View
+            ref={setNodeRef as any}
+            className={clsx(
+                "flex-1 min-w-[280px] flex-col h-full rounded-[4px] bg-slate-100 border border-slate-200 shadow-sm overflow-hidden mr-4",
+                isOver && "bg-slate-200 border-slate-300"
+            )}
+        >
+            <View className={clsx("p-4 border-b border-slate-200 flex-row justify-between items-center", color)}>
+                <Text className={clsx("font-black text-[12px] uppercase tracking-[2px]", textColor)}>{label}</Text>
+                <View className="bg-white/70 px-2 py-1 rounded-[4px] border border-slate-200">
+                    <Text className="font-black text-[10px] text-slate-800">{count}</Text>
+                </View>
+            </View>
+            <ScrollView className="flex-1 p-3" contentContainerStyle={{ gap: 12 }}>
+                {children}
+            </ScrollView>
+        </View>
+    );
+}
+
+// Helper: Draggable Card Wrapper
+function DraggableCard({ ticket, onDelete, onAssign, onSendToWarehouse }: { ticket: DeliveryTicket; onDelete: (id: string) => void; onAssign: (t: DeliveryTicket) => void; onSendToWarehouse: (t: DeliveryTicket) => void }) {
+    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+        id: ticket.id,
+        data: { ticket }
+    });
+
+    const style = transform ? {
+        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+        zIndex: 100,
+        opacity: isDragging ? 0.3 : 1
+    } : undefined;
+
+    const dndAttributes = attributes as any;
+    const dndListeners = listeners as any;
+
+    return (
+        <View
+            ref={setNodeRef as any}
+            style={style as any}
+            {...dndListeners}
+            {...dndAttributes}
+            className="w-full"
+            tabIndex={dndAttributes?.tabIndex as 0 | -1 | undefined}
+        >
+            <KanbanCard
+                ticket={ticket}
+                isRejected={(ticket.status === 'DRAFT' || ticket.status === 'DRAFTS') && !!ticket.notes}
+                onPress={() => { }} // Could open modal
+                onAssign={() => onAssign(ticket)}
+            />
+            {ticket.status === 'FIELD_APPROVED' && (
+                <TouchableOpacity
+                    onPress={() => onSendToWarehouse(ticket)}
+                    className="bg-emerald-500 p-3 rounded-b-xl -mt-2 mx-1 items-center shadow-lg shadow-emerald-200 z-50"
+                >
+                    <View className="flex-row items-center gap-2">
+                        <Ionicons name="paper-plane" size={14} color="white" />
+                        <Text className="text-white font-black uppercase text-[10px] tracking-widest">Send to Warehouse</Text>
+                    </View>
+                </TouchableOpacity>
+            )}
+        </View>
+    );
+}
 
 export default function DeliveriesView({
     tickets,
@@ -24,89 +99,135 @@ export default function DeliveriesView({
     onUpdateStatus,
     onDeleteTicket
 }: DeliveriesViewProps) {
+    const { width } = useWindowDimensions();
+    const [activeId, setActiveId] = React.useState<string | null>(null);
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+        useSensor(KeyboardSensor)
+    );
+
+    // Grouping logic for columns
+    const groupedTickets = useMemo(() => {
+        const groups: any = {
+            DRAFTS: [],
+            PENDING_FIELD_REVIEW: [],
+            FIELD_APPROVED: [],
+            QUEUED: [],
+            DISPATCHED: [],
+            RECEIVED: []
+        };
+        tickets.forEach(t => {
+            const status = t.status?.toUpperCase();
+            if (status === 'SCHEDULED' || status === 'QUEUED') groups.QUEUED.push(t);
+            else if (status === 'DISPATCHED' || status === 'IN_TRANSIT') groups.DISPATCHED.push(t);
+            else if (status === 'PENDING_APPROVAL') groups.PENDING_FIELD_REVIEW.push(t);
+            else if (status === 'PENDING_FIELD_REVIEW') groups.PENDING_FIELD_REVIEW.push(t);
+            else if (status === 'FIELD_APPROVED') groups.FIELD_APPROVED.push(t);
+            else if (status === 'DRAFT' || status === 'DRAFTS' || groups[status]) {
+                const key = (status === 'DRAFT' || status === 'DRAFTS') ? 'DRAFTS' : status;
+                groups[key].push(t);
+            }
+            else groups.DRAFTS.push(t); // Default to draft if unknown
+        });
+
+        // Sort each column by updated_at
+        Object.keys(groups).forEach(key => {
+            groups[key].sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+        });
+
+        return groups;
+    }, [tickets]);
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        setActiveId(null);
+
+        if (over && active.id !== over.id) {
+            const ticket = active.data.current?.ticket as DeliveryTicket;
+            const newStatus = over.id as string;
+
+            // Map UI columns back to canonical status
+            let finalStatus = newStatus;
+            if (newStatus === 'DRAFTS') finalStatus = 'DRAFT';
+            if (newStatus === 'QUEUED') finalStatus = 'SCHEDULED';
+            if (newStatus === 'DISPATCHED') finalStatus = 'IN_TRANSIT';
+
+            // Allow direct drags for simple transitions, but the status map handles the complex ones logic if needed.
+            // For now, dragging to a column sets that status.
+
+            onUpdateStatus(ticket, finalStatus);
+        }
+    };
 
     return (
-        <ScrollView horizontal className="flex-1 bg-slate-50">
-            <View className="flex-row p-8 gap-6 min-w-full">
-                {STATUS_COLUMNS.map(col => {
-                    const colTickets = tickets.filter(t => t.status === col.id);
+        <View className="flex-1 bg-white">
+            <LiveDeliveryTracker tickets={tickets} onUpdateStatus={onUpdateStatus} />
 
-                    return (
-                        <View key={col.id} className="w-[300px] flex-col h-full rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
-                            {/* Header */}
-                            <View className={`p-4 border-b border-slate-100 flex-row justify-between items-center ${col.color}`}>
-                                <View className="flex-row items-center gap-2">
-                                    <View className={`w-2.5 h-2.5 rounded-full ${col.dot}`} />
-                                    <Text className="font-inter font-black text-slate-700 uppercase tracking-tight text-xs">{col.label}</Text>
-                                </View>
-                                <View className="bg-white/50 px-2 py-0.5 rounded text-xs">
-                                    <Text className="font-bold text-slate-500 text-[10px]">{colTickets.length}</Text>
-                                </View>
-                            </View>
+            <DndContext
+                sensors={sensors}
+                collisionDetection={closestCorners}
+                onDragStart={(e) => setActiveId(e.active.id as string)}
+                onDragEnd={handleDragEnd}
+            >
+                <View className="flex-1 bg-slate-50">
+                    <View className="flex-row p-6 w-full h-full">
+                        {KANBAN_COLUMNS.map(col => (
+                            <DroppableColumn
+                                key={col.id}
+                                id={col.id}
+                                label={col.label}
+                                color={col.color}
+                                textColor={col.text}
+                                count={groupedTickets[col.id]?.length || 0}
+                            >
+                                {groupedTickets[col.id]?.map((t: DeliveryTicket) => (
+                                    <View key={t.id} className={t.status === 'FIELD_APPROVED' ? 'animate-pulse' : ''}>
+                                        <DraggableCard
+                                            ticket={t}
+                                            onDelete={onDeleteTicket}
+                                            onSendToWarehouse={(ticket) => onUpdateStatus(ticket, 'SCHEDULED')}
+                                            onAssign={async (ticket) => {
+                                                try {
+                                                    const workers = await SupabaseService.getWorkers();
+                                                    const options = workers.map((w: any) => ({
+                                                        text: w.name,
+                                                        onPress: async () => {
+                                                            await SupabaseService.saveDeliveryTicket({ ...ticket, assigned_to: w.id });
+                                                            Alert.alert("Assigned", `Ticket #${ticket.ticket_number} assigned to ${w.name}`);
+                                                        }
+                                                    }));
 
-                            {/* Content */}
-                            <ScrollView className="flex-1 p-3" contentContainerStyle={{ gap: 12 }}>
-                                {colTickets.length === 0 ? (
-                                    <View className="py-10 items-center justify-center opacity-50">
-                                        <Text className="text-slate-300 font-bold italic text-xs">Empty</Text>
+                                                    Alert.alert(
+                                                        "Assign Supervisor",
+                                                        "Select a supervisor for this ticket:",
+                                                        [
+                                                            ...options.slice(0, 2),
+                                                            { text: "Cancel", style: "cancel" }
+                                                        ]
+                                                    );
+                                                } catch (err) {
+                                                    console.error("Assign Error:", err);
+                                                }
+                                            }}
+                                        />
                                     </View>
-                                ) : (
-                                    colTickets.map(t => (
-                                        <View key={t.id} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm active:opacity-75">
-                                            <View className="flex-row justify-between items-start mb-2">
-                                                <View>
-                                                    <Text className="font-black text-slate-900 text-sm">#{t.ticket_number}</Text>
-                                                    <Text className="text-[10px] font-bold text-slate-400 mt-0.5">{formatDisplayDate(t.requested_date)}</Text>
-                                                </View>
-                                                <TouchableOpacity onPress={() => onDeleteTicket(t.id)}>
-                                                    <Ionicons name="ellipsis-horizontal" size={16} color="#94a3b8" />
-                                                </TouchableOpacity>
-                                            </View>
+                                ))}
 
-                                            <View className="flex-row items-center gap-1.5 mb-3">
-                                                <Ionicons name="business-outline" size={12} color="#64748b" />
-                                                <Text className="text-[11px] font-bold text-slate-600 truncate" numberOfLines={1}>{t.destination || 'No destination'}</Text>
-                                            </View>
-
-                                            <View className="flex-row items-center justify-between pt-2 border-t border-slate-50">
-                                                <View className="flex-row items-center gap-1">
-                                                    <Ionicons name="cube-outline" size={12} color="#64748b" />
-                                                    <Text className="text-[11px] font-bold text-slate-500">{t.items?.length || 0} Items</Text>
-                                                </View>
-
-                                                {/* ACTION BUTTON (Move Forward) */}
-                                                {col.id !== 'received' && (
-                                                    <TouchableOpacity
-                                                        onPress={() => {
-                                                            const nextStatus = STATUS_COLUMNS[STATUS_COLUMNS.findIndex(c => c.id === col.id) + 1]?.id;
-                                                            if (nextStatus) onUpdateStatus(t, nextStatus);
-                                                        }}
-                                                        className="bg-blue-50 px-2 py-1 rounded flex-row items-center gap-1"
-                                                    >
-                                                        <Text className="text-[9px] font-black text-blue-600 uppercase">Advance</Text>
-                                                        <Ionicons name="arrow-forward" size={10} color="#2563eb" />
-                                                    </TouchableOpacity>
-                                                )}
-                                            </View>
-                                        </View>
-                                    ))
+                                {col.id === 'DRAFTS' && (
+                                    <TouchableOpacity
+                                        onPress={onCreateTicket}
+                                        className="mt-2 py-6 border border-dashed border-slate-300 rounded-[4px] items-center justify-center bg-white/50"
+                                    >
+                                        <Ionicons name="add" size={20} color="#94a3b8" />
+                                        <Text className="text-slate-400 font-black text-[11px] uppercase tracking-widest mt-1">New Ticket</Text>
+                                    </TouchableOpacity>
                                 )}
-                            </ScrollView>
-
-                            {/* Footer Action (Only for Drafts - maybe create new here?) */}
-                            {col.id === 'draft' && (
-                                <TouchableOpacity
-                                    onPress={onCreateTicket}
-                                    className="p-3 border-t border-slate-100 flex-row items-center justify-center gap-2 bg-slate-50/50"
-                                >
-                                    <Ionicons name="add" size={14} color="#64748b" />
-                                    <Text className="text-slate-600 font-bold text-xs">New Ticket</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-                    );
-                })}
-            </View>
-        </ScrollView>
+                            </DroppableColumn>
+                        ))}
+                    </View>
+                </View>
+            </DndContext>
+        </View>
     );
 }

@@ -59,12 +59,12 @@ const DroppableSlot = ({ date, hour, children }: { date: string, hour: number, c
     return (
         <View
             ref={setNodeRef as any}
-            className={`h-24 border-b border-r border-slate-100 relative ${isOver ? 'bg-blue-50' : hasConflict ? 'bg-red-50' : ''}`}
+            className={`h-24 border-b border-r border-slate-100 relative ${isOver ? 'bg-blue-50' : hasConflict ? 'bg-orange-50' : ''}`}
         >
             {/* Visual Conflict Indicator */}
             {hasConflict && (
-                <View className="absolute top-1 right-1 bg-red-100 rounded-full p-1 z-10">
-                    <Text className="text-[8px] font-black text-red-600 px-1">BUSY</Text>
+                <View className="absolute top-1 right-1 bg-orange-100 rounded-full p-1 z-10 border border-orange-200">
+                    <Text className="text-[8px] font-black text-orange-600 px-1 italic">HI-VOLUME</Text>
                 </View>
             )}
             {children}

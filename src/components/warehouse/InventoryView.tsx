@@ -164,14 +164,23 @@ export default function InventoryView() {
                                             </TouchableOpacity>
                                         </View>
                                         <Text className="text-lg font-black text-slate-900 mb-1 leading-tight">{item.product_name}</Text>
-                                        <Text className="text-[10px] font-bold text-slate-400 uppercase">General Stock</Text>
+                                        <Text className="text-[10px] font-bold text-slate-400 uppercase">
+                                            {item.category || 'General Stock'} {(item.dim_length && item.dim_width) ? ` | ${item.dim_length}x${item.dim_width}` : ''}
+                                        </Text>
                                     </View>
 
                                     <View className="mt-6">
                                         <Text className="text-2xl font-black text-slate-900">
-                                            {Math.round(item.in_warehouse_qty || 0)} <Text className="text-xs font-bold text-slate-400 uppercase">{item.unit}</Text>
+                                            {Math.round(item.in_warehouse_qty || 0).toLocaleString()} <Text className="text-xs font-bold text-slate-400 uppercase">{item.unit || 'sqft'}</Text>
                                         </Text>
-                                        <Text className="text-[10px] font-bold text-slate-300 uppercase">In Warehouse</Text>
+                                        <View className="flex-row items-center justify-between">
+                                            <Text className="text-[10px] font-bold text-slate-300 uppercase">In Warehouse</Text>
+                                            {item.category === 'Tile' && (
+                                                <Text className="text-[10px] font-black text-indigo-400 uppercase">
+                                                    ({Math.round((item.in_warehouse_qty || 0) * (item.pcs_per_unit || 1)).toLocaleString()} PCS)
+                                                </Text>
+                                            )}
+                                        </View>
                                     </View>
                                 </View>
                             </View>
@@ -246,13 +255,13 @@ export default function InventoryView() {
 
                                                 <View className="mt-6 pt-4 border-t border-slate-50">
                                                     <Text className="text-2xl font-black text-indigo-600">
-                                                        {Math.round(item.in_warehouse_qty || 0)} <Text className="text-xs font-bold text-indigo-400 uppercase">{item.unit || 'sqft'}</Text>
+                                                        {Math.round(item.in_warehouse_qty || 0).toLocaleString()} <Text className="text-xs font-bold text-indigo-400 uppercase">{item.unit || 'sqft'}</Text>
                                                     </Text>
                                                     <View className="flex-row items-center justify-between">
                                                         <Text className="text-[10px] font-bold text-slate-300 uppercase">In Warehouse</Text>
                                                         {item.category === 'Tile' && (
-                                                            <Text className="text-[9px] font-bold text-indigo-300 uppercase">
-                                                                ~{Math.round((item.in_warehouse_qty || 0) * (item.pcs_per_unit || 1))} PCS
+                                                            <Text className="text-[10px] font-black text-indigo-400 uppercase">
+                                                                ({Math.round((item.in_warehouse_qty || 0) * (item.pcs_per_unit || 1)).toLocaleString()} PCS)
                                                             </Text>
                                                         )}
                                                     </View>

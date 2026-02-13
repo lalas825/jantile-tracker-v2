@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, G } from 'react-native-svg';
 import { SupabaseService } from '../../services/SupabaseService';
 import { useAuth } from '../../context/AuthContext';
+import { useQuery } from '@powersync/react';
 
 
 // --- CHART COMPONENT ---
@@ -54,44 +55,37 @@ export default function Dashboard() {
     const { profile, user } = useAuth();
     const router = useRouter();
     const [jobs, setJobs] = useState<any[]>([]);
-    const [portfolio, setPortfolio] = useState({ totalHours: 0, openIssues: 0, resolvedIssues: 0, avgProgress: 0, activeJobs: 0 });
     const [refreshing, setRefreshing] = useState(false);
+
+    // --- POWER SYNC REAL-TIME TELEMETRY ---
+    const { data: openIssuesCount } = useQuery("SELECT count(*) as count FROM job_issues WHERE status = 'open'");
+    const { data: resolvedIssuesCount } = useQuery("SELECT count(*) as count FROM job_issues WHERE status = 'resolved'");
+    const { data: rejectedTicketsCount } = useQuery("SELECT count(*) as count FROM delivery_tickets WHERE status = 'REJECTED'");
+    const { data: manpowerCount } = useQuery("SELECT count(*) as count FROM crew_checkins WHERE check_out IS NULL");
+    const { data: progressData } = useQuery("SELECT avg(progress) as avg_progress FROM areas");
+    const { data: activeJobsCount } = useQuery("SELECT count(*) as count FROM jobs WHERE status = 'Active'");
+
+    const stats = {
+        openIssues: (openIssuesCount?.[0] as any)?.count || 0,
+        resolvedIssues: (resolvedIssuesCount?.[0] as any)?.count || 0,
+        rejectedTickets: (rejectedTicketsCount?.[0] as any)?.count || 0,
+        manpower: (manpowerCount?.[0] as any)?.count || 0,
+        avgProgress: (progressData?.[0] as any)?.avg_progress || 0,
+        activeJobs: (activeJobsCount?.[0] as any)?.count || 0
+    };
 
     const loadData = async () => {
         try {
             const activeJobs = await SupabaseService.getActiveJobs();
-
-            // Map Supabase jobs to Dashboard format
-            // Note: Real data for progress/issues is not yet available in getActiveJobs, defaulting to 0
             const mappedJobs = activeJobs.map(job => ({
                 id: job.id,
                 name: job.name,
-                location: 'Location Pending', // Placeholder
+                location: 'Location Pending',
                 status: job.status,
                 progress: 0,
                 floors: []
             }));
-
             setJobs(mappedJobs);
-
-            // Recalculate portfolio stats (will be 0 for now since we lack deep data)
-            let totalReg = 0, totalOT = 0, totalProgress = 0;
-
-            // Fetch actual issue stats
-            let issueStats = { open: 0, resolved: 0 };
-            try {
-                issueStats = await SupabaseService.getGlobalIssueStats();
-            } catch (err) {
-                console.warn("Issue stats fetch failed (expected if tables not in Supabase):", err);
-            }
-
-            setPortfolio({
-                totalHours: 0,
-                openIssues: issueStats.open,
-                resolvedIssues: issueStats.resolved,
-                avgProgress: 0,
-                activeJobs: activeJobs.length
-            });
         } catch (error) {
             console.error("Failed to load dashboard data", error);
         }
@@ -132,65 +126,59 @@ export default function Dashboard() {
                     <View className="flex-row p-6 items-center">
                         {/* Left Side: Stats */}
                         <View className="flex-1 pr-4">
-                            <Text className="text-slate-400 text-xs font-inter font-bold uppercase mb-1 tracking-widest">Overall Progress</Text>
+                            <Text className="text-slate-400 text-[10px] font-inter font-bold uppercase mb-1 tracking-widest">Overall Progress</Text>
                             <Text className="text-white text-3xl font-outfit font-black mb-6">On Track</Text>
 
                             <View className="gap-3">
                                 <View className="flex-row items-center gap-2">
-                                    <Ionicons name="time" size={16} color="#94a3b8" />
-                                    <Text className="text-slate-300 font-inter font-medium">{portfolio.totalHours} Total Hours</Text>
-                                </View>
-                                <View className="flex-row items-center gap-2">
                                     <Ionicons name="briefcase" size={16} color="#94a3b8" />
-                                    <Text className="text-slate-300 font-inter font-medium">{portfolio.activeJobs} Active Jobs</Text>
+                                    <View>
+                                        <Text className="text-white text-[24px] font-inter font-black">
+                                            {stats.activeJobs}
+                                        </Text>
+                                        <Text className="text-slate-400 text-[10px] font-inter font-bold uppercase">
+                                            Active Jobs
+                                        </Text>
+                                    </View>
                                 </View>
                             </View>
                         </View>
 
                         {/* Right Side: The Donut Chart */}
                         <View className="items-center justify-center">
-                            <DonutChart percentage={portfolio.avgProgress} radius={50} strokeWidth={12} color="#3b82f6" />
+                            <DonutChart percentage={stats.avgProgress} radius={50} strokeWidth={12} color="#3b82f6" />
                         </View>
                     </View>
                 </View>
 
-                {/* 2. ISSUES & MANPOWER ROW */}
-                <View className="flex-row gap-4 mb-8">
+                {/* 2. TELEMETRY & COMMAND CARD ROW */}
+                <View className="flex-row gap-4 mb-4">
                     {/* Issues Card */}
                     <TouchableOpacity
                         activeOpacity={0.7}
                         onPress={() => router.push('/(tabs)/field')}
-                        className="flex-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-100"
+                        className="flex-1 bg-white p-5 rounded-3xl shadow-sm border border-slate-100"
                     >
                         <View className="flex-row justify-between items-start mb-2">
-                            <View className={`p-2 rounded-xl ${portfolio.openIssues > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
+                            <View className={`p-2 rounded-xl ${(stats.openIssues + stats.rejectedTickets) > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
                                 <Ionicons
-                                    name={portfolio.openIssues > 0 ? "alert-circle" : "checkmark-circle"}
+                                    name={(stats.openIssues + stats.rejectedTickets) > 0 ? "alert-circle" : "checkmark-circle"}
                                     size={24}
-                                    color={portfolio.openIssues > 0 ? "#ef4444" : "#10b981"}
+                                    color={(stats.openIssues + stats.rejectedTickets) > 0 ? "#ef4444" : "#10b981"}
                                 />
                             </View>
-                            {portfolio.openIssues > 0 && (
-                                <View className="bg-red-100 px-2 py-1 rounded">
-                                    <Text className="text-red-700 text-xs font-inter font-bold">Action Req.</Text>
-                                </View>
-                            )}
                         </View>
 
-                        <View className="flex-row items-end gap-6 mt-2">
-                            <View>
-                                <Text className="text-3xl font-bold text-slate-800">{portfolio.openIssues}</Text>
-                                <Text className="text-slate-500 text-[10px] font-bold uppercase tracking-wide mt-1">Open</Text>
-                            </View>
-                            <View>
-                                <Text className="text-3xl font-bold text-emerald-600">{portfolio.resolvedIssues}</Text>
-                                <Text className="text-slate-500 text-[10px] font-bold uppercase tracking-wide mt-1">Resolved</Text>
-                            </View>
+                        <View className="mt-2">
+                            <Text className="text-[24px] font-inter font-black text-slate-900">
+                                {stats.openIssues + stats.rejectedTickets}
+                            </Text>
+                            <Text className="text-slate-500 text-[10px] font-inter font-bold uppercase tracking-wide mt-1">Open Issues</Text>
                         </View>
 
                         <View className="mt-4 pt-4 border-t border-slate-100">
-                            <Text className="text-slate-400 text-xs">
-                                {portfolio.openIssues > 0
+                            <Text className="text-slate-400 text-[10px] font-inter font-medium">
+                                {(stats.openIssues + stats.rejectedTickets) > 0
                                     ? "Delays possible across active jobs."
                                     : "All sites running smoothly."}
                             </Text>
@@ -198,22 +186,57 @@ export default function Dashboard() {
                     </TouchableOpacity>
 
                     {/* Manpower Card */}
-                    <View className="flex-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 justify-between">
+                    <View className="flex-1 bg-white p-5 rounded-3xl shadow-sm border border-slate-100 justify-between">
                         <View>
                             <View className="bg-blue-50 p-2 rounded-xl self-start mb-2">
                                 <Ionicons name="people" size={24} color="#3b82f6" />
                             </View>
-                            <Text className="text-3xl font-bold text-slate-800 mt-2">12</Text>
-                            <Text className="text-slate-500 text-xs font-bold uppercase tracking-wide mt-1">Manpower</Text>
+                            <Text className="text-[24px] font-inter font-black text-slate-900 mt-2">
+                                {stats.manpower}
+                            </Text>
+                            <Text className="text-slate-500 text-[10px] font-inter font-bold uppercase tracking-wide mt-1">Manpower</Text>
                         </View>
                         <View className="mt-4 pt-4 border-t border-slate-100">
-                            <Text className="text-slate-400 text-xs">Active on site today.</Text>
+                            <Text className="text-slate-400 text-[10px] font-inter font-medium">Active on site today.</Text>
                         </View>
                     </View>
                 </View>
 
+                {/* COMMAND CARDS ROW (NEW) */}
+                <View className="flex-row gap-4 mb-8">
+                    {/* Pending Approvals */}
+                    <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => router.push('/(tabs)/field')} // Field ops handles approvals
+                        className="flex-1 bg-emerald-50 p-5 rounded-3xl border border-emerald-100"
+                    >
+                        <View className="flex-row justify-between items-start mb-2">
+                            <View className="bg-emerald-100 p-2 rounded-xl">
+                                <Ionicons name="shield-checkmark" size={24} color="#059669" />
+                            </View>
+                        </View>
+                        <Text className="text-emerald-900 font-inter font-black text-lg mt-2">Pending Approvals</Text>
+                        <Text className="text-emerald-600 text-[10px] font-inter font-bold uppercase">Review Needed</Text>
+                    </TouchableOpacity>
+
+                    {/* Delivery Tracker */}
+                    <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => router.push('/(tabs)/field')} // Or a dedicated delivery view if one exists
+                        className="flex-1 bg-blue-50 p-5 rounded-3xl border border-blue-100"
+                    >
+                        <View className="flex-row justify-between items-start mb-2">
+                            <View className="bg-blue-100 p-2 rounded-xl">
+                                <Ionicons name="bus" size={24} color="#2563eb" />
+                            </View>
+                        </View>
+                        <Text className="text-blue-900 font-inter font-black text-lg mt-2">Delivery Tracker</Text>
+                        <Text className="text-blue-600 text-[10px] font-inter font-bold uppercase">Live Updates</Text>
+                    </TouchableOpacity>
+                </View>
+
                 {/* 3. QUICK ACCESS GRID */}
-                <Text className="text-slate-800 font-bold text-lg mb-4">Quick Access</Text>
+                <Text className="text-slate-800 font-bold text-lg mb-4">Quick Access Modules</Text>
 
                 <View className="flex-row flex-wrap" style={{ marginHorizontal: -8 }}>
                     {[
@@ -236,7 +259,7 @@ export default function Dashboard() {
                             <TouchableOpacity
                                 activeOpacity={0.7}
                                 onPress={() => router.push(item.route as any)}
-                                className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex-1 hover:border-blue-400 group h-40 justify-between"
+                                className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex-1 hover:border-blue-400 group h-40 justify-between"
                             >
                                 <View className="flex-row justify-between items-start">
                                     <View className={item.bg + " p-3 rounded-xl"}>

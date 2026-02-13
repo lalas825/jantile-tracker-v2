@@ -39,7 +39,7 @@ export default function WarehouseSchedule() {
 
             // Transform Outbound Tickets
             const outboundEvents = allTickets
-                .filter(t => (t.status === 'Scheduled' || t.status === 'scheduled') && t.requested_date)
+                .filter(t => (t.status === 'SCHEDULED' || t.status === 'Scheduled' || t.status === 'Scheduled' || t.status === 'scheduled') && t.requested_date)
                 .map(t => ({
                     id: `DT-${t.id}`,
                     type: 'outbound',
@@ -47,7 +47,7 @@ export default function WarehouseSchedule() {
                     subtitle: `DT #${t.ticket_number}`,
                     status: t.status,
                     date: t.requested_date,
-                    time: t.scheduled_time || '08:00',
+                    time: t.due_time || t.scheduled_time || '08:00', // Support both for backward compat
                     color: 'bg-blue-100 border-l-4 border-blue-500',
                     data: t
                 }));
@@ -91,14 +91,16 @@ export default function WarehouseSchedule() {
 
     const renderCard = (event: any) => {
         const isInbound = event.type === 'inbound';
+        const itemCount = event.data?.items?.length || 0;
 
         return (
             <View className={`rounded-md shadow-sm border p-2 h-full flex-col justify-between overflow-hidden ${isInbound ? 'bg-orange-50 border-orange-200' : 'bg-blue-50 border-blue-200'}`}>
                 <View>
                     <View className="flex-row justify-between items-center mb-1">
-                        <Text className={`text-[9px] font-black px-1 rounded uppercase ${isInbound ? 'text-orange-700 bg-orange-100' : 'text-blue-700 bg-blue-100'}`}>
+                        <Text className={`text-[8px] font-black px-1 rounded uppercase ${isInbound ? 'text-orange-700 bg-orange-100' : 'text-blue-700 bg-blue-100'}`}>
                             {isInbound ? 'Inbound' : 'Outbound'}
                         </Text>
+                        <Text className="text-[8px] font-bold text-slate-400">{itemCount} items</Text>
                     </View>
                     <Text numberOfLines={1} className="text-[10px] font-black text-slate-800 leading-tight">
                         {event.title}

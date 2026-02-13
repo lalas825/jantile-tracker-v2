@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Box, Truck, CheckCircle2, Circle, Clock, ChevronDown, ChevronRight, AlertCircle, Calendar } from 'lucide-react-native';
 import { SupabaseService, DeliveryTicket, formatDisplayDate } from '../../services/SupabaseService';
@@ -55,31 +55,68 @@ export default function OutboundList() {
     const isTicketFullyChecked = (ticket: DeliveryTicket) => {
         if (!ticket.items || ticket.items.length === 0) return true;
         const checks = checkedItems[ticket.id] || {};
-        return ticket.items.every((item: any) => checks[item.material_id]);
+        return ticket.items.every((item: any) => !item.material_id || checks[item.material_id]);
     };
 
+    const [truckIds, setTruckIds] = useState<Record<string, string>>({});
+
     const handleDispatch = async (ticket: DeliveryTicket) => {
+        console.log("Dispatch pressed for:", ticket.ticket_number);
         if (!isTicketFullyChecked(ticket)) {
-            Alert.alert("Incomplete", "Please verify all items before dispatching.");
+            const checks = checkedItems[ticket.id] || {};
+            const missing = ticket.items
+                .filter((item: any) => item.material_id && !checks[item.material_id])
+                .map((item: any) => item.product_name || 'Unknown Item')
+                .join('\n');
+
+            const msg = `Please verify the following items:\n\n${missing}`;
+            if (Platform.OS === 'web') {
+                window.alert(msg);
+            } else {
+                Alert.alert("Incomplete", msg);
+            }
+            return;
+        }
+
+        const truckId = truckIds[ticket.id];
+        if (!truckId) {
+            const msg = "Please enter a Truck ID or select 'Vendor Direct'.";
+            if (Platform.OS === 'web') {
+                window.alert(msg);
+            } else {
+                Alert.alert("Missing Info", msg);
+            }
             return;
         }
 
         try {
-            await SupabaseService.updateTicketStatus(ticket, 'in_transit');
+            await SupabaseService.updateTicketStatus(ticket.id, 'IN_TRANSIT', undefined, truckId);
             // In a real app, this would also trigger a notification to the foreman
             loadData();
-        } catch (err) {
-            Alert.alert("Error", "Failed to dispatch ticket");
+            // Clear truck id for this ticket
+            setTruckIds(prev => {
+                const updated = { ...prev };
+                delete updated[ticket.id];
+                return updated;
+            });
+        } catch (err: any) {
+            console.error("Dispatch Error:", err);
+            const msg = `Failed to dispatch ticket: ${err.message || JSON.stringify(err)}`;
+            if (Platform.OS === 'web') {
+                window.alert(msg);
+            } else {
+                Alert.alert("Error", msg);
+            }
         }
     };
 
     // Grouping
     const unscheduled = useMemo(() =>
-        tickets.filter(t => t.status === 'pending_approval'),
+        tickets.filter(t => (t.status || '').toUpperCase() === 'PENDING_APPROVAL'),
         [tickets]);
 
     const scheduledByJob = useMemo(() => {
-        const scheduled = tickets.filter(t => t.status === 'scheduled' || t.status === 'Scheduled');
+        const scheduled = tickets.filter(t => (t.status || '').toUpperCase() === 'SCHEDULED');
         const groups: Record<string, DeliveryTicket[]> = {};
         scheduled.forEach(t => {
             const name = t.job_name || 'Unassigned Project';
@@ -90,7 +127,7 @@ export default function OutboundList() {
     }, [tickets]);
 
     const inTransit = useMemo(() =>
-        tickets.filter(t => t.status === 'in_transit'),
+        tickets.filter(t => ['IN_TRANSIT', 'DISPATCHED'].includes((t.status || '').toUpperCase())),
         [tickets]);
 
     if (loading && tickets.length === 0) {
@@ -210,13 +247,23 @@ export default function OutboundList() {
                                                             ) : (
                                                                 <Circle size={18} color="#cbd5e1" strokeWidth={2.5} />
                                                             )}
-                                                            <View className="ml-3 flex-1">
-                                                                <Text className={`font-black text-sm ${checkedItems[t.id]?.[item.material_id] ? 'text-blue-900' : 'text-slate-900'}`}>
-                                                                    {item.product_code || item.product_name}
-                                                                </Text>
-                                                                <Text className="text-[10px] text-slate-500 font-medium">
-                                                                    {item.product_name}
-                                                                    {(item.dim_length && item.dim_width) ? ` | ${item.dim_length}x${item.dim_width}` : ''}
+                                                            <View className="ml-3 flex-1 justify-center">
+                                                                <Text className="text-sm text-slate-700 font-medium" numberOfLines={2}>
+                                                                    <Text className={`font-black ${checkedItems[t.id]?.[item.material_id] ? 'text-blue-900' : 'text-slate-900'}`}>
+                                                                        {item.product_code || 'No Code'}
+                                                                    </Text>
+                                                                    <Text className="text-slate-400"> | </Text>
+                                                                    <Text className={checkedItems[t.id]?.[item.material_id] ? 'text-blue-800' : 'text-slate-700'}>
+                                                                        {item.product_name}
+                                                                    </Text>
+                                                                    {(item.dimensions || (item.dim_length && item.dim_width)) && (
+                                                                        <>
+                                                                            <Text className="text-slate-400"> | </Text>
+                                                                            <Text className="text-slate-500 italic text-xs">
+                                                                                {item.dimensions || `${item.dim_length}x${item.dim_width}`}
+                                                                            </Text>
+                                                                        </>
+                                                                    )}
                                                                 </Text>
                                                             </View>
                                                             <View className="items-end">
@@ -240,23 +287,32 @@ export default function OutboundList() {
                                                 )}
 
                                                 {/* Action Bar */}
-                                                <View className="mt-6 flex-row items-center justify-between pt-6 border-t border-slate-50">
-                                                    <View className="flex-row items-center gap-4">
-                                                        <TouchableOpacity className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                                            <Ionicons name="pencil-outline" size={16} color="#94a3b8" />
-                                                        </TouchableOpacity>
-                                                        <TouchableOpacity className="bg-red-50 p-2 rounded-lg border border-red-50">
-                                                            <Ionicons name="trash-outline" size={16} color="#f87171" />
+                                                <View className="mt-6 flex-row items-center justify-between pt-6 border-t border-slate-50 gap-4">
+                                                    <View className="flex-row items-center gap-2 flex-1">
+                                                        <View className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 flex-row items-center gap-2">
+                                                            <Truck size={14} color="#64748b" />
+                                                            <TextInput
+                                                                className="flex-1 text-[10px] font-black text-slate-600 uppercase"
+                                                                placeholder="TRUCK ID / CARRIER"
+                                                                value={truckIds[t.id] || ''}
+                                                                onChangeText={(txt: string) => setTruckIds(prev => ({ ...prev, [t.id]: txt }))}
+                                                                placeholderTextColor="#adb5bd"
+                                                            />
+                                                        </View>
+                                                        <TouchableOpacity
+                                                            onPress={() => setTruckIds(prev => ({ ...prev, [t.id]: 'Vendor Direct' }))}
+                                                            className="bg-slate-100 px-2 py-2 rounded-lg border border-slate-200"
+                                                        >
+                                                            <Text className="text-[9px] font-black text-slate-500 uppercase">Vendor</Text>
                                                         </TouchableOpacity>
                                                     </View>
 
                                                     <TouchableOpacity
                                                         onPress={() => handleDispatch(t)}
-                                                        className={`px-8 py-3 rounded-xl flex-row items-center gap-2 shadow-lg ${isTicketFullyChecked(t) ? 'bg-blue-600 shadow-blue-200' : 'bg-slate-100 opacity-50'}`}
-                                                        disabled={!isTicketFullyChecked(t)}
+                                                        className={`px-8 py-3 rounded-xl flex-row items-center gap-2 shadow-lg ${isTicketFullyChecked(t) ? 'bg-blue-600 shadow-blue-200' : 'bg-slate-400 shadow-slate-200'}`}
                                                     >
-                                                        <Truck size={18} color={isTicketFullyChecked(t) ? "white" : "#94a3b8"} strokeWidth={2.5} />
-                                                        <Text className={`font-inter font-black uppercase tracking-widest text-xs ${isTicketFullyChecked(t) ? 'text-white' : 'text-slate-400'}`}>
+                                                        <Truck size={18} color="white" strokeWidth={2.5} />
+                                                        <Text className="text-white font-inter font-black uppercase tracking-widest text-xs">
                                                             Dispatch
                                                         </Text>
                                                     </TouchableOpacity>

@@ -208,6 +208,7 @@ export const AppSchema = new Schema([
         name: 'delivery_tickets',
         columns: [
             new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'job_name', type: ColumnType.TEXT }),
             new Column({ name: 'ticket_number', type: ColumnType.TEXT }),
             new Column({ name: 'status', type: ColumnType.TEXT }),
             new Column({ name: 'items', type: ColumnType.TEXT }), // JSON string
@@ -217,6 +218,8 @@ export const AppSchema = new Schema([
             new Column({ name: 'due_time', type: ColumnType.TEXT }),
             new Column({ name: 'scheduled_time', type: ColumnType.TEXT }), // New for Calendar v2.1
             new Column({ name: 'notes', type: ColumnType.TEXT }),
+            new Column({ name: 'assigned_to', type: ColumnType.TEXT }),
+            new Column({ name: 'truck_id', type: ColumnType.TEXT }),
             new Column({ name: 'created_by', type: ColumnType.TEXT }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
             new Column({ name: 'updated_at', type: ColumnType.TEXT }),
@@ -226,6 +229,7 @@ export const AppSchema = new Schema([
         name: 'purchase_orders',
         columns: [
             new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'job_name', type: ColumnType.TEXT }),
             new Column({ name: 'po_number', type: ColumnType.TEXT }),
             new Column({ name: 'vendor', type: ColumnType.TEXT }),
             new Column({ name: 'status', type: ColumnType.TEXT }),
@@ -277,6 +281,29 @@ export const AppSchema = new Schema([
             new Column({ name: 'type', type: ColumnType.TEXT }),
             new Column({ name: 'is_read', type: ColumnType.INTEGER }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
+        ]
+    }),
+    new Table({
+        name: 'crew_checkins',
+        columns: [
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'worker_id', type: ColumnType.TEXT }),
+            new Column({ name: 'check_in', type: ColumnType.TEXT }),
+            new Column({ name: 'check_out', type: ColumnType.TEXT }),
+            new Column({ name: 'role', type: ColumnType.TEXT }),
+            new Column({ name: 'type', type: ColumnType.TEXT }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+        ]
+    }),
+    new Table({
+        name: 'production_logs',
+        columns: [
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'area_id', type: ColumnType.TEXT }),
+            new Column({ name: 'sqft_installed', type: ColumnType.REAL }),
+            new Column({ name: 'status', type: ColumnType.TEXT }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+            new Column({ name: 'worker_id', type: ColumnType.TEXT }),
         ]
     }),
 ]);

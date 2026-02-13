@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SupabaseService, ProjectMaterial, DeliveryTicket, PurchaseOrder } from '../../services/SupabaseService';
 import { usePowerSync, useQuery } from '@powersync/react';
 import { randomUUID } from 'expo-crypto';
+import { Truck, Grid, BarChart2 } from 'lucide-react-native';
 
 // Sub-views
 import AreaBudgetView from '../logistics/AreaBudgetView';
@@ -422,7 +423,7 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
 
     const handleUpdateTicketStatus = async (ticket: DeliveryTicket, newStatus: string) => {
         try {
-            await SupabaseService.updateTicketStatus(ticket, newStatus);
+            await SupabaseService.updateTicketStatus(ticket.id, newStatus);
             if (isWeb) {
                 setWebTickets(prev => prev.map(t => t.id === ticket.id ? { ...t, status: newStatus } : t));
             }
@@ -513,7 +514,7 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                             className="flex-row items-center bg-white border border-slate-200 px-6 py-3 rounded-2xl active:bg-slate-50"
                         >
                             <Ionicons name="paper-plane" size={18} color="#64748b" />
-                            <Text className="text-slate-600 font-inter font-black ml-2 uppercase text-xs tracking-wider">Dispatch</Text>
+                            <Text className="text-slate-600 font-inter font-black ml-2 uppercase text-xs tracking-wider">Create Delivery</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -521,16 +522,16 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                 {/* Tab Switcher */}
                 <View className="flex-row gap-2">
                     {[
-                        { id: 'area', label: 'By Area', icon: 'grid-outline' },
-                        { id: 'project', label: 'Project Total', icon: 'bar-chart-outline' },
-                        { id: 'deliveries', label: 'Deliveries', icon: 'truck-outline' }
+                        { id: 'area', label: 'By Area', icon: Grid },
+                        { id: 'project', label: 'Project Total', icon: BarChart2 },
+                        { id: 'deliveries', label: 'Deliveries', icon: Truck }
                     ].map(tab => (
                         <TouchableOpacity
                             key={tab.id}
                             onPress={() => setViewMode(tab.id as ViewMode)}
                             className={`flex-row items-center px-6 py-3 rounded-xl ${viewMode === tab.id ? 'bg-slate-900' : 'bg-transparent'}`}
                         >
-                            <Ionicons name={tab.icon as any} size={18} color={viewMode === tab.id ? 'white' : '#94a3b8'} />
+                            <tab.icon size={18} color={viewMode === tab.id ? 'white' : '#94a3b8'} />
                             <Text className={`font-inter font-black ml-2 uppercase text-[11px] tracking-widest ${viewMode === tab.id ? 'text-white' : 'text-slate-400'}`}>
                                 {tab.label}
                             </Text>
@@ -615,9 +616,15 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                 <DeliveryTicketModal
                     visible={ticketModalVisible}
                     onClose={() => setTicketModalVisible(false)}
-                    onSuccess={() => setTicketModalVisible(false)}
-                    jobId={job.id}
                     materials={finalMaterials as ProjectMaterial[]}
+                    jobId={job.id}
+                    jobName={job.name}
+                    onSuccess={() => {
+                        if (isWeb) {
+                            SupabaseService.getDeliveryTickets(job.id).then(setWebTickets);
+                        }
+                        setTicketModalVisible(false); // Added to ensure modal closes
+                    }}
                 />
             )}
 

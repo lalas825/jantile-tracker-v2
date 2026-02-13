@@ -1,9 +1,11 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, TextInput, Image } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Image, Platform } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { Search, Bell, LogOut } from 'lucide-react-native';
 import clsx from 'clsx';
 import { useAuth } from '../../context/AuthContext';
+import { useQuery } from '@powersync/react';
+import { SupabaseService } from '../../services/SupabaseService';
 
 const NavLink = ({ title, route }: { title: string, route: string }) => {
     const router = useRouter();
@@ -11,14 +13,38 @@ const NavLink = ({ title, route }: { title: string, route: string }) => {
     const isActive = route === '/(tabs)' ? pathname === '/' || pathname === '/(tabs)' : pathname.startsWith(route);
 
     return (
-        <TouchableOpacity onPress={() => router.push(route as any)} className="mx-0">
+        <TouchableOpacity onPress={() => router.push(route as any)} className="relative h-full justify-center">
             <Text className={clsx(
                 "text-base font-inter font-bold whitespace-nowrap transition-colors", // text-base (16px), font-bold
                 isActive ? "text-red-700 font-black" : "text-slate-600 hover:text-red-700"
             )}>
                 {title}
             </Text>
+            {title === 'Field' && <ApprovalBadge />}
         </TouchableOpacity>
+    );
+};
+
+const ApprovalBadge = () => {
+    const isWeb = Platform.OS === 'web';
+    const { data: tickets = [] } = useQuery("SELECT id FROM delivery_tickets WHERE status = 'PENDING_APPROVAL'");
+    const [webCount, setWebCount] = React.useState(0);
+
+    React.useEffect(() => {
+        if (isWeb) {
+            SupabaseService.getAllDeliveryTickets().then(data => {
+                setWebCount(data.filter(t => t.status === 'PENDING_APPROVAL').length);
+            });
+        }
+    }, [isWeb]);
+
+    const count = isWeb ? webCount : tickets.length;
+    if (count === 0) return null;
+
+    return (
+        <View className="absolute -right-5 top-2 bg-red-600 w-4 h-4 rounded-full items-center justify-center border-2 border-white">
+            <Text className="text-[8px] text-white font-black">{count}</Text>
+        </View>
     );
 };
 
@@ -40,7 +66,7 @@ export default function DesktopNavbar() {
             </View>
 
             {/* Zone 2: The Navigation */}
-            <View className="flex-1 flex-row items-center space-x-8 overflow-x-auto no-scrollbar">
+            <View className="flex-1 flex-row items-center space-x-10 h-full overflow-x-auto no-scrollbar">
                 <NavLink title="Dashboard" route="/(tabs)" />
                 <NavLink title="Jobs" route="/(tabs)/jobs" />
                 <NavLink title="Warehouse" route="/(tabs)/warehouse" />

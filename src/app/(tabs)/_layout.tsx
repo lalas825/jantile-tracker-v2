@@ -1,11 +1,28 @@
 import { Tabs, router, Slot } from 'expo-router';
 import { LayoutDashboard, Briefcase, Truck, Box, Wrench, Menu } from 'lucide-react-native';
-import { TouchableOpacity, useWindowDimensions, View, Image } from 'react-native';
+import { TouchableOpacity, useWindowDimensions, View, Image, Platform } from 'react-native';
+import { useQuery } from '@powersync/react';
+import { SupabaseService } from '../../services/SupabaseService';
+import React, { useState, useEffect } from 'react';
 import DesktopNavbar from '../../components/navigation/DesktopNavbar';
 
 export default function TabLayout() {
     const { width } = useWindowDimensions();
     const isDesktop = width > 768;
+    const isWeb = Platform.OS === 'web';
+
+    const { data: tickets = [] } = useQuery("SELECT id FROM delivery_tickets WHERE status = 'PENDING_APPROVAL'");
+    const [webCount, setWebCount] = useState(0);
+
+    useEffect(() => {
+        if (isWeb) {
+            SupabaseService.getAllDeliveryTickets().then(data => {
+                setWebCount(data.filter(t => t.status === 'PENDING_APPROVAL').length);
+            });
+        }
+    }, [isWeb]);
+
+    const approvalCount = isWeb ? webCount : tickets.length;
 
     if (isDesktop) {
         return (
@@ -52,7 +69,6 @@ export default function TabLayout() {
                 tabBarActiveTintColor: '#3b82f6', // blue-500 for active
                 tabBarInactiveTintColor: '#64748b', // slate-500
             }}
-            sceneContainerStyle={{ backgroundColor: '#f8fafc' }}
         >
             {/* --- VISIBLE TABS --- */}
             <Tabs.Screen
@@ -74,6 +90,8 @@ export default function TabLayout() {
                 options={{
                     title: 'Field',
                     tabBarIcon: ({ color, size }) => <Truck size={size} color={color} />,
+                    tabBarBadge: approvalCount > 0 ? approvalCount : undefined,
+                    tabBarBadgeStyle: { backgroundColor: '#ef4444', color: 'white', fontSize: 10, fontWeight: '900' }
                 }}
             />
             <Tabs.Screen
@@ -100,6 +118,6 @@ export default function TabLayout() {
 
             {/* Old screens to hide/ignore or reuse if needed */}
             <Tabs.Screen name="logistics" options={{ href: null }} />
-        </Tabs>
+        </Tabs >
     );
 }

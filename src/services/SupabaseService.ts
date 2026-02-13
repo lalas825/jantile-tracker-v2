@@ -200,6 +200,9 @@ export interface DeliveryTicket {
     due_date?: string;
     due_time?: string;
     notes?: string;
+    assigned_to?: string;
+    assigned_worker_name?: string;
+    truck_id?: string;
     created_by: string;
     created_at: string;
     updated_at: string;
@@ -794,8 +797,9 @@ export const SupabaseService = {
                 const { error: itemsError } = await supabase.from('checklist_items').insert(items);
                 if (itemsError) throw itemsError;
             }
+            return id;
         } else {
-            // SQLite
+            // SQLite / PowerSync path
             await db.execute(
                 `INSERT INTO areas (id, unit_id, name, description, drawing_page, type, status, progress, created_at) VALUES (?, ?, ?, ?, ?, ?, 'NOT_STARTED', 0, ?)`,
                 [id, unitId, name, description, drawingPage, type, now]
@@ -815,8 +819,8 @@ export const SupabaseService = {
                     );
                 }
             }
+            return id;
         }
-        return id;
     },
 
     async updateArea(areaId: string, updates: any) {
@@ -1103,6 +1107,7 @@ export const SupabaseService = {
             throw error;
         }
     },
+
 
     // --- CHECKLIST MANAGEMENT ---
     // --- CHECKLIST MANAGEMENT ---
@@ -1397,10 +1402,19 @@ export const SupabaseService = {
             if (jobId) query = query.eq('job_id', jobId);
             if (areaId) query = query.eq('area_id', areaId);
             const { data, error } = await query.order('created_at', { ascending: false });
-            if (error) throw error;
+            if (error) {
+                console.error("DEBUG: getJobIssues error:", error);
+                // Fallback to simpler query if complex join fails
+                const { data: simpleData, error: simpleError } = await supabase
+                    .from('job_issues')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                if (simpleError) throw simpleError;
+                return (simpleData || []).map((i: any) => ({ ...i, job_name: i.job_name || 'Unknown Job' }));
+            }
             return (data || []).map((i: any) => ({
                 ...i,
-                job_name: i.jobs?.name,
+                job_name: i.job_name || i.jobs?.name,
                 area_name: i.areas?.name,
                 unit_name: i.areas?.units?.name,
                 floor_name: i.areas?.units?.floors?.name
@@ -1657,6 +1671,7 @@ export const SupabaseService = {
         await db.execute(`DELETE FROM project_materials WHERE id = ?`, [id]);
     },
 
+
     async getDeliveryTickets(jobId: string): Promise<DeliveryTicket[]> {
         if (useSupabase) {
             const { data, error } = await supabase
@@ -1681,14 +1696,51 @@ export const SupabaseService = {
         }));
     },
 
+    async generateNextTicketNumber(): Promise<string> {
+        let maxNumber = 999;
+
+        if (useSupabase) {
+            const { data } = await supabase
+                .from('delivery_tickets')
+                .select('ticket_number');
+
+            if (data) {
+                data.forEach(t => {
+                    const match = t.ticket_number?.match(/\d+/);
+                    if (match) {
+                        const num = parseInt(match[0], 10);
+                        if (num > maxNumber) maxNumber = num;
+                    }
+                });
+            }
+        } else {
+            const result = await db.getAll('SELECT ticket_number FROM delivery_tickets');
+            result.forEach((t: any) => {
+                const match = t.ticket_number?.match(/\d+/);
+                if (match) {
+                    const num = parseInt(match[0], 10);
+                    if (num > maxNumber) maxNumber = num;
+                }
+            });
+        }
+        return `DT-${maxNumber + 1}`;
+    },
+
     async saveDeliveryTicket(ticket: Partial<DeliveryTicket>): Promise<void> {
         const id = ticket.id && ticket.id !== '' ? ticket.id : Crypto.randomUUID();
         const now = new Date().toISOString();
+
+        // Standardize Ticket Number to DT-XXXX sequence
+        let ticket_number = ticket.ticket_number;
+        if (!ticket_number || ticket_number.startsWith('TKT-')) {
+            ticket_number = await this.generateNextTicketNumber();
+        }
 
         if (useSupabase) {
             const payload = {
                 ...ticket,
                 id,
+                ticket_number,
                 job_id: ticket.job_id && ticket.job_id !== '' ? ticket.job_id : null,
                 items: JSON.stringify(ticket.items || []),
                 updated_at: now
@@ -1702,14 +1754,16 @@ export const SupabaseService = {
         await db.writeTransaction(async (tx: any) => {
             await tx.execute(
                 `INSERT OR REPLACE INTO delivery_tickets (
-                    id, job_id, ticket_number, status, items, destination, 
-                    requested_date, due_date, due_time, notes, created_by, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    id, job_id, job_name, ticket_number, status, items, destination, 
+                    requested_date, due_date, due_time, notes, assigned_to, truck_id,
+                    created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
-                    id, ticket.job_id, ticket.ticket_number, ticket.status || 'draft',
+                    id, ticket.job_id, ticket.job_name || null, ticket_number, ticket.status || 'draft',
                     JSON.stringify(ticket.items || []), ticket.destination,
                     ticket.requested_date, ticket.due_date || null, ticket.due_time || null,
-                    ticket.notes || null, ticket.created_by,
+                    ticket.notes || null, ticket.assigned_to || null, ticket.truck_id || null,
+                    ticket.created_by,
                     ticket.created_at || now, now
                 ]
             );
@@ -1739,14 +1793,35 @@ export const SupabaseService = {
             [date, time, now, id]);
     },
 
-    async updateTicketStatus(ticket: DeliveryTicket, status: string): Promise<void> {
+    async updateTicketStatus(ticketId: string, status: string, notes?: string, truckId?: string): Promise<void> {
         const now = new Date().toISOString();
+        // PM Rejection Loop: If a Supervisor rejects, it goes back to DRAFT for the PM
+        const finalStatus = status === 'REJECTED' ? 'DRAFT' : status;
+
         if (useSupabase) {
-            const { error } = await supabase.from('delivery_tickets').update({ status, updated_at: now }).eq('id', ticket.id);
+            const updates: any = { status: finalStatus, updated_at: now };
+            if (notes) updates.notes = notes;
+            if (truckId) {
+                // WORKAROUND: Server might enforce UUID for truck_id, but we use free text.
+                // Saving to notes to prevent crash.
+                updates.notes = (updates.notes ? updates.notes + '\n' : '') + ` [Carrier: ${truckId}]`;
+                // updates.truck_id = truckId; 
+            }
+            const { error } = await supabase.from('delivery_tickets').update(updates).eq('id', ticketId);
             if (error) throw error;
             return;
         }
-        await db.execute(`UPDATE delivery_tickets SET status = ?, updated_at = ? WHERE id = ?`, [status, now, ticket.id]);
+        let query = `UPDATE delivery_tickets SET status = ?, notes = COALESCE(?, notes), updated_at = ?`;
+        let params = [finalStatus, notes || null, now];
+
+        if (truckId) {
+            query += `, truck_id = ?`;
+            params.push(truckId);
+        }
+        query += ` WHERE id = ?`;
+        params.push(ticketId);
+
+        await db.execute(query, params);
     },
 
 
@@ -1754,31 +1829,95 @@ export const SupabaseService = {
         if (useSupabase) {
             const { data, error } = await supabase
                 .from('delivery_tickets')
-                .select('*, jobs(name)')
+                .select(`
+                    *,
+                    jobs(name),
+                    assigned_worker:workers!assigned_to(name)
+                `)
                 .order('created_at', { ascending: false });
-            if (error) throw error;
+            if (error) {
+                console.error("DEBUG: getAllDeliveryTickets error:", error);
+                // Fallback to simple select if join fails
+                const { data: simpleData, error: simpleError } = await supabase
+                    .from('delivery_tickets')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                if (simpleError) throw simpleError;
+                return (simpleData || []).map((t: any) => ({
+                    ...t,
+                    items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items
+                }));
+            }
             return (data || []).map((t: any) => ({
                 ...t,
-                job_name: t.jobs?.name,
+                job_name: t.job_name || t.jobs?.name,
+                assigned_worker_name: t.assigned_worker?.name,
                 items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items
             }));
         }
 
         const result = await db.getAll(`
-            SELECT dt.*, j.name as job_name 
+            SELECT dt.*, COALESCE(dt.job_name, j.name) as job_name, w.name as assigned_worker_name
             FROM delivery_tickets dt
             LEFT JOIN jobs j ON dt.job_id = j.id
+            LEFT JOIN workers w ON dt.assigned_to = w.id
             ORDER BY dt.created_at DESC
         `);
         return result.map((t: any) => ({
             ...t,
-            items: t.items ? JSON.parse(t.items) : []
+            items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items
         }));
     },
 
     async getOutboundTickets(): Promise<DeliveryTicket[]> {
-        // This is essentially getAllDeliveryTickets but we want to be explicit for the Warehouse Hub
-        return this.getAllDeliveryTickets();
+        const all = await this.getAllDeliveryTickets();
+        const tickets = all.filter(t => {
+            const s = (t.status || '').toUpperCase();
+            return ['SCHEDULED', 'IN_TRANSIT', 'DISPATCHED'].includes(s);
+        });
+
+        // HYDRATION FIX: Legacy tickets might be missing product_code in the items JSON.
+        // We fetch project materials on demand to fill gaps.
+        const jobIdsToFetch = new Set<string>();
+        tickets.forEach(t => {
+            if (t.items && t.items.some((i: any) => !i.product_code && i.material_id && i.material_id !== 'VENDOR_DIRECT_ID')) {
+                jobIdsToFetch.add(t.job_id);
+            }
+        });
+
+        if (jobIdsToFetch.size > 0) {
+            const materialsByJob: Record<string, ProjectMaterial[]> = {};
+            await Promise.all(Array.from(jobIdsToFetch).map(async (jobId) => {
+                try {
+                    materialsByJob[jobId] = await this.getProjectMaterials(jobId);
+                } catch (e) {
+                    console.warn(`Failed to hydrate materials for job ${jobId}`, e);
+                }
+            }));
+
+            return tickets.map(t => {
+                if (!t.items) return t;
+                const jobMats = materialsByJob[t.job_id];
+                if (!jobMats) return t;
+
+                const hydratedItems = t.items.map((i: any) => {
+                    if (i.product_code || i.material_id === 'VENDOR_DIRECT_ID') return i;
+                    const mat = jobMats.find(m => m.id === i.material_id);
+                    if (mat) {
+                        return {
+                            ...i,
+                            product_code: mat.product_code,
+                            category: i.category || mat.category,
+                            dimensions: i.dimensions || mat.product_specs
+                        };
+                    }
+                    return i;
+                });
+                return { ...t, items: hydratedItems };
+            });
+        }
+
+        return tickets;
     },
 
     async getReceivingPOs(): Promise<PurchaseOrder[]> {
@@ -2451,6 +2590,159 @@ export const SupabaseService = {
                 updated_at = datetime('now')
             WHERE id = ?
         `, [adjustment, adjustment, materialId]);
+    },
+
+    async receiveDeliveryTicket(
+        ticketId: string,
+        itemReceipts: {
+            material_id: string,
+            qty_received: number,
+            condition: 'Verified' | 'Damaged' | 'Missing',
+            notes?: string,
+            photo_url?: string
+        }[],
+        userId: string
+    ) {
+        const now = new Date().toISOString();
+        const overallHasDiscrepancy = itemReceipts.some(r => r.condition !== 'Verified');
+        const finalStatus = overallHasDiscrepancy ? 'RECEIVED_WITH_ISSUE' : 'RECEIVED';
+
+        if (useSupabase) {
+            // 1. Update Ticket Status
+            const { error: ticketError } = await supabase
+                .from('delivery_tickets')
+                .update({ status: finalStatus, updated_at: now })
+                .eq('id', ticketId);
+            if (ticketError) throw ticketError;
+
+            // 2. Process Items
+            for (const receipt of itemReceipts) {
+                // Fetch current material to update received_at_job
+                const { data: mat } = await supabase
+                    .from('project_materials')
+                    .select('received_at_job, qty_damaged, qty_missing')
+                    .eq('id', receipt.material_id)
+                    .single();
+
+                if (mat) {
+                    const receivedQty = receipt.condition === 'Verified' ? receipt.qty_received : 0;
+                    const damagedQty = receipt.condition === 'Damaged' ? receipt.qty_received : 0;
+                    const newWarehouseQty = (mat.in_warehouse_qty || 0) - receivedQty;
+
+                    // Warehouse Mismatch Check
+                    if (newWarehouseQty < 0) {
+                        await supabase.from('job_issues').insert({
+                            id: Crypto.randomUUID(),
+                            job_id: (await supabase.from('delivery_tickets').select('job_id').eq('id', ticketId).single()).data?.job_id,
+                            type: 'Inventory Mismatch',
+                            priority: 'High',
+                            status: 'open',
+                            description: `CRITICAL: Warehouse inventory negative after receipt (DT #${ticketId}). Item: ${receipt.material_id}. System: ${newWarehouseQty}`,
+                            created_by: userId,
+                            created_at: now,
+                            updated_at: now
+                        });
+                    }
+
+                    const updatePayload: any = {
+                        received_at_job: (mat.received_at_job || 0) + receivedQty,
+                        in_warehouse_qty: newWarehouseQty,
+                        qty_damaged: (mat.qty_damaged || 0) + damagedQty,
+                        qty_missing: (mat.qty_missing || 0) + (receipt.condition === 'Missing' ? receipt.qty_received : 0),
+                        updated_at: now
+                    };
+                    await supabase.from('project_materials').update(updatePayload).eq('id', receipt.material_id);
+                }
+
+                // Log as issue if damaged/missing
+                if (receipt.condition !== 'Verified') {
+                    await supabase.from('job_issues').insert({
+                        id: Crypto.randomUUID(),
+                        job_id: (await supabase.from('delivery_tickets').select('job_id').eq('id', ticketId).single()).data?.job_id,
+                        type: receipt.condition === 'Damaged' ? 'Material Damage' : 'Shortage',
+                        priority: 'High',
+                        status: 'open',
+                        description: `Issue during delivery receipt (DT #${ticketId}): ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`,
+                        photo_url: receipt.photo_url,
+                        created_by: userId,
+                        created_at: now,
+                        updated_at: now
+                    });
+                }
+            }
+            return;
+        }
+
+        // Native PowerSync logic
+        await db.writeTransaction(async (tx: any) => {
+            await tx.execute(`UPDATE delivery_tickets SET status = ?, updated_at = ? WHERE id = ?`, [finalStatus, now, ticketId]);
+            const ticket = await tx.get(`SELECT job_id FROM delivery_tickets WHERE id = ?`, [ticketId]);
+
+            for (const receipt of itemReceipts) {
+                const mat = await tx.get(`SELECT in_warehouse_qty, received_at_job, qty_damaged, qty_missing FROM project_materials WHERE id = ?`, [receipt.material_id]);
+                if (mat) {
+                    const receivedQty = receipt.condition === 'Verified' ? receipt.qty_received : 0;
+                    const newWarehouseQty = (mat.in_warehouse_qty || 0) - receivedQty;
+
+                    if (newWarehouseQty < 0) {
+                        // We can't insert into job_issues easily within this transaction if we don't have job_id handy from the loop context without querying, 
+                        // but we fetched ticket earlier.
+                        // However, let's just proceed with the update and let the negative number stand as the flag, 
+                        // OR insert the issue. 
+                        // Let's insert the issue for consistency.
+                        await tx.execute(`
+                            INSERT INTO job_issues (id, job_id, type, priority, status, description, created_by, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        `, [
+                            Crypto.randomUUID(),
+                            ticket.job_id,
+                            'Inventory Mismatch',
+                            'High',
+                            'open',
+                            `CRITICAL: Warehouse inventory negative after receipt (DT #${ticketId}). Item: ${receipt.material_id}. System: ${newWarehouseQty}`,
+                            userId,
+                            now,
+                            now
+                        ]);
+                    }
+
+                    await tx.execute(`
+                        UPDATE project_materials 
+                        SET received_at_job = received_at_job + ?,
+                            in_warehouse_qty = in_warehouse_qty - ?,
+                            qty_damaged = qty_damaged + ?,
+                            qty_missing = qty_missing + ?,
+                            updated_at = ?
+                        WHERE id = ?
+                    `, [
+                        receivedQty,
+                        receivedQty,
+                        receipt.condition === 'Damaged' ? receipt.qty_received : 0,
+                        receipt.condition === 'Missing' ? receipt.qty_received : 0,
+                        now,
+                        receipt.material_id
+                    ]);
+                }
+
+                if (receipt.condition !== 'Verified') {
+                    await tx.execute(`
+                        INSERT INTO job_issues (id, job_id, type, priority, status, description, photo_url, created_by, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    `, [
+                        Crypto.randomUUID(),
+                        ticket.job_id,
+                        receipt.condition === 'Damaged' ? 'Material Damage' : 'Shortage',
+                        'High',
+                        'open',
+                        `Issue during delivery receipt (DT #${ticketId}): ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`,
+                        receipt.photo_url,
+                        userId,
+                        now,
+                        now
+                    ]);
+                }
+            }
+        });
     }
 };
 

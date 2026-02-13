@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, SafeAreaView, Platform } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, Platform, TouchableOpacity, SafeAreaView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SupabaseService } from '../../../services/SupabaseService';
 import ProductionTab from '../../../components/jobs/ProductionTab';
 import LogisticsTab from '../../../components/jobs/LogisticsTab';
+import JobSiteTab from '../../../components/jobs/JobSiteTab';
 
 const TABS = [
     { id: 'PRODUCTION', label: 'Production', icon: 'layers' },
@@ -89,6 +90,8 @@ export default function JobDetailsScreen() {
                         }}
                     />
                 );
+            case 'JOBSITE':
+                return <JobSiteTab job={job} />;
             case 'ISSUES':
             case 'ISSUES':
                 return <JobIssuesTab jobId={job.id} />;
