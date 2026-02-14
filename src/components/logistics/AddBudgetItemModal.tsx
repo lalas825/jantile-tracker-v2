@@ -48,6 +48,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
     const [zone, setZone] = useState('');
     const [areaId, setAreaId] = useState('');
     const [subLocation, setSubLocation] = useState('');
+    const [defaultSubLocation, setDefaultSubLocation] = useState('');
     const [supplier, setSupplier] = useState('');
 
     // Calculator State
@@ -99,6 +100,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
             setZone(initialData.zone || '');
             setAreaId(initialData.area_id || '');
             setSubLocation(initialData.sub_location || '');
+            setDefaultSubLocation('');
             setSupplier(initialData.supplier || '');
             setNetQty(initialData.net_qty?.toString() || initialData.budget_qty.toString());
             setWastePercent(initialData.waste_percent?.toString() || '10');
@@ -129,8 +131,19 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
         setProductName('');
         setSpecs('');
         setZone('');
-        setAreaId(initialAreaId || '');
-        setSubLocation('');
+
+        // Handle Virtual Area IDs (loc-NAME)
+        if (initialAreaId && initialAreaId.startsWith('loc-')) {
+            setAreaId(''); // Clear Area ID so it doesn't fail UUID check
+            const virtName = initialAreaId.replace('loc-', '');
+            setDefaultSubLocation(virtName); // Store strictly for fallback
+            setSubLocation(''); // Visual: Empty
+        } else {
+            setAreaId(initialAreaId || '');
+            setDefaultSubLocation('');
+            setSubLocation('');
+        }
+
         setSupplier('');
         setNetQty('0');
         setWastePercent('10');
@@ -265,11 +278,60 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
 
         if (isCreatingNewArea) {
             if (units && units.length > 0) {
-                // Default to the first unit if available
                 linkedUnitId = units[0].id;
             } else {
-                // Determine a safe fallback or creating "General"
                 newUnitName = "General";
+            }
+        }
+
+        let finalAreaId = areaId;
+        let finalNewAreaPayload = isCreatingNewArea ? {
+            name: newAreaName,
+            description: newAreaDescription,
+            unit_id: linkedUnitId,
+            _new_unit_name: newUnitName
+        } : undefined;
+
+        // Smart Upgrade: If adding to a Virtual Area, convert it to a Real Area logic
+        // Case 1: Manual selection of a "loc-" area from dropdown
+        if (finalAreaId && finalAreaId.startsWith('loc-')) {
+            const targetName = finalAreaId.replace('loc-', '').trim();
+            // Find if a real area already exists with this name (exclude virtuals)
+            const existingRealArea = areas.find(a => !a.is_virtual && a.name.trim().toLowerCase() === targetName.toLowerCase());
+
+            if (existingRealArea) {
+                finalAreaId = existingRealArea.id;
+            } else {
+                // Auto-create new Real Area
+                finalAreaId = ''; // Clear the invalid "loc-" ID
+                const defaultUnitId = units && units.length > 0 ? units[0].id : undefined;
+                finalNewAreaPayload = {
+                    name: targetName,
+                    description: 'Auto-created from Logistics',
+                    unit_id: defaultUnitId,
+                    _new_unit_name: defaultUnitId ? undefined : 'General'
+                };
+            }
+        }
+        // Case 2: "Reset form" state where areaId is empty but defaultSubLocation is set (from initialData that was virtual)
+        else if (!isCreatingNewArea && !areaId && defaultSubLocation) {
+            // We are in a virtual area (e.g. "wall")
+            const targetName = defaultSubLocation.trim();
+            const existingRealArea = areas.find(a => !a.is_virtual && a.name.trim().toLowerCase() === targetName.toLowerCase());
+
+            if (existingRealArea) {
+                // Scenario A: Real Area already exists -> Link to it
+                finalAreaId = existingRealArea.id;
+            } else {
+                // Scenario B: Create new Real Area on the fly
+                // Default to first unit for the new area
+                const defaultUnitId = units && units.length > 0 ? units[0].id : undefined;
+                finalNewAreaPayload = {
+                    name: targetName,
+                    description: 'Auto-created from Logistics',
+                    unit_id: defaultUnitId,
+                    _new_unit_name: defaultUnitId ? undefined : 'General'
+                };
             }
         }
 
@@ -280,8 +342,8 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
             product_name: productName,
             product_specs: specs,
             zone,
-            area_id: isCreatingNewArea ? undefined : (areaId || undefined),
-            sub_location: subLocation,
+            area_id: isCreatingNewArea ? undefined : (finalAreaId || undefined),
+            sub_location: subLocation, // Save exactly what user typed (e.g. "Left Side") or empty
             supplier,
             net_qty: parseFloat(netQty) || 0,
             waste_percent: parseFloat(wastePercent) || 0,
@@ -298,13 +360,8 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
             joint_width: category === 'Grout' ? jointWidth : undefined,
             bag_weight: category === 'Grout' ? (parseFloat(bagWeight) || undefined) : undefined,
             parent_material_id: category === 'Grout' ? parentMaterialId : undefined,
-            ...(isCreatingNewArea ? {
-                _new_area: {
-                    name: newAreaName,
-                    description: newAreaDescription,
-                    unit_id: linkedUnitId,
-                    _new_unit_name: newUnitName
-                }
+            ...(finalNewAreaPayload ? {
+                _new_area: finalNewAreaPayload
             } : {})
         };
 
@@ -914,7 +971,12 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                     className={`bg-slate-50 border border-slate-200 p-3 rounded-xl flex-row justify-between items-center ${lockedAreaId ? 'opacity-60' : ''}`}
                                 >
                                     <Text className="text-sm font-inter font-bold text-slate-900">
-                                        {isCreatingNewArea ? `New Area: ${newAreaName}` : (areas.find(a => a.id === areaId)?.name || 'Select Area...')}
+                                        {isCreatingNewArea
+                                            ? `New Area: ${newAreaName}`
+                                            : (lockedAreaId && lockedAreaId.startsWith('loc-')
+                                                ? `Location: ${lockedAreaId.replace('loc-', '')}`
+                                                : (areas.find(a => a.id === areaId)?.name || 'Select Area...'))
+                                        }
                                     </Text>
                                     <Ionicons name={lockedAreaId ? "lock-closed" : "location"} size={16} color="#94a3b8" />
                                 </TouchableOpacity>

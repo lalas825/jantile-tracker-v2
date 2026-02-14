@@ -145,12 +145,13 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
             const hasLogisticsAssignment = isLogisticsArea || matchesLogisticsName;
 
             if (!hasLogisticsAssignment && m.sub_location && m.sub_location !== 'Unassigned') {
-                const locKey = m.sub_location.toLowerCase();
+                const rawLoc = m.sub_location.trim();
+                const locKey = rawLoc.toLowerCase();
                 if (!seenLocations.has(locKey)) {
                     seenLocations.add(locKey);
                     virtualAreas.push({
-                        id: `loc-${m.sub_location}`,
-                        name: m.sub_location,
+                        id: `loc-${locKey}`, // Normalized ID
+                        name: rawLoc, // Preserve original casing for display
                         is_virtual: true,
                         description: 'Area Logistics Breakdown'
                     });
@@ -218,7 +219,7 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
         const map: Record<string, ProjectMaterial[]> = {};
         const areaIds = new Set(finalAreas.map(a => a.id));
         const realNamesToIds = finalAreas.reduce((acc, a) => {
-            acc[(a.name || '').toLowerCase()] = a.id;
+            acc[(a.name || '').trim().toLowerCase()] = a.id;
             return acc;
         }, {} as Record<string, string>);
 
@@ -229,11 +230,13 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
             // Logic: If area_id is not a real Logistics area, try to map sub_location to a real Logistics Area.
             // If still nothing, use sub_location as a virtual area (loc-NAME).
             if (!isRealLogisticsArea) {
-                const mappedId = m.sub_location ? realNamesToIds[m.sub_location.toLowerCase()] : null;
+                const subLoc = m.sub_location ? m.sub_location.trim() : '';
+                const mappedId = subLoc ? realNamesToIds[subLoc.toLowerCase()] : null;
+
                 if (mappedId) {
                     areaId = mappedId;
-                } else if (m.sub_location && m.sub_location !== 'Unassigned') {
-                    areaId = `loc-${m.sub_location}`;
+                } else if (subLoc && subLoc !== 'Unassigned') {
+                    areaId = `loc-${subLoc.toLowerCase()}`;
                 } else {
                     areaId = 'Unassigned';
                 }
@@ -457,10 +460,26 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
         try {
             await SupabaseService.saveProjectMaterial({ ...mat, job_id: job.id });
             if (isWeb) {
-                // Optimistic update or just refetch. For simplicity, we'll mark it to refetch if needed, 
-                // but let's try a simple manual state update for UX.
-                const updatedMat = await SupabaseService.getProjectMaterials(job.id);
+                // Refresh materials AND areas/structure because a new area might have been created
+                const [updatedMat, structure] = await Promise.all([
+                    SupabaseService.getProjectMaterials(job.id),
+                    SupabaseService.getJob(job.id)
+                ]);
+
                 setWebMaterials(updatedMat);
+
+                // Re-flatten areas from the fresh structure
+                const flatAreas: any[] = [];
+                (structure?.floors || []).forEach((f: any) => {
+                    (f.units || []).forEach((u: any) => {
+                        (u.areas || []).forEach((a: any) => {
+                            if (a.type === 'logistics') {
+                                flatAreas.push(a);
+                            }
+                        });
+                    });
+                });
+                setWebAreas(flatAreas);
             }
             setAddModalVisible(false);
             setSelectedMaterial(null);

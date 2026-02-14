@@ -1606,7 +1606,58 @@ export const SupabaseService = {
         const now = new Date().toISOString();
 
         if (useSupabase) {
-            const { _new_area, ...cleanMaterial } = material as any;
+            let { _new_area, ...cleanMaterial } = material as any;
+
+            // HANDLE AUTO-CREATION OF NEW AREA/UNIT
+            if (_new_area) {
+                try {
+                    let targetUnitId = _new_area.unit_id;
+
+                    // 1. Create Unit if needed
+                    if (!targetUnitId && _new_area._new_unit_name) {
+                        // Find a floor to attach to (default to first floor found for job)
+                        const { data: floors } = await supabase.from('floors').select('id').eq('job_id', material.job_id).limit(1);
+                        if (floors && floors.length > 0) {
+                            targetUnitId = await this.addUnit(floors[0].id, _new_area._new_unit_name, 'logistics');
+                        }
+                    }
+
+                    // 2. Create Area
+                    if (targetUnitId) {
+                        const newAreaId = await this.addArea(
+                            targetUnitId,
+                            _new_area.name,
+                            _new_area.description || '',
+                            '', // drawing page
+                            'logistics'
+                        );
+                        cleanMaterial.area_id = newAreaId;
+
+                        // MIGRATION: If we just created a real area from a virtual one, 
+                        // find all other items currently using this sub_location and move them to the real area.
+                        try {
+                            const targetSubLoc = _new_area.name;
+                            const { data: others } = await supabase.from('project_materials')
+                                .select('id')
+                                .eq('job_id', cleanMaterial.job_id)
+                                .ilike('sub_location', targetSubLoc)
+                                .is('area_id', null);
+
+                            if (others && others.length > 0) {
+                                console.log(`[SupabaseService] Migrating ${others.length} items from virtual '${targetSubLoc}' to real area ${newAreaId}`);
+                                await supabase.from('project_materials')
+                                    .update({ area_id: newAreaId })
+                                    .in('id', others.map(o => o.id));
+                            }
+                        } catch (migErr) {
+                            console.error("Failed to migrate virtual items to real area:", migErr);
+                        }
+                    }
+                } catch (areaErr) {
+                    console.error("Failed to auto-create area in saveProjectMaterial:", areaErr);
+                    // Continue anyway, it will just be unassigned or virtual
+                }
+            }
 
             // Defensive: ensure empty strings aren't sent to UUID columns
             if (cleanMaterial.area_id === '') cleanMaterial.area_id = null;
