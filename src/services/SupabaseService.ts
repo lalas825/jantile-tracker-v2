@@ -1608,6 +1608,12 @@ export const SupabaseService = {
         if (useSupabase) {
             let { _new_area, ...cleanMaterial } = material as any;
 
+            // Sanitize: Remove virtual fields that aren't real DB columns
+            delete cleanMaterial.active_pos;
+            delete cleanMaterial.nearest_expected_date;
+            delete cleanMaterial.all_pos;
+            delete cleanMaterial.jobs;
+
             // HANDLE AUTO-CREATION OF NEW AREA/UNIT
             if (_new_area) {
                 try {

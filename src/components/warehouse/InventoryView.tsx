@@ -171,13 +171,13 @@ export default function InventoryView() {
 
                                     <View className="mt-6">
                                         <Text className="text-2xl font-black text-slate-900">
-                                            {Math.round(item.in_warehouse_qty || 0).toLocaleString()} <Text className="text-xs font-bold text-slate-400 uppercase">{item.unit || 'sqft'}</Text>
+                                            {Math.round(item.shop_stock || 0).toLocaleString()} <Text className="text-xs font-bold text-slate-400 uppercase">{item.unit || 'sqft'}</Text>
                                         </Text>
                                         <View className="flex-row items-center justify-between">
                                             <Text className="text-[10px] font-bold text-slate-300 uppercase">In Warehouse</Text>
                                             {item.category === 'Tile' && (
                                                 <Text className="text-[10px] font-black text-indigo-400 uppercase">
-                                                    ({Math.round((item.in_warehouse_qty || 0) * (item.pcs_per_unit || 1)).toLocaleString()} PCS)
+                                                    ({Math.round((item.shop_stock || 0) * (item.pcs_per_unit || 1)).toLocaleString()} PCS)
                                                 </Text>
                                             )}
                                         </View>
@@ -255,13 +255,13 @@ export default function InventoryView() {
 
                                                 <View className="mt-6 pt-4 border-t border-slate-50">
                                                     <Text className="text-2xl font-black text-indigo-600">
-                                                        {Math.round(item.in_warehouse_qty || 0).toLocaleString()} <Text className="text-xs font-bold text-indigo-400 uppercase">{item.unit || 'sqft'}</Text>
+                                                        {Math.round(item.shop_stock || 0).toLocaleString()} <Text className="text-xs font-bold text-indigo-400 uppercase">{item.unit || 'sqft'}</Text>
                                                     </Text>
                                                     <View className="flex-row items-center justify-between">
                                                         <Text className="text-[10px] font-bold text-slate-300 uppercase">In Warehouse</Text>
                                                         {item.category === 'Tile' && (
                                                             <Text className="text-[10px] font-black text-indigo-400 uppercase">
-                                                                ({Math.round((item.in_warehouse_qty || 0) * (item.pcs_per_unit || 1)).toLocaleString()} PCS)
+                                                                ({Math.round((item.shop_stock || 0) * (item.pcs_per_unit || 1)).toLocaleString()} PCS)
                                                             </Text>
                                                         )}
                                                     </View>
