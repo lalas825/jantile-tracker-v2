@@ -58,6 +58,12 @@ CREATE TABLE IF NOT EXISTS delivery_tickets (
     due_time TIME,
     scheduled_time TEXT,
     notes TEXT,
+    assigned_to UUID,
+    truck_id UUID,
+    supervisor_approved BOOLEAN DEFAULT false,
+    foreman_approved BOOLEAN DEFAULT false,
+    field_modified BOOLEAN DEFAULT false,
+    job_name TEXT,
     created_by UUID REFERENCES auth.users(id),
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()

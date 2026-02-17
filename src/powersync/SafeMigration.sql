@@ -145,8 +145,23 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='updated_at') THEN
         ALTER TABLE delivery_tickets ADD COLUMN updated_at TIMESTAMPTZ DEFAULT now();
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='updated_at') THEN
-        ALTER TABLE delivery_tickets ADD COLUMN updated_at TIMESTAMPTZ DEFAULT now();
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='job_name') THEN
+        ALTER TABLE delivery_tickets ADD COLUMN job_name TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='assigned_to') THEN
+        ALTER TABLE delivery_tickets ADD COLUMN assigned_to UUID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='truck_id') THEN
+        ALTER TABLE delivery_tickets ADD COLUMN truck_id UUID;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='supervisor_approved') THEN
+        ALTER TABLE delivery_tickets ADD COLUMN supervisor_approved BOOLEAN DEFAULT false;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='foreman_approved') THEN
+        ALTER TABLE delivery_tickets ADD COLUMN foreman_approved BOOLEAN DEFAULT false;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='delivery_tickets' AND COLUMN_NAME='field_modified') THEN
+        ALTER TABLE delivery_tickets ADD COLUMN field_modified BOOLEAN DEFAULT false;
     END IF;
 END $$;
 

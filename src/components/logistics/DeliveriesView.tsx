@@ -12,6 +12,7 @@ interface DeliveriesViewProps {
     onCreateTicket: () => void;
     onUpdateStatus: (ticket: DeliveryTicket, newStatus: string) => void;
     onDeleteTicket: (id: string) => void;
+    onEditTicket?: (ticket: DeliveryTicket) => void;
 }
 
 const KANBAN_COLUMNS = [
@@ -48,7 +49,7 @@ function DroppableColumn({ id, label, color, textColor, children, count }: any) 
 }
 
 // Helper: Draggable Card Wrapper
-function DraggableCard({ ticket, onDelete, onAssign, onSendToWarehouse }: { ticket: DeliveryTicket; onDelete: (id: string) => void; onAssign: (t: DeliveryTicket) => void; onSendToWarehouse: (t: DeliveryTicket) => void }) {
+function DraggableCard({ ticket, onDelete, onAssign, onSendToWarehouse, onEdit }: { ticket: DeliveryTicket; onDelete: (id: string) => void; onAssign: (t: DeliveryTicket) => void; onSendToWarehouse: (t: DeliveryTicket) => void; onEdit?: (t: DeliveryTicket) => void }) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
         id: ticket.id,
         data: { ticket }
@@ -75,7 +76,7 @@ function DraggableCard({ ticket, onDelete, onAssign, onSendToWarehouse }: { tick
             <KanbanCard
                 ticket={ticket}
                 isRejected={(ticket.status === 'DRAFT' || ticket.status === 'DRAFTS') && !!ticket.notes}
-                onPress={() => { }} // Could open modal
+                onPress={() => onEdit && onEdit(ticket)}
                 onAssign={() => onAssign(ticket)}
             />
             {ticket.status === 'FIELD_APPROVED' && (
@@ -97,7 +98,8 @@ export default function DeliveriesView({
     tickets,
     onCreateTicket,
     onUpdateStatus,
-    onDeleteTicket
+    onDeleteTicket,
+    onEditTicket
 }: DeliveriesViewProps) {
     const { width } = useWindowDimensions();
     const [activeId, setActiveId] = React.useState<string | null>(null);
@@ -153,8 +155,18 @@ export default function DeliveriesView({
             if (newStatus === 'QUEUED') finalStatus = 'SCHEDULED';
             if (newStatus === 'DISPATCHED') finalStatus = 'IN_TRANSIT';
 
-            // Allow direct drags for simple transitions, but the status map handles the complex ones logic if needed.
-            // For now, dragging to a column sets that status.
+            // RESTRICTION: Cannot drag to FIELD_APPROVED (Ready for Warehouse) manually 
+            // unless it's already approved by both Foreman and Supervisor.
+            if (finalStatus === 'FIELD_APPROVED') {
+                const isApproved = ticket.foreman_approved && ticket.supervisor_approved;
+                if (!isApproved) {
+                    Alert.alert(
+                        "Approval Required",
+                        "This ticket requires both Foreman and Supervisor approvals before it can be moved to 'Ready for Warehouse'."
+                    );
+                    return;
+                }
+            }
 
             onUpdateStatus(ticket, finalStatus);
         }
@@ -187,6 +199,7 @@ export default function DeliveriesView({
                                             ticket={t}
                                             onDelete={onDeleteTicket}
                                             onSendToWarehouse={(ticket) => onUpdateStatus(ticket, 'SCHEDULED')}
+                                            onEdit={onEditTicket}
                                             onAssign={async (ticket) => {
                                                 try {
                                                     const workers = await SupabaseService.getWorkers();

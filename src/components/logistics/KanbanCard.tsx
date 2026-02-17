@@ -85,8 +85,15 @@ export default function KanbanCard({ ticket, onPress, onAssign, isRejected }: Ka
                         {ticket.ticket_number}
                     </Text>
                 </View>
-                <View className={clsx("px-1.5 py-0.5 rounded-[2px]", getBadgeColor())}>
-                    <Text className="text-[8px] font-black uppercase">{ticket.status}</Text>
+                <View className="flex-row gap-2">
+                    {ticket.field_modified && (
+                        <View className="bg-orange-100 px-1.5 py-0.5 rounded-[2px] border border-orange-200">
+                            <Text className="text-[8px] font-black text-orange-600 uppercase">MODIFIED</Text>
+                        </View>
+                    )}
+                    <View className={clsx("px-1.5 py-0.5 rounded-[2px]", getBadgeColor())}>
+                        <Text className="text-[8px] font-black uppercase">{ticket.status}</Text>
+                    </View>
                 </View>
             </View>
 
@@ -149,16 +156,22 @@ export default function KanbanCard({ ticket, onPress, onAssign, isRejected }: Ka
             </TouchableOpacity>
 
             {/* Footer: Expected Arrival */}
-            <View className="flex-row items-center justify-between pt-3 border-t border-slate-50">
-                <View className="flex-row items-center gap-1">
+            <View className="flex-row items-center justify-between pt-3 border-t border-slate-100">
+                <View className="flex-row items-center gap-2">
                     <Clock size={12} color="#2563eb" />
-                    <Text className="text-[11px] font-black text-blue-600">
-                        {ticket.due_time || '07:00 AM'}
-                    </Text>
+                    <View className="flex-row items-center">
+                        <Text className="text-[11px] font-black text-blue-600">
+                            {ticket.due_time || '07:00 AM'}
+                        </Text>
+                        <View className="w-1 h-1 rounded-full bg-slate-300 mx-2" />
+                        <Text className="text-[11px] font-black text-indigo-600">
+                            {formatDisplayDate(ticket.due_date || ticket.requested_date)}
+                        </Text>
+                    </View>
                 </View>
-                <Text className="text-[11px] font-bold text-slate-400">
-                    {formatDisplayDate(ticket.requested_date)}
-                </Text>
+                <View className="bg-slate-50 px-2 py-0.5 rounded-[4px] border border-slate-200">
+                    <Text className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Arrival</Text>
+                </View>
             </View>
 
             {/* Rejection Note Overlay - 11pt Status Text */}

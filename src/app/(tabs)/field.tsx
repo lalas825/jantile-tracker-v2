@@ -3,9 +3,12 @@ import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Platform, Tex
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AlertTriangle, Clock, CheckCircle2, ChevronRight, Filter, Search, ShieldCheck, XCircle, Package, Truck } from 'lucide-react-native';
-import { SupabaseService, JobIssue, DeliveryTicket } from '../../services/SupabaseService';
+import { SupabaseService, JobIssue, DeliveryTicket, ProjectMaterial } from '../../services/SupabaseService';
 import { Ionicons } from '@expo/vector-icons';
 import ReceiveMaterialModal from '../../components/modals/ReceiveMaterialModal';
+import DeliveryTicketModal from '../../components/logistics/DeliveryTicketModal';
+import { useAuth } from '../../context/AuthContext';
+import { usePowerSync } from '@powersync/react';
 
 type ActiveTab = 'issues' | 'approvals';
 
@@ -22,6 +25,11 @@ export default function FieldScreen() {
 
     const [selectedTicket, setSelectedTicket] = useState<DeliveryTicket | null>(null);
     const [receiveModalVisible, setReceiveModalVisible] = useState(false);
+    const [ticketModalVisible, setTicketModalVisible] = useState(false);
+    const [materials, setMaterials] = useState<ProjectMaterial[]>([]);
+    const { session, profile } = useAuth();
+    const db = usePowerSync();
+    const isWeb = Platform.OS === 'web';
 
     const loadData = async () => {
         setLoading(true);
@@ -29,7 +37,8 @@ export default function FieldScreen() {
             // Fetch concurrently but handle individually to be robust
             const results = await Promise.allSettled([
                 SupabaseService.getJobIssues(),
-                SupabaseService.getAllDeliveryTickets()
+                SupabaseService.getAllDeliveryTickets(),
+                isWeb ? SupabaseService.getAllProjectMaterials() : db.getAll<ProjectMaterial>('SELECT * FROM project_materials')
             ]);
 
             if (results[0].status === 'fulfilled') {
@@ -50,6 +59,10 @@ export default function FieldScreen() {
             } else {
                 console.error("FieldHub: Failed to load tickets:", results[1].reason);
             }
+
+            if (results[2].status === 'fulfilled') {
+                setMaterials(results[2].value as ProjectMaterial[]);
+            }
         } catch (error) {
             console.error("FieldHub: Critical error loading global data:", error);
         } finally {
@@ -66,11 +79,18 @@ export default function FieldScreen() {
         loadData();
     };
 
-    const handleApproval = async (ticketId: string, status: 'FIELD_APPROVED' | 'REJECTED') => {
+    const handleApproval = async (ticketId: string, action: 'APPROVE' | 'REJECT') => {
         try {
-            await SupabaseService.updateTicketStatus(ticketId, status, rejectNotes[ticketId]);
+            if (action === 'APPROVE') {
+                // FIELD TAB = Supervisor context. Always approve as supervisor here.
+                // The JobSite tab handles foreman approvals.
+                await SupabaseService.approveDeliveryTicket(ticketId, 'supervisor');
+            } else {
+                await SupabaseService.updateTicketStatus(ticketId, 'REJECTED', rejectNotes[ticketId]);
+            }
             loadData();
-        } catch (error) {
+        } catch (error: any) {
+            console.error("Approval error:", error);
             Alert.alert("Error", "Failed to update ticket status");
         }
     };
@@ -118,8 +138,27 @@ export default function FieldScreen() {
                                             <Text className="text-slate-400 text-[10px] font-black uppercase tracking-widest">{ticket.job_name || 'Project'}</Text>
                                             <Text className="text-lg font-black text-slate-900 tracking-tight">DT #{ticket.ticket_number}</Text>
                                         </View>
-                                        <View className="bg-orange-100 px-3 py-1 rounded-full border border-orange-200">
-                                            <Text className="text-orange-600 text-[9px] font-black uppercase">Field Review</Text>
+                                        <View className="flex-row items-center gap-2">
+                                            {ticket.field_modified && (
+                                                <View className="bg-amber-100 px-3 py-1 rounded-full border border-amber-200">
+                                                    <Text className="text-amber-600 text-[9px] font-black uppercase tracking-tight">Modified</Text>
+                                                </View>
+                                            )}
+                                            <View className="bg-orange-100 px-3 py-1 rounded-full border border-orange-200">
+                                                <Text className="text-orange-600 text-[9px] font-black uppercase">Field Review</Text>
+                                            </View>
+                                        </View>
+                                    </View>
+
+                                    {/* Approval Badges */}
+                                    <View className="px-5 py-2 flex-row gap-2 border-b border-slate-50 bg-slate-50/20">
+                                        <View className={`flex-row items-center px-2 py-0.5 rounded-full border ${ticket.foreman_approved ? 'bg-green-50 border-green-100' : 'bg-slate-100 border-slate-200'}`}>
+                                            <View className={`w-1.5 h-1.5 rounded-full mr-1.5 ${ticket.foreman_approved ? 'bg-green-500' : 'bg-slate-300'}`} />
+                                            <Text className={`text-[8px] font-black ${ticket.foreman_approved ? 'text-green-700' : 'text-slate-500'}`}>FOREMAN</Text>
+                                        </View>
+                                        <View className={`flex-row items-center px-2 py-0.5 rounded-full border ${ticket.supervisor_approved ? 'bg-green-50 border-green-100' : 'bg-slate-100 border-slate-200'}`}>
+                                            <View className={`w-1.5 h-1.5 rounded-full mr-1.5 ${ticket.supervisor_approved ? 'bg-green-500' : 'bg-slate-300'}`} />
+                                            <Text className={`text-[8px] font-black ${ticket.supervisor_approved ? 'text-green-700' : 'text-slate-500'}`}>SUPERVISOR</Text>
                                         </View>
                                     </View>
 
@@ -142,17 +181,31 @@ export default function FieldScreen() {
                                             </View>
                                         ))}
 
+                                        {/* Modals trigger for Field Review */}
+                                        <View className="flex-row justify-end mb-4 pr-1">
+                                            <TouchableOpacity
+                                                onPress={() => {
+                                                    setSelectedTicket(ticket);
+                                                    setTicketModalVisible(true);
+                                                }}
+                                                className="bg-slate-50 p-2 rounded-lg border border-slate-100 flex-row items-center gap-2"
+                                            >
+                                                <Ionicons name="create-outline" size={14} color="#64748b" />
+                                                <Text className="text-[10px] font-black text-slate-500 uppercase">Edit Qty / Items</Text>
+                                            </TouchableOpacity>
+                                        </View>
+
                                         <View className="mt-4 pt-4 border-t border-slate-50">
                                             {/* Action Buttons */}
                                             <View className="flex-row gap-3">
                                                 <TouchableOpacity
-                                                    onPress={() => handleApproval(ticket.id, 'FIELD_APPROVED')}
-                                                    className="flex-1 bg-emerald-600 h-12 rounded-2xl items-center justify-center shadow-lg shadow-emerald-100"
+                                                    onPress={() => handleApproval(ticket.id, 'APPROVE')}
+                                                    className="flex-1 bg-emerald-600 h-12 rounded-2xl items-center justify-center shadow-lg shadow-emerald-100 flex-row gap-2"
                                                 >
-                                                    <View className="flex-row items-center gap-2">
-                                                        <ShieldCheck size={16} color="white" />
-                                                        <Text className="text-white font-black uppercase text-xs tracking-widest">Approve</Text>
-                                                    </View>
+                                                    <ShieldCheck size={16} color="white" />
+                                                    <Text className="text-white font-black uppercase text-xs tracking-widest">
+                                                        {ticket.supervisor_approved ? 'Supervisor ✓ Approved' : 'Supervisor Approve'}
+                                                    </Text>
                                                 </TouchableOpacity>
                                                 <TouchableOpacity
                                                     onPress={() => {
@@ -160,7 +213,7 @@ export default function FieldScreen() {
                                                             Alert.alert("Reason Required", "Please enter a reason for rejection.");
                                                             return;
                                                         }
-                                                        handleApproval(ticket.id, 'REJECTED');
+                                                        handleApproval(ticket.id, 'REJECT');
                                                     }}
                                                     className="w-12 h-12 bg-white border border-slate-200 rounded-2xl items-center justify-center"
                                                 >
@@ -180,66 +233,69 @@ export default function FieldScreen() {
                             ))}
                         </View>
                     </View>
-                )}
+                )
+                }
 
                 {/* 2. ACTIVE DELIVERIES SECTION (NEW) */}
-                {activeTickets.length > 0 && (
-                    <View>
-                        <Text className="text-slate-400 text-xs font-black uppercase tracking-widest mb-4">Active Shipments & Deliveries</Text>
-                        <View className="flex-row flex-wrap gap-4">
-                            {activeTickets.map((ticket) => (
-                                <View
-                                    key={ticket.id}
-                                    style={Platform.OS === 'web' ? { width: '32%', minWidth: 320 } : { width: '100%' }}
-                                    className="bg-white rounded-3xl mb-4 border border-slate-200 shadow-sm overflow-hidden"
-                                >
-                                    {/* Ticket Header */}
-                                    <View className="p-5 border-b border-slate-50 flex-row justify-between items-center bg-blue-50/30">
-                                        <View>
-                                            <Text className="text-slate-400 text-[10px] font-black uppercase tracking-widest">{ticket.job_name || 'Project'}</Text>
-                                            <Text className="text-lg font-black text-slate-900 tracking-tight">DT #{ticket.ticket_number}</Text>
-                                        </View>
-                                        <View className="bg-blue-100 px-3 py-1 rounded-full border border-blue-200">
-                                            <Text className="text-blue-600 text-[9px] font-black uppercase">
-                                                {ticket.status === 'SHIPPED' ? 'In Transit' : 'Scheduled'}
-                                            </Text>
-                                        </View>
-                                    </View>
-
-                                    {/* Items List */}
-                                    <View className="p-5">
-                                        {ticket.items.map((item, idx) => (
-                                            <View key={idx} className="flex-row justify-between items-center mb-3">
-                                                <View className="flex-1 mr-4">
-                                                    <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>{item.product_name}</Text>
-                                                </View>
-                                                <Text className="text-xs font-black text-slate-900">
-                                                    {item.qty.toLocaleString()} {item.unit || 'SQFT'}
+                {
+                    activeTickets.length > 0 && (
+                        <View>
+                            <Text className="text-slate-400 text-xs font-black uppercase tracking-widest mb-4">Active Shipments & Deliveries</Text>
+                            <View className="flex-row flex-wrap gap-4">
+                                {activeTickets.map((ticket) => (
+                                    <View
+                                        key={ticket.id}
+                                        style={Platform.OS === 'web' ? { width: '32%', minWidth: 320 } : { width: '100%' }}
+                                        className="bg-white rounded-3xl mb-4 border border-slate-200 shadow-sm overflow-hidden"
+                                    >
+                                        {/* Ticket Header */}
+                                        <View className="p-5 border-b border-slate-50 flex-row justify-between items-center bg-blue-50/30">
+                                            <View>
+                                                <Text className="text-slate-400 text-[10px] font-black uppercase tracking-widest">{ticket.job_name || 'Project'}</Text>
+                                                <Text className="text-lg font-black text-slate-900 tracking-tight">DT #{ticket.ticket_number}</Text>
+                                            </View>
+                                            <View className="bg-blue-100 px-3 py-1 rounded-full border border-blue-200">
+                                                <Text className="text-blue-600 text-[9px] font-black uppercase">
+                                                    {ticket.status === 'SHIPPED' ? 'In Transit' : 'Scheduled'}
                                                 </Text>
                                             </View>
-                                        ))}
+                                        </View>
 
-                                        <View className="mt-4 pt-4 border-t border-slate-50">
-                                            <TouchableOpacity
-                                                onPress={() => {
-                                                    setSelectedTicket(ticket);
-                                                    setReceiveModalVisible(true);
-                                                }}
-                                                className="bg-slate-900 h-12 rounded-2xl items-center justify-center shadow-lg shadow-slate-200"
-                                            >
-                                                <View className="flex-row items-center gap-2">
-                                                    <Package size={16} color="white" />
-                                                    <Text className="text-white font-black uppercase text-xs tracking-widest">Receive Material</Text>
+                                        {/* Items List */}
+                                        <View className="p-5">
+                                            {ticket.items.map((item, idx) => (
+                                                <View key={idx} className="flex-row justify-between items-center mb-3">
+                                                    <View className="flex-1 mr-4">
+                                                        <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>{item.product_name}</Text>
+                                                    </View>
+                                                    <Text className="text-xs font-black text-slate-900">
+                                                        {item.qty.toLocaleString()} {item.unit || 'SQFT'}
+                                                    </Text>
                                                 </View>
-                                            </TouchableOpacity>
+                                            ))}
+
+                                            <View className="mt-4 pt-4 border-t border-slate-50">
+                                                <TouchableOpacity
+                                                    onPress={() => {
+                                                        setSelectedTicket(ticket);
+                                                        setReceiveModalVisible(true);
+                                                    }}
+                                                    className="bg-slate-900 h-12 rounded-2xl items-center justify-center shadow-lg shadow-slate-200"
+                                                >
+                                                    <View className="flex-row items-center gap-2">
+                                                        <Package size={16} color="white" />
+                                                        <Text className="text-white font-black uppercase text-xs tracking-widest">Receive Material</Text>
+                                                    </View>
+                                                </TouchableOpacity>
+                                            </View>
                                         </View>
                                     </View>
-                                </View>
-                            ))}
+                                ))}
+                            </View>
                         </View>
-                    </View>
-                )}
-            </View>
+                    )
+                }
+            </View >
         );
     };
 
@@ -387,6 +443,20 @@ export default function FieldScreen() {
                 ticket={selectedTicket}
                 onSuccess={handleActionComplete}
             />
+
+            {ticketModalVisible && selectedTicket && (
+                <DeliveryTicketModal
+                    visible={ticketModalVisible}
+                    onClose={() => setTicketModalVisible(false)}
+                    materials={materials}
+                    jobId={selectedTicket.job_id}
+                    jobName={selectedTicket.job_name || 'Project'}
+                    onSuccess={handleActionComplete}
+                    initialData={selectedTicket}
+                    isFieldReview={true}
+                    role={'supervisor'}
+                />
+            )}
         </SafeAreaView>
     );
 }

@@ -121,6 +121,7 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
     const [lockedAreaId, setLockedAreaId] = useState<string | undefined>(undefined);
     const [editAreaModalVisible, setEditAreaModalVisible] = useState(false);
     const [selectedAreaForEdit, setSelectedAreaForEdit] = useState<any>(null);
+    const [selectedTicket, setSelectedTicket] = useState<DeliveryTicket | null>(null);
 
     // View State
     const [expandedAreas, setExpandedAreas] = useState<Record<string, boolean>>({});
@@ -456,6 +457,11 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
         }
     };
 
+    const handleEditTicket = (ticket: DeliveryTicket) => {
+        setSelectedTicket(ticket);
+        setTicketModalVisible(true);
+    };
+
     const handleSaveMaterial = async (mat: Partial<ProjectMaterial>) => {
         try {
             await SupabaseService.saveProjectMaterial({ ...mat, job_id: job.id });
@@ -609,9 +615,13 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                         {viewMode === 'deliveries' && (
                             <DeliveriesView
                                 tickets={finalTickets as DeliveryTicket[]}
-                                onCreateTicket={() => setTicketModalVisible(true)}
+                                onCreateTicket={() => {
+                                    setSelectedTicket(null);
+                                    setTicketModalVisible(true);
+                                }}
                                 onUpdateStatus={handleUpdateTicketStatus}
                                 onDeleteTicket={handleDeleteTicket}
+                                onEditTicket={handleEditTicket}
                             />
                         )}
                     </>
@@ -634,15 +644,20 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
             {ticketModalVisible && (
                 <DeliveryTicketModal
                     visible={ticketModalVisible}
-                    onClose={() => setTicketModalVisible(false)}
+                    onClose={() => {
+                        setTicketModalVisible(false);
+                        setSelectedTicket(null);
+                    }}
                     materials={finalMaterials as ProjectMaterial[]}
                     jobId={job.id}
                     jobName={job.name}
+                    initialData={selectedTicket}
                     onSuccess={() => {
                         if (isWeb) {
                             SupabaseService.getDeliveryTickets(job.id).then(setWebTickets);
                         }
-                        setTicketModalVisible(false); // Added to ensure modal closes
+                        setTicketModalVisible(false);
+                        setSelectedTicket(null);
                     }}
                 />
             )}

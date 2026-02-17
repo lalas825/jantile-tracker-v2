@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import clsx from 'clsx';
 import { View, Text, TouchableOpacity, Modal, ScrollView, TextInput, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ProjectMaterial, SupabaseService, formatDisplayDate } from '../../services/SupabaseService';
+import { ProjectMaterial, SupabaseService, formatDisplayDate, DeliveryTicket } from '../../services/SupabaseService';
 import { useAuth } from '../../context/AuthContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -12,11 +13,17 @@ interface DeliveryTicketModalProps {
     jobId: string;
     jobName: string;
     onSuccess: () => void;
+    initialData?: DeliveryTicket | null;
+    isFieldReview?: boolean;
+    role?: 'foreman' | 'supervisor';
 }
 
 type Step = 'DESTINATION' | 'MATERIALS' | 'VENDOR_INTAKE' | 'REVIEW';
 
-export default function DeliveryTicketModal({ visible, onClose, materials, jobId, jobName, onSuccess }: DeliveryTicketModalProps) {
+export default function DeliveryTicketModal({
+    visible, onClose, materials, jobId, jobName, onSuccess,
+    initialData, isFieldReview, role
+}: DeliveryTicketModalProps) {
     const { session } = useAuth();
     const [step, setStep] = useState<Step>('DESTINATION');
     const [destination, setDestination] = useState<'warehouse' | 'vendor_direct'>('warehouse');
@@ -38,6 +45,53 @@ export default function DeliveryTicketModal({ visible, onClose, materials, jobId
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [pickerType, setPickerType] = useState<'due_date' | 'vendor_arrival'>('due_date');
+
+    useEffect(() => {
+        if (initialData && visible) {
+            const isVendorDirect = initialData.destination === 'Vendor Direct';
+            setDestination(isVendorDirect ? 'vendor_direct' : 'warehouse');
+            setNotes(initialData.notes || '');
+            setDueDate(initialData.due_date || new Date().toISOString().split('T')[0]);
+            setDueTime(initialData.due_time || '07:00 AM');
+            setStep('REVIEW'); // Start at review when editing
+
+            if (isVendorDirect) {
+                const firstItem = initialData.items?.[0] || {};
+                setVendorData({
+                    material_code: firstItem.product_code || '',
+                    material_name: firstItem.product_name || '',
+                    dimensions: firstItem.dimensions || '',
+                    qty: String(firstItem.qty || ''),
+                    vendor_name: firstItem.vendor_name || '',
+                    estimated_arrival: initialData.due_date || new Date().toISOString().split('T')[0]
+                });
+            } else {
+                const materialMap: Record<string, number> = {};
+                (initialData.items || []).forEach((item: any) => {
+                    if (item.material_id) {
+                        materialMap[item.material_id] = item.qty || 0;
+                    }
+                });
+                setSelectedMaterials(materialMap);
+            }
+        } else if (visible) {
+            // Reset for new ticket
+            setStep('DESTINATION');
+            setDestination('warehouse');
+            setSelectedMaterials({});
+            setVendorData({
+                material_code: '',
+                material_name: '',
+                dimensions: '',
+                qty: '',
+                vendor_name: '',
+                estimated_arrival: new Date().toISOString().split('T')[0]
+            });
+            setNotes('');
+            setDueDate(new Date().toISOString().split('T')[0]);
+            setDueTime('07:00 AM');
+        }
+    }, [initialData, visible]);
 
     const onDateChange = (event: any, selectedDate?: Date) => {
         const currentDate = selectedDate || new Date();
@@ -93,7 +147,7 @@ export default function DeliveryTicketModal({ visible, onClose, materials, jobId
         }));
     };
 
-    const handleSave = async (status: 'DRAFT' | 'PENDING_APPROVAL' | 'SCHEDULED' | 'PENDING_FIELD_REVIEW') => {
+    const handleSave = async (status: 'DRAFT' | 'PENDING_APPROVAL' | 'SCHEDULED' | 'PENDING_FIELD_REVIEW' | 'FIELD_APPROVED') => {
         setIsSaving(true);
         try {
             const isVendorDirect = destination === 'vendor_direct';
@@ -118,7 +172,7 @@ export default function DeliveryTicketModal({ visible, onClose, materials, jobId
                         product_name: mat?.product_name,
                         product_code: mat?.product_code,
                         category: mat?.category,
-                        qty,
+                        qty: typeof qty === 'string' ? (parseFloat(qty) || 0) : qty,
                         unit: mat?.unit,
                         dimensions: mat?.product_specs || (mat?.dim_length && mat?.dim_width ? `${mat?.dim_length}x${mat?.dim_width}${mat?.dim_thickness ? `x${mat?.dim_thickness}` : ''}` : null),
                         sqft_per_piece: mat?.sqft_per_piece
@@ -132,18 +186,52 @@ export default function DeliveryTicketModal({ visible, onClose, materials, jobId
                 return;
             }
 
-            await SupabaseService.saveDeliveryTicket({
+            // Check for modifications if in field review
+            let fieldModified = initialData?.field_modified || false;
+            if (isFieldReview && initialData) {
+                const originalItems = (initialData.items || []).map((i: any) => `${i.material_id}:${i.qty}`).sort().join('|');
+                const currentItems = items.map((i: any) => `${i.material_id}:${i.qty}`).sort().join('|');
+                if (originalItems !== currentItems) {
+                    fieldModified = true;
+                }
+            }
+
+            const payload: any = {
+                ...initialData,
                 job_id: jobId,
                 status,
                 items,
                 destination: isVendorDirect ? 'Vendor Direct' : 'Inventory',
-                requested_date: new Date().toISOString().split('T')[0],
+                requested_date: initialData?.requested_date || new Date().toISOString().split('T')[0],
                 due_date: isVendorDirect ? vendorData.estimated_arrival : dueDate,
                 due_time: dueTime,
                 notes,
-                created_by: session?.user?.id,
-                job_name: jobName // Ensure job_name is passed for easier display
-            });
+                created_by: initialData?.created_by || session?.user?.id,
+                job_name: jobName,
+                field_modified: fieldModified,
+                updated_at: new Date().toISOString()
+            };
+
+            // If a role is provided AND we are in field review, mark as approved
+            if (isFieldReview) {
+                // ROBUST ROLE MATCHING: Anyone who isn't a foreman acts as a supervisor/approver here
+                if (role?.toLowerCase() === 'foreman') {
+                    payload.foreman_approved = true;
+                } else {
+                    payload.supervisor_approved = true;
+                }
+
+                // AUTO-ADVANCE STATUS: If BOTH are now approved, move to FIELD_APPROVED
+                if (payload.foreman_approved && payload.supervisor_approved) {
+                    payload.status = 'FIELD_APPROVED';
+                }
+            }
+
+            // If BOTH are approved and we are in field review, we might want to auto-move to FIELD_APPROVED
+            // But let's follow the SupabaseService.approveDeliveryTicket logic if possible.
+            // Actually, handleSave is for saving the whole ticket.
+
+            await SupabaseService.saveDeliveryTicket(payload);
 
             // LOGISTICS SYNC: For Vendor Direct shipments, increment 'in_transit' and 'received_at_job' (Shipped)
             if (isVendorDirect && (status === 'PENDING_APPROVAL' || status === 'SCHEDULED')) {
@@ -618,33 +706,50 @@ export default function DeliveryTicketModal({ visible, onClose, materials, jobId
                                                         })()}
                                                     </View>
                                                 </View>
-                                                <View className="items-end">
-                                                    <View className="bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 min-w-[80px] items-center">
-                                                        <Text className="text-sm font-black text-slate-800">
-                                                            {selectedMaterials[m.id].toLocaleString()}
-                                                            {(() => {
-                                                                const isTileOrStone = ['tile', 'stone', 'slab', 'base'].includes((m.category || '').toLowerCase());
-                                                                if (isTileOrStone && m.sqft_per_piece && m.sqft_per_piece > 0) {
-                                                                    const pcs = Math.ceil(selectedMaterials[m.id] / m.sqft_per_piece);
-                                                                    return ` (${pcs.toLocaleString()} PCS)`;
-                                                                }
-                                                                return '';
-                                                            })()}
-                                                        </Text>
+                                                <View className="items-end gap-2">
+                                                    <View className={clsx(
+                                                        "px-4 py-2 rounded-xl border min-w-[100px] items-center flex-row justify-center gap-2",
+                                                        isFieldReview ? "bg-orange-50 border-orange-200" : "bg-slate-50 border-slate-200"
+                                                    )}>
+                                                        {isFieldReview ? (
+                                                            <TextInput
+                                                                className="text-sm font-black text-orange-900 w-full text-center outline-none"
+                                                                keyboardType="numeric"
+                                                                value={String(selectedMaterials[m.id])}
+                                                                onChangeText={(v) => updateQty(m.id, v)}
+                                                            />
+                                                        ) : (
+                                                            <Text className="text-sm font-black text-slate-800">
+                                                                {selectedMaterials[m.id].toLocaleString()}
+                                                            </Text>
+                                                        )}
                                                     </View>
-                                                    <Text className="text-[9px] font-black text-slate-400 uppercase mt-1.5">{m.unit || 'SQFT'}</Text>
+                                                    <Text className="text-[9px] font-black text-slate-400 uppercase">{m.unit || 'SQFT'}</Text>
                                                 </View>
                                             </View>
                                         ))}
-                                        <TouchableOpacity
-                                            onPress={() => setStep('MATERIALS')}
-                                            className="p-4 items-center border-t border-slate-100"
-                                        >
-                                            <View className="flex-row items-center gap-2">
-                                                <Ionicons name="add" size={16} color="#2563eb" />
-                                                <Text className="text-[10px] font-black text-blue-600 uppercase">Add More Items</Text>
-                                            </View>
-                                        </TouchableOpacity>
+                                        {!isFieldReview && (
+                                            <TouchableOpacity
+                                                onPress={() => setStep('MATERIALS')}
+                                                className="p-4 items-center border-t border-slate-100"
+                                            >
+                                                <View className="flex-row items-center gap-2">
+                                                    <Ionicons name="add" size={16} color="#2563eb" />
+                                                    <Text className="text-[10px] font-black text-blue-600 uppercase">Add More Items</Text>
+                                                </View>
+                                            </TouchableOpacity>
+                                        )}
+                                        {isFieldReview && (
+                                            <TouchableOpacity
+                                                onPress={() => setStep('MATERIALS')}
+                                                className="p-4 items-center border-t border-slate-100"
+                                            >
+                                                <View className="flex-row items-center gap-2">
+                                                    <Ionicons name="cart-outline" size={16} color="#ea580c" />
+                                                    <Text className="text-[10px] font-black text-orange-600 uppercase">Request New Material</Text>
+                                                </View>
+                                            </TouchableOpacity>
+                                        )}
                                     </>
                                 )}
                             </View>
@@ -665,25 +770,37 @@ export default function DeliveryTicketModal({ visible, onClose, materials, jobId
                             <TouchableOpacity onPress={() => setStep(destination === 'warehouse' ? 'MATERIALS' : 'VENDOR_INTAKE')} className="px-4"><Text className="text-slate-400 font-bold text-sm">Back</Text></TouchableOpacity>
 
                             <View className="flex-row gap-3">
-                                <TouchableOpacity
-                                    onPress={() => handleSave('DRAFT')}
-                                    className="bg-white border border-slate-200 px-6 py-3.5 rounded-2xl items-center"
-                                >
-                                    <Text className="text-slate-900 font-black uppercase tracking-tight text-[10px]">Save Draft</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => handleSave('PENDING_FIELD_REVIEW')}
-                                    className="bg-orange-500 px-6 py-3.5 rounded-2xl items-center shadow-lg shadow-orange-100"
-                                >
-                                    <Text className="text-white font-black uppercase tracking-tight text-[10px]">Request Approval</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => handleSave('SCHEDULED')}
-                                    className="bg-blue-600 px-6 py-3.5 rounded-2xl items-center shadow-lg shadow-blue-200 flex-row gap-2"
-                                >
-                                    <Ionicons name="send" size={14} color="white" />
-                                    <Text className="text-white font-black uppercase tracking-widest text-[10px]">Send to Warehouse</Text>
-                                </TouchableOpacity>
+                                {isFieldReview ? (
+                                    <TouchableOpacity
+                                        onPress={() => handleSave('PENDING_FIELD_REVIEW')}
+                                        className="bg-orange-500 px-10 py-3.5 rounded-2xl items-center shadow-lg shadow-orange-100 flex-row gap-2"
+                                    >
+                                        <Ionicons name="checkmark-circle" size={16} color="white" />
+                                        <Text className="text-white font-black uppercase tracking-widest text-[10px]">Submit Review</Text>
+                                    </TouchableOpacity>
+                                ) : (
+                                    <>
+                                        <TouchableOpacity
+                                            onPress={() => handleSave('DRAFT')}
+                                            className="bg-white border border-slate-200 px-6 py-3.5 rounded-2xl items-center"
+                                        >
+                                            <Text className="text-slate-900 font-black uppercase tracking-tight text-[10px]">Save Draft</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            onPress={() => handleSave('PENDING_FIELD_REVIEW')}
+                                            className="bg-orange-500 px-6 py-3.5 rounded-2xl items-center shadow-lg shadow-orange-100"
+                                        >
+                                            <Text className="text-white font-black uppercase tracking-tight text-[10px]">Request Approval</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            onPress={() => handleSave('SCHEDULED')}
+                                            className="bg-blue-600 px-6 py-3.5 rounded-2xl items-center shadow-lg shadow-blue-200 flex-row gap-2"
+                                        >
+                                            <Ionicons name="send" size={14} color="white" />
+                                            <Text className="text-white font-black uppercase tracking-widest text-[10px]">Send to Warehouse</Text>
+                                        </TouchableOpacity>
+                                    </>
+                                )}
                             </View>
                         </View>
                     </View>

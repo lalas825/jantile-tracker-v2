@@ -203,6 +203,9 @@ export interface DeliveryTicket {
     assigned_to?: string;
     assigned_worker_name?: string;
     truck_id?: string;
+    supervisor_approved?: boolean;
+    foreman_approved?: boolean;
+    field_modified?: boolean;
     created_by: string;
     created_at: string;
     updated_at: string;
@@ -1586,6 +1589,23 @@ export const SupabaseService = {
         return result || [];
     },
 
+    async getAllProjectMaterials(): Promise<ProjectMaterial[]> {
+        if (useSupabase) {
+            const { data, error } = await supabase
+                .from('project_materials')
+                .select('*')
+                .order('category', { ascending: true })
+                .order('product_name', { ascending: true });
+            if (error) throw error;
+            return data || [];
+        }
+
+        const result = await db.getAll(
+            `SELECT * FROM project_materials ORDER BY category ASC, product_name ASC`
+        );
+        return result || [];
+    },
+
     async saveProjectMaterial(material: Partial<ProjectMaterial>): Promise<void> {
         // Robust UUID fallback for web
         const generateId = () => {
@@ -1737,10 +1757,16 @@ export const SupabaseService = {
                 .eq('job_id', jobId)
                 .order('created_at', { ascending: false });
             if (error) throw error;
-            return (data || []).map((t: any) => ({
-                ...t,
-                items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items
-            }));
+            return (data || []).map((t: any) => {
+                const items = typeof t.items === 'string' ? JSON.parse(t.items) : t.items;
+                // EXTRACTION WORKAROUND: If truck_id is missing, try to find it in notes
+                let truckId = t.truck_id;
+                if (!truckId && t.notes?.includes('[Carrier: ')) {
+                    const match = t.notes.match(/\[Carrier: (.*?)\]/);
+                    if (match) truckId = match[1];
+                }
+                return { ...t, items, truck_id: truckId };
+            });
         }
 
         const result = await db.getAll(
@@ -1794,16 +1820,47 @@ export const SupabaseService = {
         }
 
         if (useSupabase) {
+            // ROBUST SANITIZATION: Only keep real DB columns
+            const allowedCols = [
+                'id', 'job_id', 'ticket_number', 'status', 'items', 'destination',
+                'requested_date', 'due_date', 'due_time', 'scheduled_time', 'notes',
+                'assigned_to', 'truck_id', 'supervisor_approved', 'foreman_approved',
+                'field_modified', 'job_name', 'created_by', 'created_at', 'updated_at'
+            ];
+
+            const sanitizedTicket: any = {};
+            allowedCols.forEach(col => {
+                if ((ticket as any)[col] !== undefined) sanitizedTicket[col] = (ticket as any)[col];
+            });
+
+            // UUID Fallback for truck_id
+            let finalNotes = sanitizedTicket.notes || '';
+            const rawTruckId = sanitizedTicket.truck_id;
+            const isUUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(rawTruckId || '');
+
+            if (rawTruckId && !isUUID) {
+                finalNotes = finalNotes.replace(/\[Carrier: .*?\]/g, '').trim();
+                finalNotes = (finalNotes ? finalNotes + '\n' : '') + `[Carrier: ${rawTruckId}]`;
+                sanitizedTicket.truck_id = null;
+                sanitizedTicket.notes = finalNotes;
+            }
+
             const payload = {
-                ...ticket,
+                ...sanitizedTicket,
                 id,
                 ticket_number,
                 job_id: ticket.job_id && ticket.job_id !== '' ? ticket.job_id : null,
-                items: JSON.stringify(ticket.items || []),
+                items: ticket.items || [],
                 updated_at: now
             };
+
             const { error } = await supabase.from('delivery_tickets').upsert(payload);
-            if (error) throw error;
+            if (error) {
+                if (Platform.OS === 'web') {
+                    window.alert(`SUPABASE SAVE ERROR:\n${error.message}\n${JSON.stringify(error)}`);
+                }
+                throw error;
+            }
             return;
         }
 
@@ -1813,13 +1870,17 @@ export const SupabaseService = {
                 `INSERT OR REPLACE INTO delivery_tickets (
                     id, job_id, job_name, ticket_number, status, items, destination, 
                     requested_date, due_date, due_time, notes, assigned_to, truck_id,
+                    supervisor_approved, foreman_approved, field_modified,
                     created_by, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     id, ticket.job_id, ticket.job_name || null, ticket_number, ticket.status || 'draft',
                     JSON.stringify(ticket.items || []), ticket.destination,
                     ticket.requested_date, ticket.due_date || null, ticket.due_time || null,
                     ticket.notes || null, ticket.assigned_to || null, ticket.truck_id || null,
+                    ticket.supervisor_approved ? 1 : 0,
+                    ticket.foreman_approved ? 1 : 0,
+                    ticket.field_modified ? 1 : 0,
                     ticket.created_by,
                     ticket.created_at || now, now
                 ]
@@ -1850,6 +1911,48 @@ export const SupabaseService = {
             [date, time, now, id]);
     },
 
+    async approveDeliveryTicket(ticketId: string, role: string): Promise<void> {
+        const now = new Date().toISOString();
+        const isForeman = role?.toLowerCase() === 'foreman';
+
+        // 1. Fetch CURRENT state from DB to ensure we don't overwrite the other person's approval
+        const { data: ticket, error: fetchErr } = await supabase
+            .from('delivery_tickets')
+            .select('foreman_approved, supervisor_approved')
+            .eq('id', ticketId)
+            .single();
+
+        if (fetchErr) throw fetchErr;
+
+        const updates: any = { updated_at: now };
+        if (isForeman) {
+            updates.foreman_approved = true;
+        } else {
+            updates.supervisor_approved = true;
+        }
+
+        // 2. Determine if BOTH are approved (using current DB state + this update)
+        const isFA = isForeman || !!ticket.foreman_approved;
+        const isSA = (!isForeman) || !!ticket.supervisor_approved;
+
+        if (isFA && isSA) {
+            updates.status = 'FIELD_APPROVED';
+        }
+
+        if (useSupabase) {
+            const { error } = await supabase.from('delivery_tickets').update(updates).eq('id', ticketId);
+            if (error) throw error;
+        } else {
+            const clauses = [];
+            const params = [];
+            if (updates.foreman_approved) { clauses.push('foreman_approved = 1'); }
+            if (updates.supervisor_approved) { clauses.push('supervisor_approved = 1'); }
+            if (updates.status) { clauses.push('status = ?'); params.push(updates.status); }
+            params.push(now, ticketId);
+            await db.execute(`UPDATE delivery_tickets SET ${clauses.join(', ')}, updated_at = ? WHERE id = ?`, params);
+        }
+    },
+
     async updateTicketStatus(ticketId: string, status: string, notes?: string, truckId?: string): Promise<void> {
         const now = new Date().toISOString();
         // PM Rejection Loop: If a Supervisor rejects, it goes back to DRAFT for the PM
@@ -1859,10 +1962,12 @@ export const SupabaseService = {
             const updates: any = { status: finalStatus, updated_at: now };
             if (notes) updates.notes = notes;
             if (truckId) {
-                // WORKAROUND: Server might enforce UUID for truck_id, but we use free text.
-                // Saving to notes to prevent crash.
                 updates.notes = (updates.notes ? updates.notes + '\n' : '') + ` [Carrier: ${truckId}]`;
-                // updates.truck_id = truckId; 
+            }
+            // When dragging back to PENDING_FIELD_REVIEW, reset approval flags for a clean review cycle
+            if (finalStatus === 'PENDING_FIELD_REVIEW') {
+                updates.foreman_approved = false;
+                updates.supervisor_approved = false;
             }
             const { error } = await supabase.from('delivery_tickets').update(updates).eq('id', ticketId);
             if (error) throw error;
@@ -2019,12 +2124,19 @@ export const SupabaseService = {
         // Join items separately for PowerSync
         const pos = [];
         for (const po of result) {
-            const items = await db.getAll(`
+            const items = (await db.getAll(`
                 SELECT pi.*, pm.product_name, pm.product_code, pm.category as material_category, pm.unit, pm.pcs_per_unit, pm.pieces_per_crate, pm.dim_length, pm.dim_width, pm.dim_thickness, pm.sqft_per_piece
                 FROM po_items pi
                 JOIN project_materials pm ON pi.material_id = pm.id
                 WHERE pi.po_id = ?
-            `, [po.id]);
+            `, [po.id])).map((item: any) => ({
+                ...item,
+                dims: {
+                    length: item.dim_length,
+                    width: item.dim_width,
+                    thickness: item.dim_thickness
+                }
+            }));
             pos.push({ ...po, items });
         }
         return pos;
@@ -2084,12 +2196,19 @@ export const SupabaseService = {
 
         const pos = [];
         for (const po of result) {
-            const items = await db.getAll(`
-                SELECT pi.*, pm.product_name, pm.product_code, pm.category as material_category, pm.dim_length, pm.dim_width, pm.dim_thickness
+            const items = (await db.getAll(`
+                SELECT pi.*, pm.product_name, pm.product_code, pm.category as material_category, pm.unit, pm.pcs_per_unit, pm.pieces_per_crate, pm.dim_length, pm.dim_width, pm.dim_thickness, pm.sqft_per_piece
                 FROM po_items pi
                 JOIN project_materials pm ON pi.material_id = pm.id
                 WHERE pi.po_id = ?
-            `, [po.id]);
+            `, [po.id])).map((item: any) => ({
+                ...item,
+                dims: {
+                    length: item.dim_length,
+                    width: item.dim_width,
+                    thickness: item.dim_thickness
+                }
+            }));
 
             const discrepancies = await db.getAll(`
                 SELECT * FROM material_claims WHERE po_id = ?
@@ -2153,15 +2272,16 @@ export const SupabaseService = {
                         console.log(`[Supabase SERVICE] GRANULAR Mode - Qty: ${finalReceivedQty} => ${finalReceivedPieces} Pcs`);
                     }
 
+                    const missingQty = Math.max(0, receipt.qty_ordered - finalReceivedQty);
+
                     const updatePayload = {
                         shop_stock: (mat.shop_stock || 0) + (receipt.condition === 'Verified' ? finalReceivedQty : 0),
                         in_warehouse_qty: (mat.in_warehouse_qty || 0) + (receipt.condition === 'Verified' ? finalReceivedQty : 0),
                         in_warehouse_pieces: (mat.in_warehouse_pieces || 0) + (receipt.condition === 'Verified' ? finalReceivedPieces : 0),
                         qty_damaged: (mat.qty_damaged || 0) + (receipt.condition === 'Damaged' ? finalReceivedQty : 0),
-                        qty_missing: (mat.qty_missing || 0) + (receipt.condition === 'Missing' ? finalReceivedQty : 0),
-                        in_transit: Math.max(0, (mat.in_transit || 0) - finalReceivedQty),
-                        // BUG FIX: Decrement only by what was actually received, not the total order
-                        ordered_qty: Math.max(0, (mat.ordered_qty || 0) - finalReceivedQty),
+                        qty_missing: (mat.qty_missing || 0) + missingQty,
+                        in_transit: Math.max(0, (mat.in_transit || 0) - receipt.qty_ordered),
+                        ordered_qty: Math.max(0, (mat.ordered_qty || 0) - receipt.qty_ordered),
                         updated_at: new Date().toISOString()
                     };
 
@@ -2182,9 +2302,11 @@ export const SupabaseService = {
                         console.log(`[Supabase SERVICE] Material ${receipt.material_id} updated successfully.`);
                     }
 
-                    // 2. Log Discrepancies if any
+                    // 2. Log Discrepancies or Documentation if any
                     const hasDiscrepancy = receipt.condition !== 'Verified' || finalReceivedQty < (receipt.qty_ordered - 0.01);
-                    if (hasDiscrepancy) {
+                    const hasDocumentation = receipt.notes || receipt.photo_url;
+
+                    if (hasDiscrepancy || hasDocumentation) {
                         const { error: claimError } = await supabase.from('material_claims').insert({
                             po_id: poId,
                             material_id: receipt.material_id,
@@ -2200,7 +2322,7 @@ export const SupabaseService = {
                             photo_url: receipt.photo_url,
                             created_by: userId
                         });
-                        if (claimError) console.error("[Supabase SERVICE] Claim Error:", claimError);
+                        if (claimError) console.error("[Supabase SERVICE] Claim/Doc Error:", claimError);
                     }
 
                     // 3. Update PO Item received qty
@@ -2273,23 +2395,35 @@ export const SupabaseService = {
                     }
 
                     // Update Project Materials
+                    const missingQty = Math.max(0, receipt.qty_ordered - finalReceivedQty);
+
                     await tx.execute(`
                         UPDATE project_materials 
                         SET shop_stock = COALESCE(shop_stock, 0) + ?,
                             in_warehouse_qty = COALESCE(in_warehouse_qty, 0) + ?,
                             in_warehouse_pieces = COALESCE(in_warehouse_pieces, 0) + ?,
-                            ordered_qty = MAX(0, COALESCE(ordered_qty, 0) - ?)
+                            qty_damaged = COALESCE(qty_damaged, 0) + ?,
+                            qty_missing = COALESCE(qty_missing, 0) + ?,
+                            in_transit = MAX(0, COALESCE(in_transit, 0) - ?),
+                            ordered_qty = MAX(0, COALESCE(ordered_qty, 0) - ?),
+                            updated_at = datetime('now')
                         WHERE id = ?
                     `, [
                         receipt.condition === 'Verified' ? finalReceivedQty : 0,
                         receipt.condition === 'Verified' ? finalReceivedQty : 0,
                         receipt.condition === 'Verified' ? finalReceivedPieces : 0,
-                        finalReceivedQty, // Fixed to finalReceivedQty
+                        receipt.condition === 'Damaged' ? finalReceivedQty : 0,
+                        missingQty,
+                        receipt.qty_ordered,
+                        receipt.qty_ordered,
                         receipt.material_id
                     ]);
 
-                    // Log Discrepancy
-                    if (receipt.condition !== 'Verified' || finalReceivedQty < (receipt.qty_ordered - 0.01)) {
+                    // Log Discrepancy or Documentation
+                    const hasDiscrepancy = receipt.condition !== 'Verified' || finalReceivedQty < (receipt.qty_ordered - 0.01);
+                    const hasDocumentation = receipt.notes || receipt.photo_url;
+
+                    if (hasDiscrepancy || hasDocumentation) {
                         await tx.execute(`
                             INSERT INTO material_claims (po_id, material_id, expected_qty, received_qty, difference, pieces_expected, pieces_received, pieces_difference, condition_flag, receipt_mode, notes, photo_url, created_by, created_at)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -2324,6 +2458,134 @@ export const SupabaseService = {
                 SET status = ?, received_at = datetime('now'), received_by = ?, updated_at = datetime('now')
                 WHERE id = ?
             `, [overallHasDiscrepancy ? 'Received with Discrepancy' : 'Received', userId, poId]);
+        });
+    },
+
+    async revertPurchaseOrderIntake(poId: string, userId: string) {
+        if (useSupabase) {
+            console.log(`[Supabase SERVICE] revertPurchaseOrderIntake START for PO: ${poId}`);
+
+            // 1. Fetch current PO items and claims
+            const { data: poItems, error: itemsError } = await supabase.from('po_items').select('*').eq('po_id', poId);
+            const { data: claims, error: claimsError } = await supabase.from('material_claims').select('*').eq('po_id', poId);
+
+            if (itemsError) throw itemsError;
+            if (claimsError) throw claimsError;
+
+            // Rollback each item that was received
+            for (const item of (poItems || [])) {
+                // IMPORTANT: Process all items, even those with 0 received_qty (they could be 'Missing')
+                const claim = claims?.find(c => c.material_id === item.material_id);
+                const { data: mat } = await supabase.from('project_materials').select('*').eq('id', item.material_id).single();
+
+                if (mat) {
+                    const condition = claim?.condition_flag || 'V';
+                    const isVerified = condition === 'V';
+                    const isDamaged = condition === 'D';
+                    const receivedQty = item.received_qty || 0;
+                    const expectedQty = item.quantity_ordered || 0;
+                    const missingQty = Math.max(0, expectedQty - receivedQty);
+
+                    // Calculate pieces if not in claim (for Verified items)
+                    const derivedSqftPerPiece = mat.sqft_per_piece ||
+                        ((mat.dim_length && mat.dim_width) ? (mat.dim_length * mat.dim_width) / 144 : (1 / (mat.pcs_per_unit || 1)));
+                    const receivedPieces = claim?.pieces_received || Math.round(receivedQty / (derivedSqftPerPiece || 1));
+
+                    const updatePayload = {
+                        shop_stock: Math.max(0, (mat.shop_stock || 0) - (isVerified ? receivedQty : 0)),
+                        in_warehouse_qty: Math.max(0, (mat.in_warehouse_qty || 0) - (isVerified ? receivedQty : 0)),
+                        in_warehouse_pieces: Math.max(0, (mat.in_warehouse_pieces || 0) - (isVerified ? receivedPieces : 0)),
+                        qty_damaged: Math.max(0, (mat.qty_damaged || 0) - (isDamaged ? receivedQty : 0)),
+                        qty_missing: Math.max(0, (mat.qty_missing || 0) - missingQty),
+                        ordered_qty: (mat.ordered_qty || 0) + expectedQty,
+                        in_transit: (mat.in_transit || 0) + expectedQty,
+                        updated_at: new Date().toISOString()
+                    };
+
+                    console.log(`[Supabase SERVICE] Reverting material ${item.material_id}:`, updatePayload);
+                    await supabase.from('project_materials').update(updatePayload).eq('id', item.material_id);
+                }
+            }
+
+            // 2. Clear PO Items received_qty
+            await supabase.from('po_items').update({ received_qty: 0 }).eq('po_id', poId);
+
+            // 3. Delete Claims
+            await supabase.from('material_claims').delete().eq('po_id', poId);
+
+            // 4. Reset PO Status
+            await supabase.from('purchase_orders').update({
+                status: 'Ordered',
+                received_at: null,
+                received_by: null,
+                updated_at: new Date().toISOString()
+            }).eq('id', poId);
+
+            console.log(`[Supabase SERVICE] revertPurchaseOrderIntake COMPLETE for PO: ${poId}`);
+            return;
+        }
+
+        return db.writeTransaction(async (tx: any) => {
+            // 1. Fetch items and claims
+            const poItems = await tx.getAll('SELECT * FROM po_items WHERE po_id = ?', [poId]);
+            const claims = await tx.getAll('SELECT * FROM material_claims WHERE po_id = ?', [poId]);
+
+            for (const item of poItems) {
+                const claim = claims.find((c: any) => c.material_id === item.material_id);
+                const mat = await tx.get('SELECT shop_stock, in_warehouse_qty, in_warehouse_pieces, qty_damaged, qty_missing, ordered_qty, in_transit, sqft_per_piece, dim_length, dim_width, pcs_per_unit FROM project_materials WHERE id = ?', [item.material_id]);
+
+                if (mat) {
+                    const condition = claim?.condition_flag || 'V';
+                    const isVerified = condition === 'V';
+                    const isDamaged = condition === 'D';
+                    const receivedQty = item.received_qty || 0;
+                    const expectedQty = item.quantity_ordered || 0;
+                    const missingQty = Math.max(0, expectedQty - receivedQty);
+
+                    // Calculate pieces if not in claim (for Verified items)
+                    const derivedSqftPerPiece = mat.sqft_per_piece ||
+                        ((mat.dim_length && mat.dim_width) ? (mat.dim_length * mat.dim_width) / 144 : (1 / (mat.pcs_per_unit || 1)));
+                    const receivedPieces = claim?.pieces_received || Math.round(receivedQty / (derivedSqftPerPiece || 1));
+
+                    await tx.execute(`
+                        UPDATE project_materials 
+                        SET shop_stock = MAX(0, shop_stock - ?),
+                            in_warehouse_qty = MAX(0, in_warehouse_qty - ?),
+                            in_warehouse_pieces = MAX(0, in_warehouse_pieces - ?),
+                            qty_damaged = MAX(0, qty_damaged - ?),
+                            qty_missing = MAX(0, qty_missing - ?),
+                            ordered_qty = ordered_qty + ?,
+                            in_transit = in_transit + ?,
+                            updated_at = datetime('now')
+                        WHERE id = ?
+                    `, [
+                        isVerified ? receivedQty : 0,
+                        isVerified ? receivedQty : 0,
+                        isVerified ? receivedPieces : 0,
+                        isDamaged ? receivedQty : 0,
+                        missingQty,
+                        expectedQty,
+                        expectedQty,
+                        item.material_id
+                    ]);
+                }
+            }
+
+            // 2. Clear PO Items
+            await tx.execute('UPDATE po_items SET received_qty = 0 WHERE po_id = ?', [poId]);
+
+            // 3. Delete Claims
+            await tx.execute('DELETE FROM material_claims WHERE po_id = ?', [poId]);
+
+            // 4. Reset PO
+            await tx.execute(`
+                UPDATE purchase_orders 
+                SET status = 'Ordered', 
+                    received_at = NULL, 
+                    received_by = NULL, 
+                    updated_at = datetime('now')
+                WHERE id = ?
+            `, [poId]);
         });
     },
 
@@ -2677,7 +2939,7 @@ export const SupabaseService = {
                 // Fetch current material to update received_at_job
                 const { data: mat } = await supabase
                     .from('project_materials')
-                    .select('received_at_job, qty_damaged, qty_missing')
+                    .select('received_at_job, qty_damaged, qty_missing, in_warehouse_qty')
                     .eq('id', receipt.material_id)
                     .single();
 

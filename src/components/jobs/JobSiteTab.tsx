@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import clsx from 'clsx';
 import { View, Text, ScrollView, ActivityIndicator, Platform, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
-import { SupabaseService, DeliveryTicket } from '../../services/SupabaseService';
+import { SupabaseService, DeliveryTicket, ProjectMaterial } from '../../services/SupabaseService';
 import { useQuery } from '@powersync/react';
+import { useAuth } from '../../context/AuthContext';
 import LiveDeliveryTracker from '../logistics/LiveDeliveryTracker';
 import ReceiveMaterialModal from '../modals/ReceiveMaterialModal';
+import DeliveryTicketModal from '../logistics/DeliveryTicketModal';
 
 interface JobSiteTabProps {
     job: any;
@@ -12,7 +15,10 @@ interface JobSiteTabProps {
 
 export default function JobSiteTab({ job }: JobSiteTabProps) {
     const isWeb = Platform.OS === 'web';
+    const { profile } = useAuth();
     const [receiveTicket, setReceiveTicket] = useState<DeliveryTicket | null>(null);
+    const [modalTicket, setModalTicket] = useState<DeliveryTicket | null>(null);
+    const [ticketModalVisible, setTicketModalVisible] = useState(false);
 
     // 1. DATA SOURCE (PowerSync or Web Fallback)
     const { data: tickets = [] } = useQuery(
@@ -21,21 +27,28 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
     );
 
     const [webTickets, setWebTickets] = useState<DeliveryTicket[]>([]);
+    const [webMaterials, setWebMaterials] = useState<ProjectMaterial[]>([]);
     const [loading, setLoading] = useState(isWeb);
+
+    const { data: materials = [] } = useQuery('SELECT * FROM project_materials WHERE job_id = ?', [job.id]);
 
     useEffect(() => {
         if (isWeb) {
-            const fetchTickets = async () => {
+            const fetchData = async () => {
                 try {
-                    const data = await SupabaseService.getDeliveryTickets(job.id);
-                    setWebTickets(data);
+                    const [tData, mData] = await Promise.all([
+                        SupabaseService.getDeliveryTickets(job.id),
+                        SupabaseService.getProjectMaterials(job.id)
+                    ]);
+                    setWebTickets(tData);
+                    setWebMaterials(mData);
                 } catch (err) {
-                    console.error("Failed to fetch tickets on web:", err);
+                    console.error("Failed to fetch data on web:", err);
                 } finally {
                     setLoading(false);
                 }
             };
-            fetchTickets();
+            fetchData();
         }
     }, [job.id, isWeb]);
 
@@ -86,7 +99,27 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
             }
         } catch (err) {
             console.error("Update Status Error:", err);
+            Alert.alert("Error", "Failed to update status");
         }
+    };
+
+    const handleApprove = async (ticket: DeliveryTicket, role: 'foreman' | 'supervisor') => {
+        try {
+            // JOBSITE TAB = Foreman context. Always approve as foreman here.
+            await SupabaseService.approveDeliveryTicket(ticket.id, 'foreman');
+            if (isWeb) {
+                const updated = await SupabaseService.getDeliveryTickets(job.id);
+                setWebTickets(updated);
+            }
+        } catch (err: any) {
+            console.error("Approval Error:", err);
+            Alert.alert("Error", "Failed to approve ticket");
+        }
+    };
+
+    const handleEdit = (ticket: DeliveryTicket) => {
+        setModalTicket(ticket);
+        setTicketModalVisible(true);
     };
 
     if (loading) {
@@ -117,20 +150,27 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
                         </View>
                     </View>
 
-                    <View className="gap-4">
+                    <View className="flex-row flex-wrap gap-4">
                         {finalTickets.filter(t => t.status === 'PENDING_FIELD_REVIEW').map(t => (
-                            <View key={t.id} className="bg-white p-4 rounded-2xl border border-orange-100 shadow-sm">
+                            <View key={t.id} className="bg-white p-4 rounded-2xl border border-orange-100 shadow-sm flex-1 min-w-[300px] lg:min-w-[30%]">
                                 <View className="flex-row justify-between items-start mb-3">
-                                    <View>
+                                    <View className="flex-1 mr-2">
                                         <Text className="text-slate-900 font-black text-base">DT #{t.ticket_number}</Text>
-                                        <Text className="text-slate-400 text-[10px] font-bold uppercase">{t.items?.length || 0} Items • {new Date(t.requested_date || t.updated_at).toLocaleDateString()}</Text>
+                                        <View className="flex-row flex-wrap items-center gap-2">
+                                            <Text className="text-slate-400 text-[10px] font-bold uppercase">{t.items?.length || 0} Items • {new Date(t.requested_date || t.updated_at).toLocaleDateString()}</Text>
+                                            {t.field_modified && (
+                                                <View className="bg-orange-100 px-1.5 py-0.5 rounded-md">
+                                                    <Text className="text-orange-600 text-[8px] font-black uppercase tracking-tighter">MODIFIED</Text>
+                                                </View>
+                                            )}
+                                        </View>
                                     </View>
-                                    <View className="flex-row gap-2">
+                                    <View className="flex-row flex-wrap justify-end gap-1.5 max-w-[140px]">
                                         <TouchableOpacity
-                                            onPress={() => handleUpdateStatus(t, 'FIELD_APPROVED')}
-                                            className="bg-emerald-500 px-3 py-1.5 rounded-lg shadow-sm"
+                                            onPress={() => handleEdit(t)}
+                                            className="bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200"
                                         >
-                                            <Text className="text-white text-[10px] font-black uppercase">Approve</Text>
+                                            <Ionicons name="create-outline" size={14} color="#475569" />
                                         </TouchableOpacity>
                                         <TouchableOpacity
                                             onPress={() => {
@@ -147,14 +187,54 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
                                                     );
                                                 }
                                             }}
-                                            className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg"
+                                            className="bg-white border border-slate-200 px-2 py-1.5 rounded-lg"
                                         >
-                                            <Text className="text-slate-600 text-[10px] font-black uppercase">Reject</Text>
+                                            <Ionicons name="close" size={12} color="#94a3b8" />
                                         </TouchableOpacity>
                                     </View>
                                 </View>
+
+                                {/* APPROVAL ROW */}
+                                <View className="flex-row gap-2 mb-3">
+                                    {/* FOREMAN APPROVAL (this is the foreman's page) */}
+                                    <TouchableOpacity
+                                        onPress={() => handleApprove(t, 'foreman')}
+                                        disabled={!!t.foreman_approved}
+                                        className={clsx(
+                                            "flex-1 py-2 rounded-lg items-center justify-center shadow-sm border",
+                                            t.foreman_approved
+                                                ? "bg-emerald-50 border-emerald-200"
+                                                : "bg-orange-500 border-orange-600"
+                                        )}
+                                    >
+                                        <Text className={clsx(
+                                            "text-[8px] font-black uppercase tracking-wider",
+                                            t.foreman_approved ? "text-emerald-600" : "text-white"
+                                        )}>
+                                            Foreman {t.foreman_approved && "✓"}
+                                        </Text>
+                                    </TouchableOpacity>
+
+                                    {/* SUPERVISOR STATUS (read-only indicator on foreman page) */}
+                                    <View
+                                        className={clsx(
+                                            "flex-1 py-2 rounded-lg items-center justify-center border",
+                                            t.supervisor_approved
+                                                ? "bg-emerald-50 border-emerald-200"
+                                                : "bg-slate-50 border-slate-200"
+                                        )}
+                                    >
+                                        <Text className={clsx(
+                                            "text-[8px] font-black uppercase tracking-wider",
+                                            t.supervisor_approved ? "text-emerald-600" : "text-slate-400"
+                                        )}>
+                                            Super {t.supervisor_approved && "✓"}
+                                        </Text>
+                                    </View>
+                                </View>
+
                                 <View className="bg-slate-50 p-2 rounded-xl">
-                                    <Text className="text-slate-500 text-xs font-medium" numberOfLines={2}>
+                                    <Text className="text-slate-500 text-[10px] font-medium" numberOfLines={1}>
                                         {t.items?.map((i: any) => i.product_name).join(', ')}
                                     </Text>
                                 </View>
@@ -178,6 +258,29 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
                 onClose={() => setReceiveTicket(null)}
                 onSuccess={handleReceiveSuccess}
             />
+
+            {ticketModalVisible && (
+                <DeliveryTicketModal
+                    visible={ticketModalVisible}
+                    onClose={() => {
+                        setTicketModalVisible(false);
+                        setModalTicket(null);
+                    }}
+                    onSuccess={() => {
+                        setTicketModalVisible(false);
+                        setModalTicket(null);
+                        if (isWeb) {
+                            SupabaseService.getDeliveryTickets(job.id).then(setWebTickets);
+                        }
+                    }}
+                    jobId={job.id}
+                    jobName={job.name}
+                    initialData={modalTicket}
+                    materials={isWeb ? webMaterials : materials as any}
+                    isFieldReview={true}
+                    role={'foreman'}
+                />
+            )}
 
             {/* 2. SITE STATUS OVERVIEW */}
             <View className="px-6 mt-8">
