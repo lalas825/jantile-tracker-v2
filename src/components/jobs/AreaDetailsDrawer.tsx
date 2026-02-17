@@ -4,7 +4,7 @@ import { X, Camera, Image as ImageIcon, CheckCircle2, AlertTriangle, Calendar, A
 import clsx from 'clsx';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SupabaseService, JobIssue } from '../../services/SupabaseService';
-import { CHECKLIST_PRESETS } from '../../constants/JobTemplates';
+import { CHECKLIST_PRESETS, BATHROOM_TASKS, POWDER_TASKS, KITCHEN_TASKS, COMMON_AREA_TASKS } from '../../constants/JobTemplates';
 import { useAuth } from '../../context/AuthContext';
 
 import { CREW_MEMBERS } from '../../constants/CrewData';
@@ -95,6 +95,13 @@ const StatusButton = ({ status, onPress }: { status: TaskStatus, onPress: () => 
     }
 };
 
+const PRESET_GROUPS: Record<string, string[]> = {
+    'Bathroom': BATHROOM_TASKS,
+    'Powder Room': POWDER_TASKS,
+    'Kitchen': KITCHEN_TASKS,
+    'Common Area': COMMON_AREA_TASKS,
+};
+
 export default function AreaDetailsDrawer({ isVisible, onClose, area, jobId, onUpdate, onLogTime, onAddPhoto, onDeletePhoto, onReportIssue, onResolveIssue, onDeleteIssue }: AreaDetailsDrawerProps) {
     const { profile, user } = useAuth();
     const [activeTab, setActiveTab] = useState('Checklist');
@@ -106,6 +113,12 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, jobId, onU
     const [loading, setLoading] = useState(false);
     const [areaPhotos, setAreaPhotos] = useState<{ id: string; url: string; storage_path: string }[]>([]);
     const [areaIssues, setAreaIssues] = useState<JobIssue[]>([]);
+
+    // Add-task panel state
+    const [showAddPanel, setShowAddPanel] = useState(false);
+    const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
+    const [customTaskText, setCustomTaskText] = useState('');
+    const [addingTask, setAddingTask] = useState(false);
 
     // Hydrate Data on Open or when area updates
     useEffect(() => {
@@ -257,6 +270,56 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, jobId, onU
         }
     };
 
+    const handleAddTask = async (text: string) => {
+        if (!area || !text.trim() || addingTask) return;
+        setAddingTask(true);
+        try {
+            await SupabaseService.addChecklistItem(area.id, text.trim());
+            const items = await SupabaseService.getChecklistItems(area.id);
+            const uiItems = items.map((item: any) => ({
+                id: item.id,
+                label: item.text,
+                status: (item.status || (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED')) as TaskStatus,
+                position: item.position,
+                created_at: item.created_at
+            }));
+            setChecklist(SupabaseService.sortChecklist(uiItems, area.name));
+            onUpdate(uiItems);
+            setCustomTaskText('');
+        } catch (e) {
+            console.error("Failed to add task", e);
+        } finally {
+            setAddingTask(false);
+        }
+    };
+
+    const handleDeleteTask = async (id: string) => {
+        if (id.startsWith('temp_')) {
+            setChecklist(prev => prev.filter(i => i.id !== id));
+            return;
+        }
+        try {
+            setChecklist(prev => prev.filter(i => i.id !== id));
+            await SupabaseService.deleteChecklistItem(id);
+            if (area) {
+                const items = await SupabaseService.getChecklistItems(area.id);
+                const uiItems = items.map((item: any) => ({
+                    id: item.id,
+                    label: item.text,
+                    status: (item.status || (item.completed === 1 ? 'COMPLETED' : 'NOT_STARTED')) as TaskStatus,
+                    position: item.position,
+                    created_at: item.created_at
+                }));
+                setChecklist(SupabaseService.sortChecklist(uiItems, area.name));
+                onUpdate(uiItems);
+            }
+        } catch (e) {
+            console.error("Failed to delete task", e);
+        }
+    };
+
+    const existingLabels = new Set(checklist.map(i => i.label.toLowerCase()));
+
     return (
         <Modal
             visible={isVisible}
@@ -372,6 +435,12 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, jobId, onU
                                             item.status === 'NA' ? "border-slate-100 bg-slate-50" : "border-slate-200 bg-white"
                                         )}
                                     >
+                                        <TouchableOpacity
+                                            onPress={() => handleDeleteTask(item.id)}
+                                            className="mr-3 p-1.5 rounded-lg hover:bg-red-50"
+                                        >
+                                            <Trash2 size={14} color="#cbd5e1" />
+                                        </TouchableOpacity>
                                         <Text className={clsx(
                                             "text-base font-medium flex-1 mr-4",
                                             item.status === 'COMPLETED' ? "text-slate-900" :
@@ -385,6 +454,104 @@ export default function AreaDetailsDrawer({ isVisible, onClose, area, jobId, onU
                                         />
                                     </View>
                                 ))}
+
+                                {/* Add Task Panel */}
+                                <TouchableOpacity
+                                    onPress={() => setShowAddPanel(!showAddPanel)}
+                                    className={clsx(
+                                        "flex-row items-center justify-center p-4 mb-3 border-2 border-dashed rounded-xl transition-colors",
+                                        showAddPanel ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                                    )}
+                                >
+                                    <Plus size={18} color={showAddPanel ? "#2563eb" : "#94a3b8"} />
+                                    <Text className={clsx("ml-2 font-bold text-sm", showAddPanel ? "text-blue-600" : "text-slate-500")}>
+                                        {showAddPanel ? 'Close' : 'Add Task'}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {showAddPanel && (
+                                    <View className="mb-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                                        {/* Preset Picker */}
+                                        <Text className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">From Preset</Text>
+                                        <View className="flex-row flex-wrap mb-3" style={{ gap: 8 }}>
+                                            {Object.keys(PRESET_GROUPS).map(groupName => (
+                                                <TouchableOpacity
+                                                    key={groupName}
+                                                    onPress={() => setSelectedPreset(selectedPreset === groupName ? null : groupName)}
+                                                    className={clsx(
+                                                        "px-4 py-2 rounded-full border transition-colors",
+                                                        selectedPreset === groupName
+                                                            ? "bg-blue-600 border-blue-600"
+                                                            : "bg-white border-slate-200 hover:border-blue-300"
+                                                    )}
+                                                >
+                                                    <Text className={clsx(
+                                                        "text-xs font-bold",
+                                                        selectedPreset === groupName ? "text-white" : "text-slate-600"
+                                                    )}>
+                                                        {groupName}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+
+                                        {/* Filtered Tasks from Selected Preset */}
+                                        {selectedPreset && PRESET_GROUPS[selectedPreset] && (
+                                            <View className="mb-4">
+                                                {PRESET_GROUPS[selectedPreset]
+                                                    .filter(task => !existingLabels.has(task.toLowerCase()))
+                                                    .map(task => (
+                                                        <TouchableOpacity
+                                                            key={task}
+                                                            onPress={() => handleAddTask(task)}
+                                                            disabled={addingTask}
+                                                            className="flex-row items-center justify-between p-3 mb-2 bg-white border border-slate-100 rounded-lg hover:border-blue-200 hover:bg-blue-50 transition-colors"
+                                                        >
+                                                            <Text className="text-sm text-slate-700 font-medium">{task}</Text>
+                                                            <View className="flex-row items-center bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+                                                                <Plus size={12} color="#2563eb" />
+                                                                <Text className="text-xs font-bold text-blue-600 ml-1">Add</Text>
+                                                            </View>
+                                                        </TouchableOpacity>
+                                                    ))}
+                                                {PRESET_GROUPS[selectedPreset].filter(task => !existingLabels.has(task.toLowerCase())).length === 0 && (
+                                                    <Text className="text-slate-400 text-xs text-center py-3">All tasks from this preset are already added</Text>
+                                                )}
+                                            </View>
+                                        )}
+
+                                        {/* Custom Task Input */}
+                                        <Text className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3 mt-1">Custom Task</Text>
+                                        <View className="flex-row items-center" style={{ gap: 8 }}>
+                                            <TextInput
+                                                value={customTaskText}
+                                                onChangeText={setCustomTaskText}
+                                                placeholder="Enter task name..."
+                                                placeholderTextColor="#94a3b8"
+                                                className="flex-1 bg-white border border-slate-200 rounded-lg px-4 py-3 text-sm text-slate-800"
+                                                onSubmitEditing={() => handleAddTask(customTaskText)}
+                                            />
+                                            <TouchableOpacity
+                                                onPress={() => handleAddTask(customTaskText)}
+                                                disabled={!customTaskText.trim() || addingTask}
+                                                className={clsx(
+                                                    "px-5 py-3 rounded-lg transition-colors",
+                                                    customTaskText.trim() && !addingTask
+                                                        ? "bg-blue-600 hover:bg-blue-700"
+                                                        : "bg-slate-200"
+                                                )}
+                                            >
+                                                <Text className={clsx(
+                                                    "text-sm font-bold",
+                                                    customTaskText.trim() && !addingTask ? "text-white" : "text-slate-400"
+                                                )}>
+                                                    {addingTask ? '...' : 'Add'}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                )}
+
                                 <View className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-100">
                                     <Text className="text-center text-slate-500 text-xs">
                                         Tap the status button to cycle: <Text className="font-bold">Start → In Progress → Done → N/A</Text>

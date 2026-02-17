@@ -1,21 +1,21 @@
 // DEFINITIONS BASED ON USER STANDARD
-const BATHROOM_TASKS = [
+export const BATHROOM_TASKS = [
     "Soundproof", "Mud / Self Level", "Waterproof", "Heat Mat",
     "Floor Tile / Stone", "Wall Tile / Stone", "Tub Deck", "Base",
     "Grout", "Caulk", "Sealer", "Vanity Top"
 ];
 
-const POWDER_TASKS = [
+export const POWDER_TASKS = [
     "Soundproof", "Mud / Self Level", "Waterproof",
     "Floor Tile / Stone", "Wall Tile / Stone", "Base",
     "Grout", "Caulk", "Sealer", "Vanity Top"
 ];
 
-const KITCHEN_TASKS = [
+export const KITCHEN_TASKS = [
     "Counter Top", "Backsplash", "Island", "Akemi", "Caulk", "Sealer"
 ];
 
-const COMMON_AREA_TASKS = [
+export const COMMON_AREA_TASKS = [
     "Soundproof", "Mud / Self Level", "Waterproof",
     "Floor Tile / Stone", "Base", "Grout", "Caulk", "Sealer"
 ];
