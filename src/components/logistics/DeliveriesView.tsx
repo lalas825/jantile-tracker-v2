@@ -174,7 +174,7 @@ export default function DeliveriesView({
 
     return (
         <View className="flex-1 bg-white">
-            <LiveDeliveryTracker tickets={tickets} onUpdateStatus={onUpdateStatus} />
+            <LiveDeliveryTracker tickets={tickets} />
 
             <DndContext
                 sensors={sensors}

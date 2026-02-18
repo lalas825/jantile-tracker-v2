@@ -208,9 +208,7 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
             {/* 1. LIVE DELIVERY TRACKER (Prioritized for Foreman) */}
             <LiveDeliveryTracker
                 tickets={finalTickets}
-                onUpdateStatus={(t: any, s: any) => handleUpdateStatus(t, s)}
                 onReceivePress={(t: any) => setReceiveTicket(t)}
-                containerStyle="bg-slate-900 mx-6 mt-6 p-6 rounded-[32px] shadow-2xl shadow-slate-200"
             />
 
             <ReceiveMaterialModal
