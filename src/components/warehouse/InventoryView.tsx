@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput,
 import { Ionicons } from '@expo/vector-icons';
 import { SupabaseService, ProjectMaterial } from '../../services/SupabaseService';
 import AddBudgetItemModal from '../logistics/AddBudgetItemModal';
+import AllocateStockModal from './AllocateStockModal';
 import { supabase } from '../../config/supabase';
 import { ChevronDown, ChevronRight, Search, Box } from 'lucide-react-native';
 
@@ -19,6 +20,7 @@ export default function InventoryView() {
     const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
     const [adjustmentModal, setAdjustmentModal] = useState({ visible: false, material: null as any, value: '' });
     const [isAddModalVisible, setIsAddModalVisible] = useState(false);
+    const [allocationModal, setAllocationModal] = useState({ visible: false, material: null as any });
 
     const loadData = async () => {
         try {
@@ -180,6 +182,12 @@ export default function InventoryView() {
                                                 onPress={() => setAdjustmentModal({ visible: true, material: item, value: '' })}
                                             >
                                                 <Ionicons name="add" size={18} color="#6366f1" />
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                className="bg-blue-50 p-2 rounded-xl"
+                                                onPress={() => setAllocationModal({ visible: true, material: item })}
+                                            >
+                                                <Ionicons name="send-outline" size={18} color="#2563eb" />
                                             </TouchableOpacity>
                                         </View>
                                         <Text className="text-lg font-black text-slate-900 mb-1 leading-tight">{item.product_name}</Text>
@@ -348,6 +356,16 @@ export default function InventoryView() {
                 onClose={() => setIsAddModalVisible(false)}
                 onSave={handleSaveGeneralStock}
                 isGeneralStock={true}
+            />
+
+            <AllocateStockModal
+                visible={allocationModal.visible}
+                onClose={() => setAllocationModal({ visible: false, material: null })}
+                material={allocationModal.material}
+                onSuccess={() => {
+                    loadData();
+                    Alert.alert("Success", "Stock allocated and ticket created.");
+                }}
             />
         </ScrollView >
     );

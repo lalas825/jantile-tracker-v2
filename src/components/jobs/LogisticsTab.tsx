@@ -157,6 +157,18 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                         description: 'Area Logistics Breakdown'
                     });
                 }
+            } else if (!hasLogisticsAssignment && (m.shop_stock || 0) > 0) {
+                // If it has stock but no area, show in Warehouse Allocation
+                const locKey = 'warehouse allocation';
+                if (!seenLocations.has(locKey)) {
+                    seenLocations.add(locKey);
+                    virtualAreas.push({
+                        id: `loc-${locKey}`,
+                        name: 'Warehouse Allocation',
+                        is_virtual: true,
+                        description: 'Allocated from General Stock'
+                    });
+                }
             }
         });
 
@@ -238,6 +250,8 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
                     areaId = mappedId;
                 } else if (subLoc && subLoc !== 'Unassigned') {
                     areaId = `loc-${subLoc.toLowerCase()}`;
+                } else if ((m.shop_stock || 0) > 0) {
+                    areaId = 'loc-warehouse allocation';
                 } else {
                     areaId = 'Unassigned';
                 }

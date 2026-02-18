@@ -2911,6 +2911,203 @@ export const SupabaseService = {
         `, [adjustment, adjustment, materialId]);
     },
 
+    async allocateGeneralStock(params: {
+        sourceMaterialId: string,
+        jobId: string,
+        jobName: string,
+        areaId?: string,
+        qty: number,
+        category: string,
+        productName: string,
+        productCode?: string,
+        unit: string,
+        userId: string,
+        targetTicketId?: string
+    }): Promise<void> {
+        const { sourceMaterialId, jobId, jobName, areaId, qty, category, productName, productCode, unit, userId, targetTicketId } = params;
+        const now = new Date().toISOString();
+
+        if (useSupabase) {
+            // 1. Get Source Material
+            const { data: sourceMat, error: fetchErr } = await supabase
+                .from('project_materials')
+                .select('*')
+                .eq('id', sourceMaterialId)
+                .single();
+
+            if (fetchErr || !sourceMat) throw fetchErr || new Error("Source material not found");
+
+            // 2. Decrement Source Stock
+            const { error: updateSourceErr } = await supabase
+                .from('project_materials')
+                .update({
+                    shop_stock: (sourceMat.shop_stock || 0) - qty,
+                    in_warehouse_qty: (sourceMat.in_warehouse_qty || 0) - qty,
+                    updated_at: now
+                })
+                .eq('id', sourceMaterialId);
+
+            if (updateSourceErr) throw updateSourceErr;
+
+            // 3. Find or Create Target Material for Job
+            const { data: existingTarget } = await supabase
+                .from('project_materials')
+                .select('*')
+                .eq('job_id', jobId)
+                .eq('product_name', productName)
+                .maybeSingle();
+
+            let targetMatId: string;
+            if (existingTarget) {
+                targetMatId = existingTarget.id;
+                const { error: updateTargetErr } = await supabase
+                    .from('project_materials')
+                    .update({
+                        shop_stock: (existingTarget.shop_stock || 0) + qty,
+                        updated_at: now
+                    })
+                    .eq('id', targetMatId);
+                if (updateTargetErr) throw updateTargetErr;
+            } else {
+                targetMatId = Crypto.randomUUID();
+                const { error: createTargetErr } = await supabase
+                    .from('project_materials')
+                    .insert({
+                        id: targetMatId,
+                        job_id: jobId,
+                        area_id: areaId || null,
+                        sub_location: areaId ? null : 'Warehouse Allocation',
+                        category,
+                        product_name: productName,
+                        product_code: productCode,
+                        unit,
+                        shop_stock: qty,
+                        net_qty: 0,
+                        waste_percent: 0,
+                        budget_qty: 0,
+                        unit_cost: sourceMat.unit_cost || 0,
+                        total_value: 0,
+                        ordered_qty: 0,
+                        in_transit: 0,
+                        received_at_job: 0,
+                        in_warehouse_qty: 0,
+                        in_warehouse_pieces: 0,
+                        created_at: now,
+                        updated_at: now
+                    });
+                if (createTargetErr) throw createTargetErr;
+            }
+
+            // 4. Handle Delivery Ticket
+            if (targetTicketId) {
+                const { data: ticket } = await supabase
+                    .from('delivery_tickets')
+                    .select('*')
+                    .eq('id', targetTicketId)
+                    .single();
+
+                if (ticket) {
+                    const items = ticket.items || [];
+                    const existingItemIndex = items.findIndex((i: any) => i.material_id === targetMatId);
+                    if (existingItemIndex > -1) {
+                        items[existingItemIndex].qty += qty;
+                    } else {
+                        items.push({
+                            material_id: targetMatId,
+                            product_name: productName,
+                            product_code: productCode,
+                            category,
+                            qty,
+                            unit
+                        });
+                    }
+
+                    await supabase
+                        .from('delivery_tickets')
+                        .update({ items, updated_at: now })
+                        .eq('id', targetTicketId);
+                }
+            } else {
+                const ticketNumber = await this.generateNextTicketNumber();
+                const ticketId = Crypto.randomUUID();
+                await supabase
+                    .from('delivery_tickets')
+                    .insert({
+                        id: ticketId,
+                        job_id: jobId,
+                        job_name: jobName,
+                        ticket_number: ticketNumber,
+                        status: 'DRAFT',
+                        destination: 'Inventory',
+                        requested_date: now.split('T')[0],
+                        items: [{
+                            material_id: targetMatId,
+                            product_name: productName,
+                            product_code: productCode,
+                            category,
+                            qty,
+                            unit
+                        }],
+                        created_by: userId,
+                        created_at: now,
+                        updated_at: now
+                    });
+            }
+            return;
+        }
+
+        // Native PowerSync
+        await db.writeTransaction(async (tx: any) => {
+            const sourceMat = await tx.get(`SELECT * FROM project_materials WHERE id = ?`, [sourceMaterialId]);
+            if (!sourceMat) throw new Error("Source material not found");
+
+            await tx.execute(
+                `UPDATE project_materials SET shop_stock = ?, in_warehouse_qty = ?, updated_at = ? WHERE id = ?`,
+                [sourceMat.shop_stock - qty, sourceMat.in_warehouse_qty - qty, now, sourceMaterialId]
+            );
+
+            const existingTarget = await tx.get(`SELECT * FROM project_materials WHERE job_id = ? AND product_name = ?`, [jobId, productName]);
+
+            let targetMatId: string;
+            if (existingTarget) {
+                targetMatId = existingTarget.id;
+                await tx.execute(
+                    `UPDATE project_materials SET shop_stock = ?, updated_at = ? WHERE id = ?`,
+                    [existingTarget.shop_stock + qty, now, targetMatId]
+                );
+            } else {
+                targetMatId = Crypto.randomUUID();
+                await tx.execute(
+                    `INSERT INTO project_materials (id, job_id, area_id, sub_location, category, product_name, product_code, unit, shop_stock, net_qty, waste_percent, budget_qty, unit_cost, total_value, ordered_qty, in_transit, received_at_job, in_warehouse_qty, in_warehouse_pieces, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, 0, 0, 0, 0, 0, 0, ?, ?)`,
+                    [targetMatId, jobId, areaId || null, areaId ? null : 'Warehouse Allocation', category, productName, productCode || null, unit, qty, sourceMat.unit_cost || 0, now, now]
+                );
+            }
+
+            if (targetTicketId) {
+                const ticket = await tx.get(`SELECT * FROM delivery_tickets WHERE id = ?`, [targetTicketId]);
+                if (ticket) {
+                    const items = JSON.parse(ticket.items || '[]');
+                    const existingItemIndex = items.findIndex((i: any) => i.material_id === targetMatId);
+                    if (existingItemIndex > -1) {
+                        items[existingItemIndex].qty += qty;
+                    } else {
+                        items.push({ material_id: targetMatId, product_name: productName, product_code: productCode, category, qty, unit });
+                    }
+                    await tx.execute(`UPDATE delivery_tickets SET items = ?, updated_at = ? WHERE id = ?`, [JSON.stringify(items), now, targetTicketId]);
+                }
+            } else {
+                const ticketNumber = await this.generateNextTicketNumber();
+                const ticketId = Crypto.randomUUID();
+                await tx.execute(
+                    `INSERT INTO delivery_tickets (id, job_id, job_name, ticket_number, status, destination, requested_date, items, created_by, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, 'draft', 'Inventory', ?, ?, ?, ?, ?)`,
+                    [ticketId, jobId, jobName, ticketNumber, now.split('T')[0], JSON.stringify([{ material_id: targetMatId, product_name: productName, product_code: productCode, category, qty, unit }]), userId, now, now]
+                );
+            }
+        });
+    },
+
     async receiveDeliveryTicket(
         ticketId: string,
         itemReceipts: {
