@@ -152,7 +152,7 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
 
                     <View className="flex-row flex-wrap gap-4">
                         {finalTickets.filter(t => t.status === 'PENDING_FIELD_REVIEW').map(t => (
-                            <View key={t.id} className="bg-white p-4 rounded-2xl border border-orange-100 shadow-sm flex-1 min-w-[300px] lg:min-w-[30%]">
+                            <View key={t.id} className="bg-white p-4 rounded-2xl border border-orange-100 shadow-sm" style={{ flexBasis: '31%', flexGrow: 0 }}>
                                 <View className="flex-row justify-between items-start mb-3">
                                     <View className="flex-1 mr-2">
                                         <Text className="text-slate-900 font-black text-base">DT #{t.ticket_number}</Text>
@@ -191,45 +191,6 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
                                         >
                                             <Ionicons name="close" size={12} color="#94a3b8" />
                                         </TouchableOpacity>
-                                    </View>
-                                </View>
-
-                                {/* APPROVAL ROW */}
-                                <View className="flex-row gap-2 mb-3">
-                                    {/* FOREMAN APPROVAL (this is the foreman's page) */}
-                                    <TouchableOpacity
-                                        onPress={() => handleApprove(t, 'foreman')}
-                                        disabled={!!t.foreman_approved}
-                                        className={clsx(
-                                            "flex-1 py-2 rounded-lg items-center justify-center shadow-sm border",
-                                            t.foreman_approved
-                                                ? "bg-emerald-50 border-emerald-200"
-                                                : "bg-orange-500 border-orange-600"
-                                        )}
-                                    >
-                                        <Text className={clsx(
-                                            "text-[8px] font-black uppercase tracking-wider",
-                                            t.foreman_approved ? "text-emerald-600" : "text-white"
-                                        )}>
-                                            Foreman {t.foreman_approved && "✓"}
-                                        </Text>
-                                    </TouchableOpacity>
-
-                                    {/* SUPERVISOR STATUS (read-only indicator on foreman page) */}
-                                    <View
-                                        className={clsx(
-                                            "flex-1 py-2 rounded-lg items-center justify-center border",
-                                            t.supervisor_approved
-                                                ? "bg-emerald-50 border-emerald-200"
-                                                : "bg-slate-50 border-slate-200"
-                                        )}
-                                    >
-                                        <Text className={clsx(
-                                            "text-[8px] font-black uppercase tracking-wider",
-                                            t.supervisor_approved ? "text-emerald-600" : "text-slate-400"
-                                        )}>
-                                            Super {t.supervisor_approved && "✓"}
-                                        </Text>
                                     </View>
                                 </View>
 

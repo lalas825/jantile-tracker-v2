@@ -49,7 +49,7 @@ export default function CalendarMonthView({ events, currentDate, onDayPress }: C
 
             {/* Grid */}
             {weeks.map((weekDays, wIndex) => (
-                <View key={wIndex} className="flex-row border-b border-slate-100 h-32">
+                <View key={wIndex} className="flex-row border-b border-slate-100 min-h-[200px]">
                     {weekDays.map((day, dIndex) => {
                         const dateStr = format(day, 'yyyy-MM-dd');
                         const dayEvents = events.filter(e => e.date === dateStr);
@@ -69,19 +69,17 @@ export default function CalendarMonthView({ events, currentDate, onDayPress }: C
                                 </View>
 
                                 {/* Mini Cards */}
-                                <View className="gap-1">
-                                    {dayEvents.slice(0, 3).map(event => (
-                                        <View key={event.id} className={`px-1 py-0.5 rounded ${event.color || 'bg-blue-100'}`}>
-                                            <Text numberOfLines={1} className="text-[9px] font-bold text-slate-800">
+                                <View className="gap-1.5">
+                                    {dayEvents.map(event => (
+                                        <View key={event.id} className={`px-2 py-1.5 rounded-lg overflow-hidden ${event.color || 'bg-blue-100'}`}>
+                                            <Text numberOfLines={1} className="text-xs font-black text-slate-900">
                                                 {event.title}
+                                            </Text>
+                                            <Text numberOfLines={1} className="text-[10px] font-medium text-slate-500">
+                                                {event.subtitle}
                                             </Text>
                                         </View>
                                     ))}
-                                    {dayEvents.length > 3 && (
-                                        <Text className="text-[9px] text-slate-400 text-center">
-                                            +{dayEvents.length - 3} more
-                                        </Text>
-                                    )}
                                 </View>
                             </TouchableOpacity>
                         );

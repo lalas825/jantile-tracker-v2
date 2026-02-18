@@ -3062,7 +3062,40 @@ export const SupabaseService = {
                 }
             }
         });
-    }
+    },
+
+    // ── Fleet Resources (Drivers & Trucks) ──────────────────────────────
+    async getFleetResources(type?: 'driver' | 'truck'): Promise<{ id: string; type: string; name: string; is_active: boolean }[]> {
+        if (useSupabase) {
+            let query = supabase.from('fleet_resources').select('*').eq('is_active', true).order('name');
+            if (type) query = query.eq('type', type);
+            const { data, error } = await query;
+            if (error) { console.error('[Fleet] Fetch error:', error); return []; }
+            return data || [];
+        }
+        return [];
+    },
+
+    async saveFleetResource(resource: { id?: string; type: 'driver' | 'truck'; name: string }): Promise<void> {
+        const id = resource.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`);
+        if (useSupabase) {
+            const { error } = await supabase.from('fleet_resources').upsert({
+                id,
+                type: resource.type,
+                name: resource.name,
+                is_active: true,
+                updated_at: new Date().toISOString(),
+            });
+            if (error) { console.error('[Fleet] Save error:', error); throw error; }
+        }
+    },
+
+    async deleteFleetResource(id: string): Promise<void> {
+        if (useSupabase) {
+            const { error } = await supabase.from('fleet_resources').delete().eq('id', id);
+            if (error) { console.error('[Fleet] Delete error:', error); throw error; }
+        }
+    },
 };
 
 

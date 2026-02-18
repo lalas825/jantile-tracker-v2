@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { format, addWeeks, subWeeks } from 'date-fns';
+import { format, addWeeks, subWeeks, parseISO } from 'date-fns';
 import { SupabaseService, PurchaseOrder, DeliveryTicket, formatDisplayDate } from '../../services/SupabaseService';
 import CalendarWeekView from './CalendarWeekView';
 import CalendarMonthView from './CalendarMonthView';
@@ -31,7 +31,7 @@ export default function WarehouseSchedule() {
                     title: `↑ ${p.vendor}`,
                     subtitle: `PO #${p.po_number}`,
                     status: p.status,
-                    date: p.expected_date,
+                    date: p.expected_date?.includes('T') ? format(parseISO(p.expected_date), 'yyyy-MM-dd') : p.expected_date,
                     time: p.scheduled_time || '08:00', // Default if missing
                     color: 'bg-orange-100 border-l-4 border-orange-500',
                     data: p
@@ -46,7 +46,7 @@ export default function WarehouseSchedule() {
                     title: `↓ ${t.job_name || 'Project'}`,
                     subtitle: `DT #${t.ticket_number}`,
                     status: t.status,
-                    date: t.requested_date,
+                    date: t.requested_date?.includes('T') ? format(parseISO(t.requested_date), 'yyyy-MM-dd') : t.requested_date,
                     time: t.due_time || t.scheduled_time || '08:00', // Support both for backward compat
                     color: 'bg-blue-100 border-l-4 border-blue-500',
                     data: t
@@ -94,19 +94,16 @@ export default function WarehouseSchedule() {
         const itemCount = event.data?.items?.length || 0;
 
         return (
-            <View className={`rounded-md shadow-sm border p-2 h-full flex-col justify-between overflow-hidden ${isInbound ? 'bg-orange-50 border-orange-200' : 'bg-blue-50 border-blue-200'}`}>
+            <View className={`rounded-lg shadow-sm border p-3 h-full flex-col justify-between overflow-hidden ${isInbound ? 'bg-orange-50 border-orange-200' : 'bg-blue-50 border-blue-200'}`}>
                 <View>
-                    <View className="flex-row justify-between items-center mb-1">
-                        <Text className={`text-[8px] font-black px-1 rounded uppercase ${isInbound ? 'text-orange-700 bg-orange-100' : 'text-blue-700 bg-blue-100'}`}>
+                    <View className="flex-row justify-between items-center mb-2">
+                        <Text className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${isInbound ? 'text-orange-700 bg-orange-100' : 'text-blue-700 bg-blue-100'}`}>
                             {isInbound ? 'Inbound' : 'Outbound'}
                         </Text>
-                        <Text className="text-[8px] font-bold text-slate-400">{itemCount} items</Text>
+                        <Text className="text-[9px] font-bold text-slate-400">{itemCount} items</Text>
                     </View>
-                    <Text numberOfLines={1} className="text-[10px] font-black text-slate-800 leading-tight">
-                        {event.title}
-                    </Text>
-                    <Text numberOfLines={1} className="text-[9px] font-medium text-slate-500 leading-tight">
-                        {event.subtitle}
+                    <Text numberOfLines={1} className="text-sm font-black text-slate-900 leading-snug">
+                        {event.title}  <Text className="text-slate-500 font-bold">{event.subtitle}</Text>
                     </Text>
                 </View>
             </View>

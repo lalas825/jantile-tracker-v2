@@ -39,7 +39,7 @@ const DraggableEvent = ({ event, children }: { event: CalendarEvent; children: R
     const { tabIndex, role, ...validAttributes } = attributes;
 
     return (
-        <View ref={setNodeRef as any} {...listeners} {...validAttributes} style={style as any} className="absolute w-full px-1">
+        <View ref={setNodeRef as any} {...listeners} {...validAttributes} style={style as any} className="w-full px-1 mb-0.5">
             {children}
         </View>
     );
@@ -59,11 +59,11 @@ const DroppableSlot = ({ date, hour, children }: { date: string, hour: number, c
     return (
         <View
             ref={setNodeRef as any}
-            className={`h-24 border-b border-r border-slate-100 relative ${isOver ? 'bg-blue-50' : hasConflict ? 'bg-orange-50' : ''}`}
+            className={`min-h-[140px] border-b border-r border-slate-100 ${isOver ? 'bg-blue-50' : hasConflict ? 'bg-orange-50' : ''}`}
         >
             {/* Visual Conflict Indicator */}
             {hasConflict && (
-                <View className="absolute top-1 right-1 bg-orange-100 rounded-full p-1 z-10 border border-orange-200">
+                <View className="bg-orange-100 rounded-full p-1 border border-orange-200 self-end mr-1 mt-1">
                     <Text className="text-[8px] font-black text-orange-600 px-1 italic">HI-VOLUME</Text>
                 </View>
             )}
@@ -111,7 +111,7 @@ export default function CalendarWeekView({ events, currentDate, onEventUpdate, r
                 {/* Time Column - Fixed Width */}
                 <View className="w-16 border-r border-slate-200 bg-slate-50 pt-10">
                     {hours.map(hour => (
-                        <View key={hour} className="h-24 items-center justify-start pt-1">
+                        <View key={hour} className="h-[140px] items-center justify-start pt-1">
                             <Text className="text-xs font-medium text-slate-400">
                                 {format(setHours(new Date(), hour), 'h a')}
                             </Text>

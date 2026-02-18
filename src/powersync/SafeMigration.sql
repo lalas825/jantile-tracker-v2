@@ -344,6 +344,23 @@ BEGIN
     END IF;
 END $$;
 
+-- 8. Fleet Resources (Drivers & Trucks)
+CREATE TABLE IF NOT EXISTS fleet_resources (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type TEXT NOT NULL CHECK (type IN ('driver', 'truck')),
+    name TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE fleet_resources ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow read access for authenticated users" ON fleet_resources;
+CREATE POLICY "Allow read access for authenticated users" ON fleet_resources FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "Allow write access for PMs/Admins" ON fleet_resources;
+CREATE POLICY "Allow write access for PMs/Admins" ON fleet_resources FOR ALL TO authenticated USING (true);
+
 -- 7. Update Publications
 DO $$
 BEGIN
@@ -362,7 +379,11 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'powersync' AND tablename = 'material_discrepancies') THEN
         ALTER PUBLICATION powersync ADD TABLE material_discrepancies;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'powersync' AND tablename = 'fleet_resources') THEN
+        ALTER PUBLICATION powersync ADD TABLE fleet_resources;
+    END IF;
 EXCEPTION WHEN OTHERS THEN
     -- Publication might not exist yet, or other issues
     RAISE NOTICE 'Publication update skipped: %', SQLERRM;
 END $$;
+
