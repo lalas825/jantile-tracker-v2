@@ -11,6 +11,7 @@ interface AddBudgetItemModalProps {
     areas?: any[]; // List of areas for the job
     units?: any[]; // List of units for the job (needed for new area creation)
     lockedAreaId?: string; // If provided, lock selection to this area
+    isGeneralStock?: boolean; // If true, hide area/unit selection for unallocated stock
 }
 
 const CATEGORIES = [
@@ -39,7 +40,7 @@ const JOINT_WIDTHS = [
     { label: '1/4"', value: 0.25 }
 ];
 
-export default function AddBudgetItemModal({ visible, onClose, onSave, initialData, areas = [], units = [], lockedAreaId }: AddBudgetItemModalProps) {
+export default function AddBudgetItemModal({ visible, onClose, onSave, initialData, areas = [], units = [], lockedAreaId, isGeneralStock }: AddBudgetItemModalProps) {
     // Basic Info
     const [code, setCode] = useState('');
     const [category, setCategory] = useState('Generic');
@@ -965,93 +966,95 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
 
                         {renderCalculator()}
 
-                        <View className="flex-row gap-4 mb-6" style={{ zIndex: 90 }}>
-                            <View className="flex-1">
-                                <Text className="text-[10px] font-inter font-black text-slate-400 uppercase tracking-widest mb-2">Area / Room</Text>
-                                <TouchableOpacity
-                                    onPress={() => !lockedAreaId && setShowAreaMenu(!showAreaMenu)}
-                                    disabled={!!lockedAreaId}
-                                    className={`bg-slate-50 border border-slate-200 p-3 rounded-xl flex-row justify-between items-center ${lockedAreaId ? 'opacity-60' : ''}`}
-                                >
-                                    <Text className="text-sm font-inter font-bold text-slate-900">
-                                        {isCreatingNewArea
-                                            ? `New Area: ${newAreaName}`
-                                            : (lockedAreaId && lockedAreaId.startsWith('loc-')
-                                                ? `Location: ${lockedAreaId.replace('loc-', '')}`
-                                                : (areas.find(a => a.id === areaId)?.name || 'Select Area...'))
-                                        }
-                                    </Text>
-                                    <Ionicons name={lockedAreaId ? "lock-closed" : "location"} size={16} color="#94a3b8" />
-                                </TouchableOpacity>
-                                {showAreaMenu && !lockedAreaId && (
-                                    <View className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-xl mt-1 z-50 shadow-xl overflow-hidden" style={{ zIndex: 1000, elevation: 10 }}>
-                                        <ScrollView style={{ maxHeight: 200 }}>
-                                            <TouchableOpacity
-                                                className="p-3 border-b border-slate-50 bg-blue-50/50"
-                                                onPress={() => { setIsCreatingNewArea(true); setShowAreaMenu(false); }}
-                                            >
-                                                <View className="flex-row items-center gap-2">
-                                                    <Ionicons name="add-circle" size={16} color="#2563eb" />
-                                                    <Text className="text-sm font-inter text-blue-600 font-black">+ Create New Area</Text>
-                                                </View>
-                                            </TouchableOpacity>
-                                            <TouchableOpacity
-                                                className="p-3 border-b border-slate-50"
-                                                onPress={() => { setAreaId(''); setIsCreatingNewArea(false); setShowAreaMenu(false); }}
-                                            >
-                                                <Text className="text-sm font-inter text-slate-400 font-bold">Project Wide (Global)</Text>
-                                            </TouchableOpacity>
-                                            {areas.map(area => (
+                        {!isGeneralStock && (
+                            <View className="flex-row gap-4 mb-6" style={{ zIndex: 90 }}>
+                                <View className="flex-1">
+                                    <Text className="text-[10px] font-inter font-black text-slate-400 uppercase tracking-widest mb-2">Area / Room</Text>
+                                    <TouchableOpacity
+                                        onPress={() => !lockedAreaId && setShowAreaMenu(!showAreaMenu)}
+                                        disabled={!!lockedAreaId}
+                                        className={`bg-slate-50 border border-slate-200 p-3 rounded-xl flex-row justify-between items-center ${lockedAreaId ? 'opacity-60' : ''}`}
+                                    >
+                                        <Text className="text-sm font-inter font-bold text-slate-900">
+                                            {isCreatingNewArea
+                                                ? `New Area: ${newAreaName}`
+                                                : (lockedAreaId && lockedAreaId.startsWith('loc-')
+                                                    ? `Location: ${lockedAreaId.replace('loc-', '')}`
+                                                    : (areas.find(a => a.id === areaId)?.name || 'Select Area...'))
+                                            }
+                                        </Text>
+                                        <Ionicons name={lockedAreaId ? "lock-closed" : "location"} size={16} color="#94a3b8" />
+                                    </TouchableOpacity>
+                                    {showAreaMenu && !lockedAreaId && (
+                                        <View className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-xl mt-1 z-50 shadow-xl overflow-hidden" style={{ zIndex: 1000, elevation: 10 }}>
+                                            <ScrollView style={{ maxHeight: 200 }}>
                                                 <TouchableOpacity
-                                                    key={area.id}
-                                                    className={`p-3 border-b border-slate-50 ${areaId === area.id ? 'bg-blue-50' : ''}`}
-                                                    onPress={() => {
-                                                        setAreaId(area.id);
-                                                        setIsCreatingNewArea(false);
-                                                        setShowAreaMenu(false);
-                                                    }}
+                                                    className="p-3 border-b border-slate-50 bg-blue-50/50"
+                                                    onPress={() => { setIsCreatingNewArea(true); setShowAreaMenu(false); }}
                                                 >
-                                                    <Text className={`text-sm font-inter ${areaId === area.id ? 'text-blue-600 font-black' : 'text-slate-600 font-bold'}`}>{area.name}</Text>
+                                                    <View className="flex-row items-center gap-2">
+                                                        <Ionicons name="add-circle" size={16} color="#2563eb" />
+                                                        <Text className="text-sm font-inter text-blue-600 font-black">+ Create New Area</Text>
+                                                    </View>
                                                 </TouchableOpacity>
-                                            ))}
-                                        </ScrollView>
-                                    </View>
-                                )}
-
-                                {isCreatingNewArea && !lockedAreaId && (
-                                    <View className="mt-2 p-3 bg-blue-50 rounded-xl border border-blue-100">
-                                        <View className="flex-row justify-between items-center mb-2">
-                                            <Text className="text-[9px] font-black text-blue-600 uppercase">New Area Details</Text>
-                                            <TouchableOpacity onPress={() => setIsCreatingNewArea(false)}>
-                                                <Ionicons name="close-circle" size={14} color="#3b82f6" />
-                                            </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    className="p-3 border-b border-slate-50"
+                                                    onPress={() => { setAreaId(''); setIsCreatingNewArea(false); setShowAreaMenu(false); }}
+                                                >
+                                                    <Text className="text-sm font-inter text-slate-400 font-bold">Project Wide (Global)</Text>
+                                                </TouchableOpacity>
+                                                {areas.map(area => (
+                                                    <TouchableOpacity
+                                                        key={area.id}
+                                                        className={`p-3 border-b border-slate-50 ${areaId === area.id ? 'bg-blue-50' : ''}`}
+                                                        onPress={() => {
+                                                            setAreaId(area.id);
+                                                            setIsCreatingNewArea(false);
+                                                            setShowAreaMenu(false);
+                                                        }}
+                                                    >
+                                                        <Text className={`text-sm font-inter ${areaId === area.id ? 'text-blue-600 font-black' : 'text-slate-600 font-bold'}`}>{area.name}</Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </ScrollView>
                                         </View>
-                                        <TextInput
-                                            className="bg-white border border-blue-200 px-3 py-2 rounded-lg text-sm font-bold text-slate-900 mb-2"
-                                            placeholder="Area Name (e.g. Unit 101 Bath)"
-                                            value={newAreaName}
-                                            onChangeText={setNewAreaName}
-                                        />
-                                        <TextInput
-                                            className="bg-white border border-blue-200 px-3 py-2 rounded-lg text-sm font-medium text-slate-900"
-                                            placeholder="Description (e.g. Floor 1, Unit 101)"
-                                            value={newAreaDescription}
-                                            onChangeText={setNewAreaDescription}
-                                        />
-                                    </View>
-                                )}
+                                    )}
+
+                                    {isCreatingNewArea && !lockedAreaId && (
+                                        <View className="mt-2 p-3 bg-blue-50 rounded-xl border border-blue-100">
+                                            <View className="flex-row justify-between items-center mb-2">
+                                                <Text className="text-[9px] font-black text-blue-600 uppercase">New Area Details</Text>
+                                                <TouchableOpacity onPress={() => setIsCreatingNewArea(false)}>
+                                                    <Ionicons name="close-circle" size={14} color="#3b82f6" />
+                                                </TouchableOpacity>
+                                            </View>
+                                            <TextInput
+                                                className="bg-white border border-blue-200 px-3 py-2 rounded-lg text-sm font-bold text-slate-900 mb-2"
+                                                placeholder="Area Name (e.g. Unit 101 Bath)"
+                                                value={newAreaName}
+                                                onChangeText={setNewAreaName}
+                                            />
+                                            <TextInput
+                                                className="bg-white border border-blue-200 px-3 py-2 rounded-lg text-sm font-medium text-slate-900"
+                                                placeholder="Description (e.g. Floor 1, Unit 101)"
+                                                value={newAreaDescription}
+                                                onChangeText={setNewAreaDescription}
+                                            />
+                                        </View>
+                                    )}
+                                </View>
+                                <View className="flex-1">
+                                    <Text className="text-[10px] font-inter font-black text-slate-400 uppercase tracking-widest mb-2">Sub-Location</Text>
+                                    <TextInput
+                                        className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900"
+                                        placeholder="e.g. Master Bath"
+                                        placeholderTextColor="#94a3b8"
+                                        value={subLocation}
+                                        onChangeText={setSubLocation}
+                                    />
+                                </View>
                             </View>
-                            <View className="flex-1">
-                                <Text className="text-[10px] font-inter font-black text-slate-400 uppercase tracking-widest mb-2">Sub-Location</Text>
-                                <TextInput
-                                    className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold text-slate-900"
-                                    placeholder="e.g. Master Bath"
-                                    placeholderTextColor="#94a3b8"
-                                    value={subLocation}
-                                    onChangeText={setSubLocation}
-                                />
-                            </View>
-                        </View>
+                        )}
 
                         <View className="mb-8">
                             <Text className="text-[10px] font-inter font-black text-slate-400 uppercase tracking-widest mb-2">Zone / Application Notes</Text>

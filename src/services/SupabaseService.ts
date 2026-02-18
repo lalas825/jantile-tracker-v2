@@ -2834,7 +2834,7 @@ export const SupabaseService = {
                         *,
                         jobs (name)
                     `)
-                    .or('in_warehouse_qty.gt.0,shop_stock.gt.0,received_at_job.gt.0,ordered_qty.gt.0')
+                    .or('in_warehouse_qty.gt.0,shop_stock.gt.0,received_at_job.gt.0,ordered_qty.gt.0,job_id.is.null')
                     .order('created_at', { ascending: false });
 
                 if (!error) {
@@ -2854,7 +2854,7 @@ export const SupabaseService = {
                     *,
                     jobs (name)
                 `)
-                .gt('shop_stock', 0)
+                .or('shop_stock.gt.0,job_id.is.null')
                 .order('created_at', { ascending: false });
 
             if (fallbackError) {

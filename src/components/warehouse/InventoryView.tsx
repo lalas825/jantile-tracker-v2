@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, LayoutAnimation, Platform, UIManager, Modal, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SupabaseService } from '../../services/SupabaseService';
+import { SupabaseService, ProjectMaterial } from '../../services/SupabaseService';
+import AddBudgetItemModal from '../logistics/AddBudgetItemModal';
 import { supabase } from '../../config/supabase';
 import { ChevronDown, ChevronRight, Search, Box } from 'lucide-react-native';
 
@@ -17,6 +18,7 @@ export default function InventoryView() {
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
     const [adjustmentModal, setAdjustmentModal] = useState({ visible: false, material: null as any, value: '' });
+    const [isAddModalVisible, setIsAddModalVisible] = useState(false);
 
     const loadData = async () => {
         try {
@@ -64,6 +66,23 @@ export default function InventoryView() {
         } catch (error) {
             console.error(error);
             Alert.alert("Error", "Failed to update stock");
+        }
+    };
+
+    const handleSaveGeneralStock = async (materialData: Partial<ProjectMaterial>) => {
+        try {
+            // General stock has no job_id
+            const payload = {
+                ...materialData,
+                job_id: null as any
+            };
+            await SupabaseService.saveProjectMaterial(payload);
+            setIsAddModalVisible(false);
+            loadData();
+            Alert.alert("Success", "General SKU created successfully");
+        } catch (error: any) {
+            console.error(error);
+            Alert.alert("Error", "Failed to create general SKU: " + (error.message || "Unknown error"));
         }
     };
 
@@ -130,23 +149,23 @@ export default function InventoryView() {
                         <Box size={18} color="#6366f1" className="mr-2" />
                         <Text className="text-sm font-bold text-slate-700">General Stock (Unallocated)</Text>
                     </View>
-                    <View className="bg-slate-200 px-2 py-0.5 rounded">
-                        <Text className="text-[10px] font-bold text-slate-600">{generalItems.length} SKUs</Text>
+                    <View className="flex-row items-center gap-3">
+                        <TouchableOpacity
+                            onPress={() => setIsAddModalVisible(true)}
+                            className="bg-indigo-600 px-3 py-1.5 rounded-lg flex-row items-center gap-1.5 shadow-sm"
+                        >
+                            <Ionicons name="add-circle" size={16} color="white" />
+                            <Text className="text-white text-xs font-bold font-inter">Add SKU</Text>
+                        </TouchableOpacity>
+                        <View className="bg-slate-200 px-2 py-0.5 rounded">
+                            <Text className="text-[10px] font-bold text-slate-600">{generalItems.length} SKUs</Text>
+                        </View>
                     </View>
                 </View>
 
                 {generalItems.length === 0 ? (
                     <View className="p-8 items-center">
-                        <Text className="text-slate-400 text-sm mb-4">No general stock items found.</Text>
-                        <TouchableOpacity
-                            className="bg-indigo-600 px-4 py-2 rounded-lg flex-row items-center gap-2"
-                            onPress={() => {/* This would usually navigate to a 'Add Material' form */
-                                Alert.alert("Feature coming soon", "To add new general stock, please use the 'Add material' feature in a job or global hub.");
-                            }}
-                        >
-                            <Ionicons name="add-circle" size={18} color="white" />
-                            <Text className="text-white font-bold">Create General SKU</Text>
-                        </TouchableOpacity>
+                        <Text className="text-slate-400 text-sm">No general stock items found.</Text>
                     </View>
                 ) : (
                     <View className="flex-row flex-wrap p-3">
@@ -323,6 +342,13 @@ export default function InventoryView() {
                     </View>
                 </View>
             </Modal>
+
+            <AddBudgetItemModal
+                visible={isAddModalVisible}
+                onClose={() => setIsAddModalVisible(false)}
+                onSave={handleSaveGeneralStock}
+                isGeneralStock={true}
+            />
         </ScrollView >
     );
 }
