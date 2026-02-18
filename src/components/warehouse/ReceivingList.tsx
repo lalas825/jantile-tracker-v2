@@ -647,31 +647,31 @@ export default function ReceivingList() {
                 <View className="p-8">
                     {/* 1. UNSCHEDULED BANNER */}
                     {unscheduled.length > 0 && (
-                        <View className="mb-10 bg-blue-50 border border-blue-200 rounded-3xl overflow-hidden shadow-sm">
-                            <View className="bg-blue-100/50 px-8 py-5 flex-row items-center gap-4 border-b border-blue-200">
-                                <Clock size={22} color="#2563eb" strokeWidth={2.5} />
-                                <Text className="text-blue-900 font-inter font-black uppercase tracking-tight text-base">
+                        <View className="mb-10 bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-xl shadow-slate-100">
+                            <View className="bg-slate-50 px-8 py-5 flex-row items-center gap-4 border-b border-slate-200">
+                                <Clock size={22} color="#64748b" strokeWidth={2.5} />
+                                <Text className="text-slate-900 font-inter font-black uppercase tracking-tight text-base">
                                     Expected Shipments (Needs Date)
                                 </Text>
-                                <View className="bg-blue-600 px-3 py-1 rounded-lg ml-auto shadow-md">
+                                <View className="bg-slate-900 px-3 py-1 rounded-lg ml-auto shadow-md">
                                     <Text className="text-white font-black text-sm">{unscheduled.length}</Text>
                                 </View>
                             </View>
                             <View className="p-6 flex-row flex-wrap gap-4">
                                 {unscheduled.map(p => (
-                                    <View key={p.id} className="bg-white border border-blue-200/50 rounded-2xl p-5 flex-row justify-between items-center w-full lg:w-[calc(50%-8px)] shadow-sm">
+                                    <View key={p.id} className="bg-slate-50/50 border border-slate-200/50 rounded-2xl p-5 flex-row justify-between items-center w-full lg:w-[calc(50%-8px)] shadow-sm">
                                         <View>
                                             <View className="flex-row items-center gap-2 mb-1.5">
-                                                <Text className="bg-blue-100 text-blue-900 text-[10px] font-black px-2 py-0.5 rounded uppercase">Inbound</Text>
+                                                <Text className="bg-slate-200 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded uppercase font-inter">Inbound</Text>
                                                 <Text className="text-slate-400 font-black text-[11px] uppercase tracking-wider">PO #{p.po_number}</Text>
                                             </View>
-                                            <Text className="text-xl font-inter font-black text-slate-900 uppercase">{p.vendor}</Text>
-                                            <Text className="text-slate-500 font-bold text-xs mt-1 uppercase tracking-tight">{p.job_name || 'Project Name'}</Text>
+                                            <Text className="text-xl font-inter font-black text-slate-900 uppercase tracking-tight">{p.vendor}</Text>
+                                            <Text className="text-blue-600 font-black text-[10px] mt-1 uppercase tracking-widest">{p.job_name || 'Project Name'}</Text>
                                         </View>
                                         <View className="items-end gap-3">
-                                            <TouchableOpacity className="bg-indigo-600 px-5 py-2.5 rounded-xl flex-row items-center gap-2 shadow-lg shadow-indigo-100">
-                                                <Calendar size={16} color="white" strokeWidth={2.5} />
-                                                <Text className="text-white font-black text-xs uppercase tracking-widest">Set Expected Date</Text>
+                                            <TouchableOpacity className="bg-white border border-slate-200 px-5 py-2.5 rounded-xl flex-row items-center gap-2 shadow-sm active:bg-slate-50">
+                                                <Calendar size={16} color="#64748b" strokeWidth={2.5} />
+                                                <Text className="text-slate-600 font-black text-xs uppercase tracking-widest">Set Expected Date</Text>
                                             </TouchableOpacity>
                                         </View>
                                     </View>
@@ -695,28 +695,28 @@ export default function ReceivingList() {
                                 {/* Job Site Header (Dark Styled) */}
                                 <TouchableOpacity
                                     onPress={() => toggleJob(jobName)}
-                                    className="bg-slate-900 rounded-3xl px-8 py-5 flex-row justify-between items-center shadow-xl shadow-slate-200"
+                                    className="bg-slate-50 border border-slate-200 rounded-[32px] px-8 py-5 flex-row justify-between items-center shadow-xl shadow-slate-100"
                                 >
                                     <View className="flex-row items-center gap-5">
-                                        <View className="bg-white/10 p-3 rounded-2xl">
-                                            <Truck size={24} color="white" strokeWidth={2.5} />
+                                        <View className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-sm">
+                                            <Truck size={24} color="#64748b" strokeWidth={2.5} />
                                         </View>
                                         <View>
-                                            <Text className="text-xl font-inter font-black text-white tracking-tight uppercase">{jobName}</Text>
+                                            <Text className="text-2xl font-inter font-black text-slate-900 tracking-tight uppercase">{jobName}</Text>
                                             <View className="flex-row items-center gap-2 mt-1">
                                                 <Box size={14} color="#94a3b8" />
-                                                <Text className="text-slate-400 font-bold text-[11px] uppercase">Active Inbound Job Site</Text>
+                                                <Text className="text-blue-600 font-black text-[10px] uppercase tracking-widest">Active Inbound Job Site</Text>
                                             </View>
                                         </View>
                                     </View>
-                                    <View className="flex-row items-center gap-6">
-                                        <View className="bg-indigo-600 px-4 py-1.5 rounded-full">
-                                            <Text className="text-white font-black text-xs uppercase tracking-widest">{jobPos.length} Expected Shipments</Text>
+                                    <View className="flex-row items-center gap-4">
+                                        <View className="bg-white px-4 py-2 rounded-2xl border border-slate-200 mr-2 shadow-sm">
+                                            <Text className="text-slate-900 font-black text-xs uppercase tracking-widest">{jobPos.length} Expected Shipments</Text>
                                         </View>
-                                        <View className={`p-1.5 rounded-full ${expandedJobs[jobName] ? 'bg-white/10' : ''}`}>
+                                        <View className={`p-2 rounded-full ${expandedJobs[jobName] ? 'bg-slate-200' : ''}`}>
                                             <ChevronDown
                                                 size={24}
-                                                color="white"
+                                                color="#64748b"
                                                 style={{
                                                     transform: [{ rotate: expandedJobs[jobName] ? '180deg' : '0deg' }]
                                                 }}
