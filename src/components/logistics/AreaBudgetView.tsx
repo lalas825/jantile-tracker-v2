@@ -54,46 +54,58 @@ export default function AreaBudgetView({
                 const others = areaMats.filter(m => !mainMaterials.includes(m) && !sundries.includes(m));
 
                 return (
-                    <View key={areaId} className="bg-white border border-slate-200 mb-10 overflow-hidden shadow-sm mx-8 rounded-3xl">
-                        <View className="p-5 bg-slate-900 flex-row justify-between items-center">
+                    <View key={areaId} className="bg-white border border-slate-200 mb-10 overflow-hidden shadow-xl shadow-slate-100 mx-8 rounded-[32px]">
+                        <View className="px-6 py-5 bg-slate-50 flex-row justify-between items-center border-b border-slate-200">
                             <View className="flex-row items-center gap-4">
                                 <TouchableOpacity
                                     onPress={() => toggleArea(areaId)}
-                                    className="bg-white/10 w-8 h-8 rounded-lg items-center justify-center"
+                                    className="bg-white border border-slate-200 w-10 h-10 rounded-xl items-center justify-center shadow-sm"
                                 >
-                                    <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={16} color="white" />
+                                    <Ionicons name={isExpanded ? "chevron-down" : "chevron-forward"} size={18} color="#64748b" />
                                 </TouchableOpacity>
                                 <View>
-                                    <Text className="text-white font-inter font-black text-lg tracking-tight">{areaName}</Text>
-                                    <Text className="text-blue-400 text-[13px] font-inter font-black uppercase tracking-widest">
+                                    <Text className="text-slate-900 font-inter font-black text-xl tracking-tight">{areaName}</Text>
+                                    <Text className="text-blue-600 text-[11px] font-inter font-black uppercase tracking-widest mt-0.5">
                                         {area?.description || 'Area Logistics Breakdown'}
                                     </Text>
                                 </View>
                             </View>
-                            <View className="flex-row items-center gap-2">
-                                <View className="bg-white/10 px-3 py-1.5 rounded-lg border border-white/10 mr-2">
-                                    <View>
-                                        <Text className="text-white font-inter font-black text-xs">Value: ${areaTotal.toLocaleString()}</Text>
-                                        <Text className="text-[8px] text-white/40 font-bold">M:{mainMaterials.length} S:{sundries.length} O:{others.length}</Text>
+                            <View className="flex-row items-center gap-3">
+                                <View className="bg-white px-4 py-2 rounded-2xl border border-slate-200 mr-2 shadow-sm">
+                                    <View className="flex-row items-center gap-3">
+                                        <View>
+                                            <Text className="text-slate-500 font-black text-[9px] uppercase tracking-widest mb-0.5">Area Value</Text>
+                                            <Text className="text-slate-900 font-inter font-black text-sm">${areaTotal.toLocaleString()}</Text>
+                                        </View>
+                                        <View className="w-px h-6 bg-slate-200 mx-1" />
+                                        <View>
+                                            <Text className="text-slate-500 font-black text-[9px] uppercase tracking-widest mb-0.5">Summary</Text>
+                                            <Text className="text-slate-700 font-bold text-[10px]">M:{mainMaterials.length} S:{sundries.length} O:{others.length}</Text>
+                                        </View>
                                     </View>
                                 </View>
-                                <TouchableOpacity
-                                    onPress={() => onEditArea(areaId)}
-                                    className="bg-white/10 w-8 h-8 rounded-lg items-center justify-center mr-1"
-                                >
-                                    <Ionicons name="pencil" size={14} color="white" />
-                                </TouchableOpacity>
+
+                                <View className="flex-row items-center bg-white border border-slate-200 rounded-2xl p-1 shadow-sm">
+                                    <TouchableOpacity
+                                        onPress={() => onEditArea(areaId)}
+                                        className="w-10 h-10 rounded-xl items-center justify-center"
+                                    >
+                                        <Ionicons name="pencil" size={16} color="#64748b" />
+                                    </TouchableOpacity>
+                                    <View className="w-px h-6 bg-slate-100" />
+                                    <TouchableOpacity
+                                        onPress={() => onDeleteArea(areaId, isVirtual)}
+                                        className="w-10 h-10 rounded-xl items-center justify-center"
+                                    >
+                                        <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                                    </TouchableOpacity>
+                                </View>
+
                                 <TouchableOpacity
                                     onPress={() => onAddMaterial(areaId)}
-                                    className="bg-blue-600 w-8 h-8 rounded-lg items-center justify-center"
+                                    className="bg-slate-900 w-11 h-11 rounded-2xl items-center justify-center shadow-lg shadow-slate-200 active:bg-slate-800"
                                 >
-                                    <Ionicons name="add" size={18} color="white" />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => onDeleteArea(areaId, isVirtual)}
-                                    className="bg-red-500/20 w-8 h-8 rounded-lg items-center justify-center ml-1"
-                                >
-                                    <Ionicons name="trash-outline" size={16} color="#f87171" />
+                                    <Ionicons name="add" size={24} color="white" />
                                 </TouchableOpacity>
                             </View>
                         </View>

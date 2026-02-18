@@ -520,26 +520,29 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
             {/* Header / Tabs */}
             <View className="bg-white px-8 pt-8 pb-4 border-b border-slate-200">
                 <View className="flex-row justify-between items-center mb-6">
-                    <View className="flex-row items-center gap-2">
-                        <View className="bg-blue-600 p-2 rounded-xl">
-                            <Ionicons name="cube" size={20} color="white" />
+                    <View className="flex-row items-center gap-3">
+                        <View className="bg-slate-100 p-2.5 rounded-2xl border border-slate-200 shadow-sm">
+                            <Ionicons name="cube" size={20} color="#2563eb" />
                         </View>
-                        <Text className="text-2xl font-inter font-black text-slate-900 tracking-tight">Logistics Engine</Text>
+                        <View>
+                            <Text className="text-2xl font-inter font-black text-slate-900 tracking-tight">Logistics Engine</Text>
+                            <Text className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-0.5">Inventory & Procurement</Text>
+                        </View>
                     </View>
                     <View className="flex-row items-center gap-3">
                         <TouchableOpacity
                             onPress={handleAddMaterial}
-                            className="flex-row items-center bg-blue-600 px-6 py-3 rounded-2xl shadow-sm active:bg-blue-700"
+                            className="flex-row items-center bg-slate-900 px-6 py-3 rounded-2xl shadow-lg shadow-slate-200 active:bg-slate-800"
                         >
                             <Ionicons name="add" size={20} color="white" />
-                            <Text className="text-white font-inter font-black ml-2 uppercase text-xs tracking-wider">Add Item</Text>
+                            <Text className="text-white font-inter font-black ml-2 uppercase text-[11px] tracking-wider">Add Item</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => setTicketModalVisible(true)}
-                            className="flex-row items-center bg-white border border-slate-200 px-6 py-3 rounded-2xl active:bg-slate-50"
+                            className="flex-row items-center bg-white border border-slate-200 px-6 py-3 rounded-2xl shadow-sm active:bg-slate-50"
                         >
                             <Ionicons name="paper-plane" size={18} color="#64748b" />
-                            <Text className="text-slate-600 font-inter font-black ml-2 uppercase text-xs tracking-wider">Create Delivery</Text>
+                            <Text className="text-slate-600 font-inter font-black ml-2 uppercase text-[11px] tracking-wider">Create Delivery</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
