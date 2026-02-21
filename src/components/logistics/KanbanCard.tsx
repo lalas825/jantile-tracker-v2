@@ -9,10 +9,11 @@ interface KanbanCardProps {
     ticket: DeliveryTicket;
     onPress?: () => void;
     onAssign?: () => void;
+    onShortagePress?: () => void;
     isRejected?: boolean;
 }
 
-export default function KanbanCard({ ticket, onPress, onAssign, isRejected }: KanbanCardProps) {
+export default function KanbanCard({ ticket, onPress, onAssign, onShortagePress, isRejected }: KanbanCardProps) {
     const totalQty = ticket.items?.reduce((sum, item) => sum + (item.qty || 0), 0) || 0;
     const firstItem = ticket.items?.[0];
     const itemCount = ticket.items?.length || 0;
@@ -47,6 +48,7 @@ export default function KanbanCard({ ticket, onPress, onAssign, isRejected }: Ka
             case 'DISPATCHED':
             case 'IN_TRANSIT': return 'border-blue-600';
             case 'RECEIVED': return 'border-emerald-500';
+            case 'RECEIVED_WITH_SHORTAGE': return 'border-red-500';
             default: return 'border-slate-200';
         }
     };
@@ -60,6 +62,7 @@ export default function KanbanCard({ ticket, onPress, onAssign, isRejected }: Ka
             case 'DISPATCHED':
             case 'IN_TRANSIT': return 'bg-blue-100 text-blue-600';
             case 'RECEIVED': return 'bg-emerald-100 text-emerald-600';
+            case 'RECEIVED_WITH_SHORTAGE': return 'bg-red-50 text-red-600';
             default: return 'bg-slate-100 text-slate-600';
         }
     };
@@ -86,14 +89,20 @@ export default function KanbanCard({ ticket, onPress, onAssign, isRejected }: Ka
                     </Text>
                 </View>
                 <View className="flex-row gap-2">
-                    {ticket.field_modified && (
+                    {ticket.field_modified && ticket.status !== 'RECEIVED_WITH_SHORTAGE' && (
                         <View className="bg-orange-100 px-1.5 py-0.5 rounded-[2px] border border-orange-200">
                             <Text className="text-[8px] font-black text-orange-600 uppercase">MODIFIED</Text>
                         </View>
                     )}
-                    <View className={clsx("px-1.5 py-0.5 rounded-[2px]", getBadgeColor())}>
-                        <Text className="text-[8px] font-black uppercase">{ticket.status}</Text>
-                    </View>
+                    {ticket.status?.toUpperCase() === 'RECEIVED_WITH_SHORTAGE' ? (
+                        <TouchableOpacity onPress={onShortagePress} className="bg-red-50 px-2 py-1 rounded-[2px] border border-red-200">
+                            <Text style={{ color: '#EF4444', fontSize: 10, fontFamily: 'Inter_700Bold', textTransform: 'uppercase' }}>SHORTAGE DETECTED</Text>
+                        </TouchableOpacity>
+                    ) : (
+                        <View className={clsx("px-1.5 py-0.5 rounded-[2px]", getBadgeColor())}>
+                            <Text className="text-[8px] font-black uppercase">{ticket.status}</Text>
+                        </View>
+                    )}
                 </View>
             </View>
 

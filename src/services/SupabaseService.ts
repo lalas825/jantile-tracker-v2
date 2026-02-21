@@ -3112,7 +3112,9 @@ export const SupabaseService = {
         ticketId: string,
         itemReceipts: {
             material_id: string,
+            product_name?: string,
             qty_received: number,
+            qty_expected?: number,
             condition: 'Verified' | 'Damaged' | 'Missing',
             notes?: string,
             photo_url?: string
@@ -3120,8 +3122,8 @@ export const SupabaseService = {
         userId: string
     ) {
         const now = new Date().toISOString();
-        const overallHasDiscrepancy = itemReceipts.some(r => r.condition !== 'Verified');
-        const finalStatus = overallHasDiscrepancy ? 'RECEIVED_WITH_ISSUE' : 'RECEIVED';
+        const overallHasDiscrepancy = itemReceipts.some(r => r.condition !== 'Verified' || (r.qty_expected !== undefined && r.qty_received < r.qty_expected));
+        const finalStatus = overallHasDiscrepancy ? 'RECEIVED_WITH_SHORTAGE' : 'RECEIVED';
 
         if (useSupabase) {
             // 1. Update Ticket Status
@@ -3170,15 +3172,24 @@ export const SupabaseService = {
                     await supabase.from('project_materials').update(updatePayload).eq('id', receipt.material_id);
                 }
 
-                // Log as issue if damaged/missing
-                if (receipt.condition !== 'Verified') {
+                // Log as issue if damaged/missing/shortage
+                if (receipt.condition !== 'Verified' || (receipt.qty_expected !== undefined && receipt.qty_received < receipt.qty_expected)) {
+                    let desc = `Issue during delivery receipt (DT #${ticketId}): ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
+
+                    if (receipt.qty_expected !== undefined && receipt.qty_received < receipt.qty_expected) {
+                        const missingQty = receipt.qty_expected - receipt.qty_received;
+                        desc = `Shortage detected on receipt (DT #${ticketId}) for ${receipt.product_name || receipt.material_id}. Expected: ${receipt.qty_expected}, Received: ${receipt.qty_received}. Missing: ${missingQty}. Notes: ${receipt.notes || 'None'}`;
+                    } else if (receipt.product_name) {
+                        desc = `Issue during delivery receipt (DT #${ticketId}) for ${receipt.product_name}: ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
+                    }
+
                     await supabase.from('job_issues').insert({
                         id: Crypto.randomUUID(),
                         job_id: (await supabase.from('delivery_tickets').select('job_id').eq('id', ticketId).single()).data?.job_id,
                         type: receipt.condition === 'Damaged' ? 'Material Damage' : 'Shortage',
                         priority: 'High',
                         status: 'open',
-                        description: `Issue during delivery receipt (DT #${ticketId}): ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`,
+                        description: desc,
                         photo_url: receipt.photo_url,
                         created_by: userId,
                         created_at: now,
@@ -3240,7 +3251,16 @@ export const SupabaseService = {
                     ]);
                 }
 
-                if (receipt.condition !== 'Verified') {
+                if (receipt.condition !== 'Verified' || (receipt.qty_expected !== undefined && receipt.qty_received < receipt.qty_expected)) {
+                    let desc = `Issue during delivery receipt (DT #${ticketId}): ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
+
+                    if (receipt.qty_expected !== undefined && receipt.qty_received < receipt.qty_expected) {
+                        const missingQty = receipt.qty_expected - receipt.qty_received;
+                        desc = `Shortage detected on receipt (DT #${ticketId}) for ${receipt.product_name || receipt.material_id}. Expected: ${receipt.qty_expected}, Received: ${receipt.qty_received}. Missing: ${missingQty}. Notes: ${receipt.notes || 'None'}`;
+                    } else if (receipt.product_name) {
+                        desc = `Issue during delivery receipt (DT #${ticketId}) for ${receipt.product_name}: ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
+                    }
+
                     await tx.execute(`
                         INSERT INTO job_issues (id, job_id, type, priority, status, description, photo_url, created_by, created_at, updated_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -3250,7 +3270,7 @@ export const SupabaseService = {
                         receipt.condition === 'Damaged' ? 'Material Damage' : 'Shortage',
                         'High',
                         'open',
-                        `Issue during delivery receipt (DT #${ticketId}): ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`,
+                        desc,
                         receipt.photo_url,
                         userId,
                         now,

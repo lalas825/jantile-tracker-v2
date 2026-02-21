@@ -63,12 +63,41 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
     };
 
     // 2. REAL-TIME TELEMETRY (Filtered by Job)
-    const { data: issuesCount } = useQuery("SELECT count(*) as count FROM job_issues WHERE job_id = ? AND status = 'open'", [job.id]);
-    const { data: siteManpower } = useQuery("SELECT count(*) as count FROM crew_checkins WHERE job_id = ? AND check_out IS NULL", [job.id]);
-    const { data: siteProgress } = useQuery("SELECT avg(progress) as avg_progress FROM areas WHERE job_id = ?", [job.id]);
+    const { data: psIssuesCount } = useQuery("SELECT count(*) as count FROM job_issues WHERE job_id = ? AND status = 'open'", [job.id]);
+    const { data: psSiteManpower } = useQuery("SELECT count(*) as count FROM crew_checkins WHERE job_id = ? AND check_out IS NULL", [job.id]);
+    const { data: psSiteProgress } = useQuery("SELECT avg(progress) as avg_progress FROM areas WHERE job_id = ?", [job.id]);
+
+    const [webStats, setWebStats] = useState({ issues: 0, manpower: 0, progress: 0 });
+
+    useEffect(() => {
+        if (isWeb) {
+            const fetchStats = async () => {
+                try {
+                    const [issues, manpower, progressData] = await Promise.all([
+                        SupabaseService.supabase.from('job_issues').select('*', { count: 'exact', head: true }).eq('job_id', job.id).eq('status', 'open'),
+                        SupabaseService.supabase.from('crew_checkins').select('*', { count: 'exact', head: true }).eq('job_id', job.id).is('check_out', null),
+                        SupabaseService.supabase.from('areas').select('progress').eq('job_id', job.id)
+                    ]);
+
+                    const progress = progressData.data?.length
+                        ? Math.round(progressData.data.reduce((sum: number, a: any) => sum + (a.progress || 0), 0) / progressData.data.length)
+                        : 0;
+
+                    setWebStats({
+                        issues: issues.count || 0,
+                        manpower: manpower.count || 0,
+                        progress: progress
+                    });
+                } catch (err) {
+                    console.error("Web Stats Error:", err);
+                }
+            };
+            fetchStats();
+        }
+    }, [job.id, isWeb]);
 
     // 3. DYNAMIC ACTIVITY FEED
-    const { data: activityItems = [] } = useQuery(`
+    const { data: psActivityItems = [] } = useQuery(`
         SELECT 'alert-circle' as icon, 'text-red-500' as color, 'bg-red-50' as bg, type as title, description as sub, created_at as time 
         FROM job_issues WHERE job_id = ?
         UNION ALL
@@ -77,11 +106,44 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
         ORDER BY time DESC LIMIT 5
     `, [job.id, job.id]);
 
+    const [webActivityItems, setWebActivityItems] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (isWeb) {
+            const fetchActivity = async () => {
+                try {
+                    const [issues, tickets] = await Promise.all([
+                        SupabaseService.supabase.from('job_issues').select('type, description, created_at').eq('job_id', job.id).order('created_at', { ascending: false }).limit(5),
+                        SupabaseService.supabase.from('delivery_tickets').select('ticket_number, status, updated_at').eq('job_id', job.id).order('updated_at', { ascending: false }).limit(5)
+                    ]);
+
+                    const combined = [
+                        ...(issues.data || []).map(i => ({
+                            icon: 'alert-circle', color: 'text-red-500', bg: 'bg-red-50',
+                            title: i.type, sub: i.description, time: i.created_at
+                        })),
+                        ...(tickets.data || []).map(t => ({
+                            icon: 'truck', color: 'text-blue-500', bg: 'bg-blue-50',
+                            title: 'Delivery Update', sub: `DT #${t.ticket_number} is ${t.status}`, time: t.updated_at
+                        }))
+                    ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 5);
+
+                    setWebActivityItems(combined);
+                } catch (err) {
+                    console.error("Web Activity Error:", err);
+                }
+            };
+            fetchActivity();
+        }
+    }, [job.id, isWeb]);
+
     const stats = {
-        issues: (issuesCount?.[0] as any)?.count || 0,
-        manpower: (siteManpower?.[0] as any)?.count || 0,
-        progress: Math.round((siteProgress?.[0] as any)?.avg_progress || 0)
+        issues: isWeb ? webStats.issues : ((psIssuesCount?.[0] as any)?.count || 0),
+        manpower: isWeb ? webStats.manpower : ((psSiteManpower?.[0] as any)?.count || 0),
+        progress: isWeb ? webStats.progress : Math.round((psSiteProgress?.[0] as any)?.avg_progress || 0)
     };
+
+    const activityItems = isWeb ? webActivityItems : psActivityItems;
 
     const finalTickets = useMemo(() => {
         const raw = isWeb ? webTickets : tickets;
@@ -314,6 +376,43 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
                                     {new Date(item.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </Text>
                             </View>
+                        ))}
+                    </View>
+                )}
+            </View>
+            <View className="px-6 mt-10">
+                <View className="flex-row justify-between items-center mb-4">
+                    <Text className="text-slate-900 font-black text-xl tracking-tight">Completed Deliveries</Text>
+                </View>
+
+                {finalTickets.filter(t => t.status === 'RECEIVED').length === 0 ? (
+                    <View className="bg-slate-50 py-10 rounded-3xl border border-dashed border-slate-200 items-center">
+                        <Text className="text-slate-400 font-bold text-sm">No completed deliveries yet</Text>
+                    </View>
+                ) : (
+                    <View className="flex-row flex-wrap gap-4">
+                        {finalTickets.filter(t => t.status === 'RECEIVED').map((t, idx, arr) => (
+                            <TouchableOpacity
+                                key={t.id}
+                                onPress={() => handleEdit(t)}
+                                className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm"
+                                style={{ flexBasis: '23%', flexGrow: 1, minWidth: 200 }}
+                            >
+                                <View className="flex-row items-center gap-3 mb-3">
+                                    <View className="bg-emerald-50 w-10 h-10 rounded-full flex-shrink-0 items-center justify-center">
+                                        <Ionicons name="checkmark-done-circle" size={20} color="#10b981" />
+                                    </View>
+                                    <View className="flex-1">
+                                        <Text className="text-slate-900 font-black text-base tracking-tight">DT #{t.ticket_number}</Text>
+                                        <Text className="text-slate-400 text-[10px] font-bold uppercase">{new Date(t.updated_at).toLocaleDateString()}</Text>
+                                    </View>
+                                </View>
+                                <View className="bg-slate-50 p-3 rounded-2xl flex-1 justify-center">
+                                    <Text className="text-slate-500 text-[11px] font-medium leading-4" numberOfLines={2}>
+                                        <Text className="font-bold text-slate-700">{t.items?.length || 0} Items</Text> • {t.items?.map((i: any) => i.product_name).join(', ')}
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
                         ))}
                     </View>
                 )}

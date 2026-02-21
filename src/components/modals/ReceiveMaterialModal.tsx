@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Modal, ScrollView, TextInput, Platform, Dimensions, Image } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, ScrollView, TextInput, Platform, Dimensions, Image, Alert } from 'react-native';
 import { X, Camera, CheckCircle2, AlertCircle, Package, Truck, Info, MapPin } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SupabaseService, DeliveryTicket } from '../../services/SupabaseService';
@@ -66,6 +66,7 @@ export default function ReceiveMaterialModal({ isVisible, onClose, ticket, onSuc
                 receipts.map(r => ({
                     material_id: r.material_id,
                     qty_received: r.qty_received,
+                    qty_expected: r.qty_expected,
                     condition: r.condition,
                     notes: r.notes || stagingNotes
                 })),

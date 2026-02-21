@@ -49,7 +49,7 @@ function DroppableColumn({ id, label, color, textColor, children, count }: any) 
 }
 
 // Helper: Draggable Card Wrapper
-function DraggableCard({ ticket, onDelete, onAssign, onSendToWarehouse, onEdit }: { ticket: DeliveryTicket; onDelete: (id: string) => void; onAssign: (t: DeliveryTicket) => void; onSendToWarehouse: (t: DeliveryTicket) => void; onEdit?: (t: DeliveryTicket) => void }) {
+function DraggableCard({ ticket, onDelete, onAssign, onSendToWarehouse, onEdit, onShortagePress }: { ticket: DeliveryTicket; onDelete: (id: string) => void; onAssign: (t: DeliveryTicket) => void; onSendToWarehouse: (t: DeliveryTicket) => void; onEdit?: (t: DeliveryTicket) => void; onShortagePress?: (t: DeliveryTicket) => void; }) {
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
         id: ticket.id,
         data: { ticket }
@@ -78,6 +78,7 @@ function DraggableCard({ ticket, onDelete, onAssign, onSendToWarehouse, onEdit }
                 isRejected={(ticket.status === 'DRAFT' || ticket.status === 'DRAFTS') && !!ticket.notes}
                 onPress={() => onEdit && onEdit(ticket)}
                 onAssign={() => onAssign(ticket)}
+                onShortagePress={() => onShortagePress && onShortagePress(ticket)}
             />
             {ticket.status === 'FIELD_APPROVED' && (
                 <TouchableOpacity
@@ -200,6 +201,31 @@ export default function DeliveriesView({
                                             onDelete={onDeleteTicket}
                                             onSendToWarehouse={(ticket) => onUpdateStatus(ticket, 'SCHEDULED')}
                                             onEdit={onEditTicket}
+                                            onShortagePress={(ticket) => {
+                                                Alert.alert(
+                                                    "Shortage Detected",
+                                                    `Foreman Notes:\n${ticket.notes || 'No notes provided.'}`,
+                                                    [
+                                                        { text: "Cancel", style: "cancel" },
+                                                        {
+                                                            text: "Generate Replacement Ticket",
+                                                            onPress: () => {
+                                                                if (onEditTicket) {
+                                                                    onEditTicket({
+                                                                        ...ticket,
+                                                                        id: '',
+                                                                        ticket_number: '',
+                                                                        status: 'DRAFT',
+                                                                        notes: `Replacement for shortage on DT #${ticket.ticket_number}`
+                                                                    });
+                                                                } else {
+                                                                    onCreateTicket();
+                                                                }
+                                                            }
+                                                        }
+                                                    ]
+                                                );
+                                            }}
                                             onAssign={async (ticket) => {
                                                 try {
                                                     const workers = await SupabaseService.getWorkers();

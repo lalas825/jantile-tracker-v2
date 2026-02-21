@@ -1,23 +1,24 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Platform, TextInput, Alert } from 'react-native';
+import React, { useState, useCallback, useMemo } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Platform, TextInput, Alert, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { AlertTriangle, Clock, CheckCircle2, ChevronRight, Filter, Search, ShieldCheck, XCircle, Package, Truck } from 'lucide-react-native';
+import { AlertTriangle, Clock, CheckCircle2, ChevronRight, ShieldCheck, XCircle, Package, Truck, Users, Activity, ListOrdered } from 'lucide-react-native';
 import { SupabaseService, JobIssue, DeliveryTicket, ProjectMaterial } from '../../services/SupabaseService';
 import { Ionicons } from '@expo/vector-icons';
 import ReceiveMaterialModal from '../../components/modals/ReceiveMaterialModal';
 import DeliveryTicketModal from '../../components/logistics/DeliveryTicketModal';
 import { useAuth } from '../../context/AuthContext';
-import { usePowerSync } from '@powersync/react';
+import { useQuery, usePowerSync } from '@powersync/react';
 
-type ActiveTab = 'issues' | 'approvals';
+type ActiveTab = 'action-center' | 'site-pulse' | 'logistics-radar';
 
 export default function FieldScreen() {
     const router = useRouter();
-    const [activeTab, setActiveTab] = useState<ActiveTab>('issues');
+    const [activeTab, setActiveTab] = useState<ActiveTab>('action-center');
     const [issues, setIssues] = useState<JobIssue[]>([]);
     const [pendingTickets, setPendingTickets] = useState<DeliveryTicket[]>([]);
     const [activeTickets, setActiveTickets] = useState<DeliveryTicket[]>([]);
+    const [allTickets, setAllTickets] = useState<DeliveryTicket[]>([]);
     const [loading, setLoading] = useState(true);
     const [issueFilter, setIssueFilter] = useState<'open' | 'resolved'>('open');
     const [refreshing, setRefreshing] = useState(false);
@@ -30,6 +31,46 @@ export default function FieldScreen() {
     const { session, profile } = useAuth();
     const db = usePowerSync();
     const isWeb = Platform.OS === 'web';
+
+    const handleActionComplete = () => {
+        setReceiveModalVisible(false);
+        setTicketModalVisible(false);
+        setSelectedTicket(null);
+        loadData();
+    };
+
+    const handleApproval = async (ticketId: string, action: 'APPROVE' | 'REJECT') => {
+        try {
+            if (action === 'APPROVE') {
+                await SupabaseService.approveDeliveryTicket(ticketId, 'supervisor');
+            } else {
+                await SupabaseService.updateTicketStatus(ticketId, 'REJECTED_BY_FIELD', rejectNotes[ticketId]);
+            }
+            // Clear note and reload
+            setRejectNotes(prev => {
+                const updated = { ...prev };
+                delete updated[ticketId];
+                return updated;
+            });
+            loadData();
+        } catch (error) {
+            console.error('Error handling approval:', error);
+            Alert.alert('Error', 'Failed to process approval.');
+        }
+    };
+
+    // Telemetry Queries (using useQuery for Native, web fallbacks below)
+    const { data: qManpower } = useQuery("SELECT id FROM crew_checkins WHERE check_out IS NULL OR check_out = ''");
+    const { data: qTransit } = useQuery("SELECT id FROM delivery_tickets WHERE status = 'IN_TRANSIT' OR status = 'SHIPPED'");
+    // Combined Production/Budget for Overall Progress
+    const { data: qProd } = useQuery("SELECT SUM(sqft_installed) as installed FROM production_logs");
+    const { data: qBudget } = useQuery("SELECT SUM(budget_qty) as total FROM project_materials");
+
+    // Web Fallbacks for Telemetry
+    const [webManpower, setWebManpower] = useState(0);
+    const [webTransit, setWebTransit] = useState(0);
+    const [webProd, setWebProd] = useState(0);
+    const [webBudget, setWebBudget] = useState(0);
 
     const loadData = async () => {
         setLoading(true);
@@ -49,6 +90,7 @@ export default function FieldScreen() {
 
             if (results[1].status === 'fulfilled') {
                 const tickets = results[1].value;
+                setAllTickets(tickets);
                 const pending = tickets.filter(t => t.status?.toUpperCase() === 'PENDING_FIELD_REVIEW');
                 const active = tickets.filter(t => ['SCHEDULED', 'SHIPPED'].includes(t.status?.toUpperCase()));
 
@@ -63,6 +105,16 @@ export default function FieldScreen() {
             if (results[2].status === 'fulfilled') {
                 setMaterials(results[2].value as ProjectMaterial[]);
             }
+
+            // Web Fallbacks
+            if (isWeb) {
+                // Simple aggregates for web since complex query builder might be needed otherwise
+                db.getAll("SELECT id FROM crew_checkins WHERE check_out IS NULL OR check_out = ''").then(res => setWebManpower(res.length));
+                db.getAll("SELECT id FROM delivery_tickets WHERE status = 'IN_TRANSIT' OR status = 'SHIPPED'").then(res => setWebTransit(res.length));
+                db.get("SELECT SUM(sqft_installed) as installed FROM production_logs").then(res => setWebProd((res as any)?.installed || 0));
+                db.get("SELECT SUM(budget_qty) as total FROM project_materials").then(res => setWebBudget((res as any)?.total || 0));
+            }
+
         } catch (error) {
             console.error("FieldHub: Critical error loading global data:", error);
         } finally {
@@ -75,366 +127,436 @@ export default function FieldScreen() {
 
     const filteredIssues = issues.filter(i => i.status === issueFilter);
 
-    const handleActionComplete = () => {
-        loadData();
-    };
-
-    const handleApproval = async (ticketId: string, action: 'APPROVE' | 'REJECT') => {
-        try {
-            if (action === 'APPROVE') {
-                // FIELD TAB = Supervisor context. Always approve as supervisor here.
-                // The JobSite tab handles foreman approvals.
-                await SupabaseService.approveDeliveryTicket(ticketId, 'supervisor');
-            } else {
-                await SupabaseService.updateTicketStatus(ticketId, 'REJECTED', rejectNotes[ticketId]);
-            }
-            loadData();
-        } catch (error: any) {
-            console.error("Approval error:", error);
-            Alert.alert("Error", "Failed to update ticket status");
-        }
-    };
-
     const getPriorityColor = (priority: string) => {
-        switch (priority) {
-            case 'High': return 'text-red-600 bg-red-50 border-red-100';
-            case 'Medium': return 'text-orange-600 bg-orange-50 border-orange-100';
-            case 'Low': return 'text-blue-600 bg-blue-50 border-blue-100';
+        switch (priority?.toUpperCase()) {
+            case 'HIGH': return 'text-red-600 bg-red-50 border-red-100';
+            case 'MEDIUM': return 'text-orange-600 bg-orange-50 border-orange-100';
+            case 'LOW': return 'text-blue-600 bg-blue-50 border-blue-100';
             default: return 'text-slate-600 bg-slate-50 border-slate-100';
         }
     };
 
-    const renderApprovals = () => {
-        if (pendingTickets.length === 0 && activeTickets.length === 0) {
+    // Derived Telemetry Data
+    const liveManpower = isWeb ? webManpower : (qManpower?.length || 0);
+    const liveTransit = isWeb ? webTransit : (qTransit?.length || 0);
+    const installed = isWeb ? webProd : (qProd?.[0]?.installed || 0);
+    const budget = isWeb ? webBudget : (qBudget?.[0]?.total || 0);
+    const progressPercent = budget > 0 ? Math.min(100, Math.round((installed / budget) * 100)) : 0;
+    const openIssues = issues.filter(i => i.status === 'open');
+    const actionItemsCount = openIssues.length + pendingTickets.length;
+
+    // Site Pulse Generator
+    const sitePulseEvents = useMemo(() => {
+        // Combine recent issues and tickets for a timeline
+        const events = [
+            ...issues.map(i => ({ type: 'issue', date: new Date(i.created_at), data: i })),
+            ...activeTickets.map(t => ({ type: 'ticket', date: new Date(t.updated_at || t.created_at), data: t }))
+        ].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 50); // Limit to recent 50
+        return events;
+    }, [issues, activeTickets]);
+
+    const renderActionCenter = () => {
+        const sortedIssues = [...openIssues].sort((a, b) => {
+            if (a.priority === 'High' && b.priority !== 'High') return -1;
+            if (b.priority === 'High' && a.priority !== 'High') return 1;
+            return 0;
+        });
+
+        if (sortedIssues.length === 0 && pendingTickets.length === 0) {
             return (
                 <View className="py-20 items-center justify-center">
                     <View className="bg-emerald-50 p-6 rounded-full mb-4">
                         <ShieldCheck size={48} color="#059669" />
                     </View>
-                    <Text className="text-slate-500 font-bold text-lg">No Active Logistics</Text>
+                    <Text className="text-slate-500 font-bold text-lg">No Action Items</Text>
                     <Text className="text-slate-400 text-sm mt-1 text-center px-10">
-                        All delivery requests and shipments are current. You're all caught up!
+                        All clear. No pending reviews or open field issues.
                     </Text>
                 </View>
             );
         }
 
         return (
-            <View>
+            <View className="px-1">
                 {/* 1. PENDING APPROVALS SECTION */}
                 {pendingTickets.length > 0 && (
-                    <View className="mb-10">
-                        <Text className="text-slate-400 text-xs font-black uppercase tracking-widest mb-4">Awaiting Field Review</Text>
+                    <View className="mb-8">
+                        <View className="flex-row items-center gap-2 mb-4">
+                            <View className="bg-orange-100 p-1.5 rounded-lg">
+                                <AlertTriangle size={14} color="#ea580c" />
+                            </View>
+                            <Text className="text-slate-800 text-sm font-black uppercase tracking-widest">Requires Field Review</Text>
+                        </View>
                         <View className="flex-row flex-wrap gap-4">
                             {pendingTickets.map((ticket) => (
                                 <View
                                     key={ticket.id}
                                     style={Platform.OS === 'web' ? { width: '32%', minWidth: 320 } : { width: '100%' }}
-                                    className="bg-white rounded-3xl mb-4 border border-slate-200 shadow-sm overflow-hidden"
+                                    className="bg-white rounded-3xl mb-4 border border-orange-100 shadow-sm overflow-hidden"
                                 >
                                     {/* Ticket Header */}
-                                    <View className="p-5 border-b border-slate-50 flex-row justify-between items-center bg-slate-50/30">
+                                    <View className="p-4 border-b border-orange-50 flex-row justify-between items-center bg-orange-50/20">
                                         <View>
-                                            <Text className="text-slate-400 text-[10px] font-black uppercase tracking-widest">{ticket.job_name || 'Project'}</Text>
+                                            <Text className="text-slate-500 text-[10px] font-black uppercase tracking-widest">{ticket.job_name || 'Project'}</Text>
                                             <Text className="text-lg font-black text-slate-900 tracking-tight">DT #{ticket.ticket_number}</Text>
                                         </View>
                                         <View className="flex-row items-center gap-2">
                                             {ticket.field_modified && (
-                                                <View className="bg-amber-100 px-3 py-1 rounded-full border border-amber-200">
+                                                <View className="bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
                                                     <Text className="text-amber-600 text-[9px] font-black uppercase tracking-tight">Modified</Text>
                                                 </View>
                                             )}
-                                            <View className="bg-orange-100 px-3 py-1 rounded-full border border-orange-200">
-                                                <Text className="text-orange-600 text-[9px] font-black uppercase">Field Review</Text>
-                                            </View>
                                         </View>
                                     </View>
 
-                                    {/* Approval Badges */}
-                                    <View className="px-5 py-2 flex-row gap-2 border-b border-slate-50 bg-slate-50/20">
-                                        <View className={`flex-row items-center px-2 py-0.5 rounded-full border ${ticket.foreman_approved ? 'bg-green-50 border-green-100' : 'bg-slate-100 border-slate-200'}`}>
-                                            <View className={`w-1.5 h-1.5 rounded-full mr-1.5 ${ticket.foreman_approved ? 'bg-green-500' : 'bg-slate-300'}`} />
-                                            <Text className={`text-[8px] font-black ${ticket.foreman_approved ? 'text-green-700' : 'text-slate-500'}`}>FOREMAN</Text>
-                                        </View>
-                                        <View className={`flex-row items-center px-2 py-0.5 rounded-full border ${ticket.supervisor_approved ? 'bg-green-50 border-green-100' : 'bg-slate-100 border-slate-200'}`}>
-                                            <View className={`w-1.5 h-1.5 rounded-full mr-1.5 ${ticket.supervisor_approved ? 'bg-green-500' : 'bg-slate-300'}`} />
-                                            <Text className={`text-[8px] font-black ${ticket.supervisor_approved ? 'text-green-700' : 'text-slate-500'}`}>SUPERVISOR</Text>
-                                        </View>
-                                    </View>
-
-                                    {/* Items List */}
-                                    <View className="p-5">
-                                        <Text className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Items Breakdown</Text>
+                                    {/* Items List - Compact Data Dense */}
+                                    <View className="p-4 bg-slate-50/30">
                                         {ticket.items.map((item, idx) => (
-                                            <View key={idx} className="flex-row justify-between items-center mb-3">
-                                                <View className="flex-1 mr-4">
-                                                    <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>{item.product_name}</Text>
-                                                    <Text className="text-[10px] text-slate-400 font-medium">
+                                            <View key={idx} className="flex-row justify-between items-center mb-2">
+                                                <View className="flex-1 mr-3">
+                                                    <Text className="text-xs font-bold text-slate-800" numberOfLines={1}>{item.product_name}</Text>
+                                                    <Text className="text-[9px] text-slate-500 font-medium">
                                                         {item.product_code} {item.dimensions ? `| ${item.dimensions}` : ''}
                                                     </Text>
                                                 </View>
-                                                <View className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 min-w-[70px] items-center">
-                                                    <Text className="text-xs font-black text-slate-900">
-                                                        {item.qty.toLocaleString()} {item.unit || 'SQFT'}
+                                                <View className="bg-white px-2 py-1 rounded-lg border border-slate-200 min-w-[60px] items-center">
+                                                    <Text className="text-[11px] font-black text-slate-900">
+                                                        {item.qty.toLocaleString()} {item.unit || 'SQF'}
                                                     </Text>
                                                 </View>
                                             </View>
                                         ))}
+                                    </View>
 
-                                        {/* Modals trigger for Field Review */}
-                                        <View className="flex-row justify-end mb-4 pr-1">
+                                    {/* Action Banner */}
+                                    <View className="p-4 border-t border-slate-100">
+                                        <View className="flex-row justify-end mb-3">
                                             <TouchableOpacity
                                                 onPress={() => {
                                                     setSelectedTicket(ticket);
                                                     setTicketModalVisible(true);
                                                 }}
-                                                className="bg-slate-50 p-2 rounded-lg border border-slate-100 flex-row items-center gap-2"
+                                                className="bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 flex-row items-center gap-1.5"
                                             >
-                                                <Ionicons name="create-outline" size={14} color="#64748b" />
-                                                <Text className="text-[10px] font-black text-slate-500 uppercase">Edit Qty / Items</Text>
+                                                <Ionicons name="create-outline" size={12} color="#64748b" />
+                                                <Text className="text-[9px] font-black text-slate-600 uppercase tracking-wider">Modify Quantities</Text>
                                             </TouchableOpacity>
                                         </View>
 
-                                        <View className="mt-4 pt-4 border-t border-slate-50">
-                                            {/* Action Buttons */}
-                                            <View className="flex-row gap-3">
-                                                <TouchableOpacity
-                                                    onPress={() => handleApproval(ticket.id, 'APPROVE')}
-                                                    className="flex-1 bg-emerald-600 h-12 rounded-2xl items-center justify-center shadow-lg shadow-emerald-100 flex-row gap-2"
-                                                >
-                                                    <ShieldCheck size={16} color="white" />
-                                                    <Text className="text-white font-black uppercase text-xs tracking-widest">
-                                                        {ticket.supervisor_approved ? 'Supervisor ✓ Approved' : 'Supervisor Approve'}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    onPress={() => {
-                                                        if (!rejectNotes[ticket.id]) {
-                                                            Alert.alert("Reason Required", "Please enter a reason for rejection.");
-                                                            return;
-                                                        }
-                                                        handleApproval(ticket.id, 'REJECT');
-                                                    }}
-                                                    className="w-12 h-12 bg-white border border-slate-200 rounded-2xl items-center justify-center"
-                                                >
-                                                    <XCircle size={20} color="#ef4444" />
-                                                </TouchableOpacity>
-                                            </View>
-
-                                            <TextInput
-                                                className="mt-3 bg-slate-50 p-3 rounded-xl border border-slate-100 text-[11px] text-slate-600 h-10"
-                                                placeholder="Add rejection note here..."
-                                                value={rejectNotes[ticket.id] || ''}
-                                                onChangeText={(v) => setRejectNotes(prev => ({ ...prev, [ticket.id]: v }))}
-                                            />
+                                        <View className="flex-row gap-2">
+                                            <TouchableOpacity
+                                                onPress={() => handleApproval(ticket.id, 'APPROVE')}
+                                                className="flex-1 bg-emerald-600 h-10 rounded-xl items-center justify-center flex-row gap-1.5"
+                                            >
+                                                <ShieldCheck size={14} color="white" />
+                                                <Text className="text-white font-black uppercase text-[10px] tracking-widest">Sign-Off</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                onPress={() => {
+                                                    if (!rejectNotes[ticket.id]) {
+                                                        Alert.alert("Reason Required", "Please enter a reason for rejection.");
+                                                        return;
+                                                    }
+                                                    handleApproval(ticket.id, 'REJECT');
+                                                }}
+                                                className="w-10 h-10 bg-white border border-red-200 rounded-xl items-center justify-center"
+                                            >
+                                                <XCircle size={16} color="#ef4444" />
+                                            </TouchableOpacity>
                                         </View>
+                                        <TextInput
+                                            className="mt-2 bg-slate-50 p-2 rounded-lg border border-slate-100 text-[10px] text-slate-600 h-8"
+                                            placeholder="Rejection note..."
+                                            value={rejectNotes[ticket.id] || ''}
+                                            onChangeText={(v) => setRejectNotes(prev => ({ ...prev, [ticket.id]: v }))}
+                                        />
                                     </View>
                                 </View>
                             ))}
                         </View>
                     </View>
-                )
-                }
+                )}
 
-                {/* 2. ACTIVE DELIVERIES SECTION (NEW) */}
-                {
-                    activeTickets.length > 0 && (
-                        <View>
-                            <Text className="text-slate-400 text-xs font-black uppercase tracking-widest mb-4">Active Shipments & Deliveries</Text>
-                            <View className="flex-row flex-wrap gap-4">
-                                {activeTickets.map((ticket) => (
-                                    <View
-                                        key={ticket.id}
-                                        style={Platform.OS === 'web' ? { width: '32%', minWidth: 320 } : { width: '100%' }}
-                                        className="bg-white rounded-3xl mb-4 border border-slate-200 shadow-sm overflow-hidden"
+                {/* 2. OPEN ISSUES SECTION */}
+                {sortedIssues.length > 0 && (
+                    <View className="mb-10">
+                        <View className="flex-row items-center gap-2 mb-4">
+                            <View className="bg-red-100 p-1.5 rounded-lg">
+                                <AlertTriangle size={14} color="#dc2626" />
+                            </View>
+                            <Text className="text-slate-800 text-sm font-black uppercase tracking-widest">Open Field Issues</Text>
+                        </View>
+
+                        <View className="flex-row flex-wrap gap-4">
+                            {sortedIssues.map((issue) => {
+                                const match = issue.type === 'Shortage' ? issue.description?.match(/DT #([a-fA-F0-9\-]{36})/) : null;
+                                const linkedTicketId = match ? match[1] : null;
+
+                                return (
+                                    <TouchableOpacity
+                                        key={issue.id}
+                                        onPress={() => {
+                                            if (linkedTicketId) {
+                                                const ticket = allTickets.find(t => t.id === linkedTicketId);
+                                                if (ticket) {
+                                                    setSelectedTicket(ticket);
+                                                    setTicketModalVisible(true);
+                                                    return;
+                                                }
+                                            }
+                                            router.push(`/job-issues/${issue.id}` as any);
+                                        }}
+                                        activeOpacity={0.7}
+                                        style={Platform.OS === 'web' ? { width: '48%', minWidth: 280 } : { width: '100%' }}
+                                        className="bg-white p-4 rounded-3xl mb-4 border border-slate-200 shadow-sm"
                                     >
-                                        {/* Ticket Header */}
-                                        <View className="p-5 border-b border-slate-50 flex-row justify-between items-center bg-blue-50/30">
-                                            <View>
-                                                <Text className="text-slate-400 text-[10px] font-black uppercase tracking-widest">{ticket.job_name || 'Project'}</Text>
-                                                <Text className="text-lg font-black text-slate-900 tracking-tight">DT #{ticket.ticket_number}</Text>
-                                            </View>
-                                            <View className="bg-blue-100 px-3 py-1 rounded-full border border-blue-200">
-                                                <Text className="text-blue-600 text-[9px] font-black uppercase">
-                                                    {ticket.status === 'SHIPPED' ? 'In Transit' : 'Scheduled'}
+                                        <View className="flex-row justify-between items-start mb-2">
+                                            <View className="flex-1 mr-3">
+                                                <Text className="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-1">
+                                                    {issue.job_name}
+                                                    {issue.area_name && ` • ${issue.area_name}`}
                                                 </Text>
+                                                <Text className="text-base font-black text-slate-900 leading-tight">{issue.type}</Text>
+                                            </View>
+                                            <View className={`px-2 py-0.5 rounded border ${getPriorityColor(issue.priority)}`}>
+                                                <Text className="text-[9px] font-black uppercase tracking-tighter">{issue.priority}</Text>
                                             </View>
                                         </View>
 
-                                        {/* Items List */}
-                                        <View className="p-5">
-                                            {ticket.items.map((item, idx) => (
-                                                <View key={idx} className="flex-row justify-between items-center mb-3">
-                                                    <View className="flex-1 mr-4">
-                                                        <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>{item.product_name}</Text>
-                                                    </View>
-                                                    <Text className="text-xs font-black text-slate-900">
-                                                        {item.qty.toLocaleString()} {item.unit || 'SQFT'}
-                                                    </Text>
-                                                </View>
-                                            ))}
+                                        <Text className="text-slate-500 text-xs mb-3 line-clamp-2" numberOfLines={2}>
+                                            {issue.description}
+                                        </Text>
 
-                                            <View className="mt-4 pt-4 border-t border-slate-50">
-                                                <TouchableOpacity
-                                                    onPress={() => {
-                                                        setSelectedTicket(ticket);
-                                                        setReceiveModalVisible(true);
-                                                    }}
-                                                    className="bg-slate-900 h-12 rounded-2xl items-center justify-center shadow-lg shadow-slate-200"
-                                                >
-                                                    <View className="flex-row items-center gap-2">
-                                                        <Package size={16} color="white" />
-                                                        <Text className="text-white font-black uppercase text-xs tracking-widest">Receive Material</Text>
-                                                    </View>
-                                                </TouchableOpacity>
+                                        <View className="flex-row items-center justify-between pt-3 border-t border-slate-50">
+                                            <View className="flex-row items-center gap-3">
+                                                <View className="flex-row items-center gap-1">
+                                                    <Clock size={10} color="#94a3b8" />
+                                                    <Text className="text-slate-400 text-[9px]">{new Date(issue.created_at).toLocaleDateString()}</Text>
+                                                </View>
+                                                <Text className="text-slate-400 text-[9px] font-bold uppercase">BY: {issue.created_by}</Text>
                                             </View>
+                                            <ChevronRight size={14} color="#cbd5e1" />
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    </View>
+                )}
+            </View>
+        );
+    };
+
+    const renderSitePulse = () => {
+        if (sitePulseEvents.length === 0) {
+            return (
+                <View className="py-20 items-center justify-center">
+                    <View className="bg-slate-100 p-6 rounded-full mb-4">
+                        <Activity size={48} color="#94a3b8" />
+                    </View>
+                    <Text className="text-slate-500 font-bold text-lg">No Activity</Text>
+                    <Text className="text-slate-400 text-sm mt-1 text-center px-10">
+                        The site pulse is quiet. Events will appear here as they happen.
+                    </Text>
+                </View>
+            );
+        }
+
+        return (
+            <View className="px-1 max-w-2xl mx-auto w-full">
+                {sitePulseEvents.map((event, idx) => (
+                    <View key={`${event.type}-${event.data.id}-${idx}`} className="flex-row mb-6">
+                        {/* Timeline Node */}
+                        <View className="items-center mr-4">
+                            <View className={`w-8 h-8 rounded-full items-center justify-center z-10 ${event.type === 'issue' ? 'bg-red-100' : 'bg-blue-100'}`}>
+                                {event.type === 'issue' ? <AlertTriangle size={14} color="#dc2626" /> : <Truck size={14} color="#2563eb" />}
+                            </View>
+                            {idx !== sitePulseEvents.length - 1 && (
+                                <View className="w-0.5 bg-slate-200 flex-1 -mt-2 -mb-8 z-0" />
+                            )}
+                        </View>
+                        {/* Event Content */}
+                        <View className="flex-1 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mt-1">
+                            <View className="flex-row justify-between items-start mb-1">
+                                <Text className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{event.data.job_name || 'Project'}</Text>
+                                <Text className="text-[9px] text-slate-400 font-bold">{event.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                            </View>
+                            {event.type === 'issue' ? (
+                                <View>
+                                    <Text className="text-sm font-black text-slate-900 leading-tight mb-1">Issue Reported: {(event.data as JobIssue).type}</Text>
+                                    <Text className="text-xs text-slate-600 line-clamp-2">{(event.data as JobIssue).description}</Text>
+                                </View>
+                            ) : (
+                                <View>
+                                    <Text className="text-sm font-black text-slate-900 leading-tight mb-1">Shipment {(event.data as DeliveryTicket).status}</Text>
+                                    <Text className="text-xs text-slate-600">DT #{(event.data as DeliveryTicket).ticket_number} • {(event.data as DeliveryTicket).items.length} items</Text>
+                                </View>
+                            )}
+                        </View>
+                    </View>
+                ))}
+            </View>
+        );
+    };
+
+    const renderLogisticsRadar = () => {
+        if (activeTickets.length === 0) {
+            return (
+                <View className="py-20 items-center justify-center">
+                    <View className="bg-blue-50 p-6 rounded-full mb-4">
+                        <Truck size={48} color="#3b82f6" />
+                    </View>
+                    <Text className="text-slate-500 font-bold text-lg">No Active Shipments</Text>
+                    <Text className="text-slate-400 text-sm mt-1 text-center px-10">
+                        There are no deliveries currently en route.
+                    </Text>
+                </View>
+            );
+        }
+
+        return (
+            <View className="px-1">
+                <View className="flex-row items-center gap-2 mb-4">
+                    <View className="bg-blue-100 p-1.5 rounded-lg">
+                        <Truck size={14} color="#2563eb" />
+                    </View>
+                    <Text className="text-slate-800 text-sm font-black uppercase tracking-widest">Active Deliveries</Text>
+                </View>
+                <View className="flex-row flex-wrap gap-4">
+                    {activeTickets.map((ticket) => (
+                        <View
+                            key={ticket.id}
+                            style={Platform.OS === 'web' ? { width: '32%', minWidth: 320 } : { width: '100%' }}
+                            className="bg-white rounded-3xl mb-4 border border-blue-100 shadow-sm overflow-hidden"
+                        >
+                            {/* Ticket Header */}
+                            <View className="p-4 border-b border-blue-50 flex-row justify-between items-center bg-blue-50/20">
+                                <View>
+                                    <Text className="text-blue-500 text-[10px] font-black uppercase tracking-widest">{ticket.job_name || 'Project'}</Text>
+                                    <Text className="text-lg font-black text-slate-900 tracking-tight">DT #{ticket.ticket_number}</Text>
+                                </View>
+                                <View className="bg-blue-100 px-3 py-1 rounded-full border border-blue-200">
+                                    <Text className="text-blue-600 text-[9px] font-black uppercase tracking-wider">
+                                        {ticket.status === 'SHIPPED' ? 'In Transit' : ticket.status}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Items List - Compact Data Dense */}
+                            <View className="p-4 bg-slate-50/30">
+                                {ticket.items.map((item, idx) => (
+                                    <View key={idx} className="flex-row justify-between items-center mb-2">
+                                        <View className="flex-1 mr-3">
+                                            <Text className="text-xs font-bold text-slate-800" numberOfLines={1}>{item.product_name}</Text>
+                                            <Text className="text-[9px] text-slate-500 font-medium">
+                                                {item.product_code} {item.dimensions ? `| ${item.dimensions}` : ''}
+                                            </Text>
+                                        </View>
+                                        <View className="bg-white px-2 py-1 rounded-lg border border-slate-200 min-w-[60px] items-center">
+                                            <Text className="text-[11px] font-black text-slate-900">
+                                                {item.qty.toLocaleString()} {item.unit || 'SQF'}
+                                            </Text>
                                         </View>
                                     </View>
                                 ))}
                             </View>
+
+                            <View className="p-4 border-t border-slate-100">
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        setSelectedTicket(ticket);
+                                        setReceiveModalVisible(true);
+                                    }}
+                                    className="bg-slate-900 h-10 rounded-xl items-center justify-center shadow-md shadow-slate-200"
+                                >
+                                    <View className="flex-row items-center gap-1.5">
+                                        <Package size={14} color="white" />
+                                        <Text className="text-white font-black uppercase text-[10px] tracking-widest">Receive Material</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            </View>
                         </View>
-                    )
-                }
-            </View >
+                    ))}
+                </View>
+            </View>
         );
     };
 
     return (
         <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
-            {/* HEADER */}
-            <View className="px-6 py-6 bg-white border-b border-slate-200">
-                <View className="flex-row justify-between items-center mb-6">
+            {/* TELEMETRY WIDGETS (TOP ROW) */}
+            <View className="px-6 py-4 bg-slate-900 flex-row justify-between items-center overflow-x-auto no-scrollbar gap-2 z-10 border-b-4 border-slate-800">
+                <View className="flex-1 min-w-[120px] bg-slate-800/80 rounded-2xl p-4 border border-slate-700/50">
+                    <Text className="text-slate-400 font-inter text-[10px] font-medium tracking-widest uppercase mb-1">Overall Progress</Text>
+                    <Text className="text-white font-inter text-2xl font-black">{progressPercent}%</Text>
+                </View>
+                <View className="flex-1 min-w-[120px] bg-slate-800/80 rounded-2xl p-4 border border-slate-700/50">
+                    <Text className="text-slate-400 font-inter text-[10px] font-medium tracking-widest uppercase mb-1">Field Manpower</Text>
+                    <Text className="text-white font-inter text-2xl font-black">{liveManpower}</Text>
+                </View>
+                <View className="flex-1 min-w-[120px] bg-slate-800/80 rounded-2xl p-4 border border-slate-700/50">
+                    <Text className="text-slate-400 font-inter text-[10px] font-medium tracking-widest uppercase mb-1">Logistics Radar</Text>
+                    <View className="flex-row items-baseline gap-1">
+                        <Text className="text-white font-inter text-2xl font-black">{liveTransit}</Text>
+                        <Text className="text-slate-500 font-bold text-[10px] uppercase">En Route</Text>
+                    </View>
+                </View>
+                <View className={`flex-1 min-w-[120px] rounded-2xl p-4 border ${actionItemsCount > 0 ? 'bg-orange-500/20 border-orange-500/50' : 'bg-slate-800/80 border-slate-700/50'}`}>
+                    <Text className={`${actionItemsCount > 0 ? 'text-orange-400' : 'text-slate-400'} font-inter text-[10px] font-medium tracking-widest uppercase mb-1`}>Action Items</Text>
+                    <Text className={`${actionItemsCount > 0 ? 'text-orange-400' : 'text-white'} font-inter text-2xl font-black`}>{actionItemsCount}</Text>
+                </View>
+            </View>
+
+            {/* HEADER with Navigation Tabs */}
+            <View className="px-6 py-4 bg-white border-b border-slate-200 z-0">
+                <View className="flex-row justify-between items-center">
                     <View>
-                        <Text className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Central Hub</Text>
                         <Text className="text-3xl font-black text-slate-900 tracking-tight">
-                            {activeTab === 'issues' ? 'Field Issues' : 'Global Approvals'}
+                            Control Tower
                         </Text>
                     </View>
-                    <View className="flex-row bg-slate-100 p-1 rounded-2xl">
+                    <View className="flex-row bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
                         <TouchableOpacity
-                            onPress={() => setActiveTab('issues')}
-                            className={`px-4 py-2 rounded-xl ${activeTab === 'issues' ? 'bg-white shadow-sm' : ''}`}
+                            onPress={() => setActiveTab('action-center')}
+                            className={`px-4 py-2 rounded-xl flex-row items-center gap-2 transition-colors ${activeTab === 'action-center' ? 'bg-white shadow-sm border border-slate-200' : ''}`}
                         >
-                            <Text className={`text-[10px] font-black uppercase ${activeTab === 'issues' ? 'text-slate-900' : 'text-slate-400'}`}>Issues</Text>
+                            <AlertTriangle size={14} color={activeTab === 'action-center' ? '#ea580c' : '#94a3b8'} />
+                            <Text className={`text-[10px] font-black uppercase tracking-wider ${activeTab === 'action-center' ? 'text-slate-900' : 'text-slate-500'}`}>Action Center</Text>
+                            {actionItemsCount > 0 && (
+                                <View className="bg-orange-500 w-4 h-4 rounded-full items-center justify-center ml-1">
+                                    <Text className="text-[8px] text-white font-black">{actionItemsCount}</Text>
+                                </View>
+                            )}
                         </TouchableOpacity>
+
                         <TouchableOpacity
-                            onPress={() => setActiveTab('approvals')}
-                            className={`px-4 py-2 rounded-xl ${activeTab === 'approvals' ? 'bg-white shadow-sm' : ''}`}
+                            onPress={() => setActiveTab('site-pulse')}
+                            className={`px-4 py-2 rounded-xl flex-row items-center gap-2 transition-colors ${activeTab === 'site-pulse' ? 'bg-white shadow-sm border border-slate-200' : ''}`}
                         >
-                            <View className="flex-row items-center gap-2">
-                                <Text className={`text-[10px] font-black uppercase ${activeTab === 'approvals' ? 'text-slate-900' : 'text-slate-400'}`}>Approvals</Text>
-                                {pendingTickets.length > 0 && (
-                                    <View className="bg-orange-500 w-4 h-4 rounded-full items-center justify-center">
-                                        <Text className="text-[8px] text-white font-black">{pendingTickets.length}</Text>
-                                    </View>
-                                )}
-                            </View>
+                            <Activity size={14} color={activeTab === 'site-pulse' ? '#3b82f6' : '#94a3b8'} />
+                            <Text className={`text-[10px] font-black uppercase tracking-wider ${activeTab === 'site-pulse' ? 'text-slate-900' : 'text-slate-500'}`}>Site Pulse</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            onPress={() => setActiveTab('logistics-radar')}
+                            className={`px-4 py-2 rounded-xl flex-row items-center gap-2 transition-colors ${activeTab === 'logistics-radar' ? 'bg-white shadow-sm border border-slate-200' : ''}`}
+                        >
+                            <Truck size={14} color={activeTab === 'logistics-radar' ? '#8b5cf6' : '#94a3b8'} />
+                            <Text className={`text-[10px] font-black uppercase tracking-wider ${activeTab === 'logistics-radar' ? 'text-slate-900' : 'text-slate-500'}`}>Logistics Radar</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
-
-                {activeTab === 'issues' && (
-                    <View className="flex-row gap-2">
-                        <TouchableOpacity
-                            onPress={() => setIssueFilter('open')}
-                            className={`px-4 py-2 rounded-lg border flex-row items-center gap-2 ${issueFilter === 'open' ? 'bg-slate-900 border-slate-900' : 'bg-white border-slate-200'}`}
-                        >
-                            <AlertTriangle size={16} color={issueFilter === 'open' ? 'white' : '#64748b'} />
-                            <Text className={`font-bold text-sm ${issueFilter === 'open' ? 'text-white' : 'text-slate-600'}`}>
-                                Open ({issues.filter(i => i.status === 'open').length})
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            onPress={() => setIssueFilter('resolved')}
-                            className={`px-4 py-2 rounded-lg border flex-row items-center gap-2 ${issueFilter === 'resolved' ? 'bg-slate-900 border-slate-900' : 'bg-white border-slate-200'}`}
-                        >
-                            <CheckCircle2 size={16} color={issueFilter === 'resolved' ? 'white' : '#64748b'} />
-                            <Text className={`font-bold text-sm ${issueFilter === 'resolved' ? 'text-white' : 'text-slate-600'}`}>
-                                Resolved ({issues.filter(i => i.status === 'resolved').length})
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
             </View>
 
             {/* CONTENT */}
             <ScrollView
-                className="flex-1 px-4 pt-4"
+                className="flex-1 px-4 pt-6"
                 contentContainerStyle={{ paddingBottom: 100 }}
                 refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} />}
             >
-                {activeTab === 'issues' ? (
-                    filteredIssues.length === 0 ? (
-                        <View className="py-20 items-center justify-center">
-                            <View className="bg-slate-100 p-6 rounded-full mb-4">
-                                <CheckCircle2 size={48} color="#94a3b8" />
-                            </View>
-                            <Text className="text-slate-500 font-bold text-lg">No {issueFilter} issues found</Text>
-                            <Text className="text-slate-400 text-sm mt-1 text-center px-10">
-                                {issueFilter === 'open' ? "Great! All job sites are currently running smoothly." : "Resolved issues will appear here for your records."}
-                            </Text>
-                        </View>
-                    ) : (
-                        <View className="flex-row flex-wrap gap-4">
-                            {filteredIssues.map((issue) => (
-                                <TouchableOpacity
-                                    key={issue.id}
-                                    onPress={() => router.push(`/job-issues/${issue.id}` as any)}
-                                    activeOpacity={0.7}
-                                    style={Platform.OS === 'web' ? { width: '24%', minWidth: 280 } : { width: '100%' }}
-                                    className="bg-white p-5 rounded-2xl mb-4 border border-slate-200 shadow-sm"
-                                >
-                                    <View className="flex-row justify-between items-start mb-3">
-                                        <View className="flex-1 mr-4">
-                                            <Text className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">
-                                                {issue.job_name}
-                                                {issue.floor_name && ` • ${issue.floor_name}`}
-                                                {issue.unit_name && ` • ${issue.unit_name}`}
-                                                {issue.area_name && ` • ${issue.area_name}`}
-                                            </Text>
-                                            <Text className="text-lg font-bold text-slate-900 leading-tight">{issue.type}</Text>
-                                        </View>
-                                        <View className={`px-2 py-1 rounded border ${getPriorityColor(issue.priority)}`}>
-                                            <Text className="text-[10px] font-black uppercase tracking-tighter">{issue.priority}</Text>
-                                        </View>
-                                    </View>
-
-                                    <Text className="text-slate-600 text-sm mb-4 line-clamp-2" numberOfLines={2}>
-                                        {issue.description}
-                                    </Text>
-
-                                    <View className="flex-row items-center justify-between pt-4 border-t border-slate-50">
-                                        <View className="flex-1">
-                                            <View className="flex-row items-center gap-4 mb-2">
-                                                <View className="flex-row items-center gap-1.5">
-                                                    <Clock size={12} color="#94a3b8" />
-                                                    <Text className="text-slate-400 text-[10px]">{new Date(issue.created_at).toLocaleDateString()}</Text>
-                                                </View>
-                                                <Text className="text-slate-400 text-[10px] font-bold uppercase">BY: {issue.created_by}</Text>
-                                            </View>
-
-                                            {issue.status === 'open' && (
-                                                <TouchableOpacity
-                                                    onPress={(e) => {
-                                                        e.stopPropagation();
-                                                        SupabaseService.updateIssueStatus(issue.id, 'resolved').then(() => loadData());
-                                                    }}
-                                                    className="bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 self-start mt-1 flex-row items-center gap-1.5"
-                                                >
-                                                    <CheckCircle2 size={12} color="#059669" />
-                                                    <Text className="text-emerald-700 text-[10px] font-black uppercase">Mark Resolved</Text>
-                                                </TouchableOpacity>
-                                            )}
-                                        </View>
-                                        <ChevronRight size={18} color="#cbd5e1" />
-                                    </View>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )
-                ) : (
-                    renderApprovals()
-                )}
+                {activeTab === 'action-center' && renderActionCenter()}
+                {activeTab === 'site-pulse' && renderSitePulse()}
+                {activeTab === 'logistics-radar' && renderLogisticsRadar()}
             </ScrollView>
 
             <ReceiveMaterialModal
@@ -444,19 +566,21 @@ export default function FieldScreen() {
                 onSuccess={handleActionComplete}
             />
 
-            {ticketModalVisible && selectedTicket && (
-                <DeliveryTicketModal
-                    visible={ticketModalVisible}
-                    onClose={() => setTicketModalVisible(false)}
-                    materials={materials}
-                    jobId={selectedTicket.job_id}
-                    jobName={selectedTicket.job_name || 'Project'}
-                    onSuccess={handleActionComplete}
-                    initialData={selectedTicket}
-                    isFieldReview={true}
-                    role={'supervisor'}
-                />
-            )}
-        </SafeAreaView>
+            {
+                ticketModalVisible && selectedTicket && (
+                    <DeliveryTicketModal
+                        visible={ticketModalVisible}
+                        onClose={() => setTicketModalVisible(false)}
+                        materials={materials}
+                        jobId={selectedTicket.job_id}
+                        jobName={selectedTicket.job_name || 'Project'}
+                        onSuccess={handleActionComplete}
+                        initialData={selectedTicket}
+                        isFieldReview={true}
+                        role={'supervisor'}
+                    />
+                )
+            }
+        </SafeAreaView >
     );
 }
