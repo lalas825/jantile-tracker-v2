@@ -6,6 +6,8 @@ import { SupabaseService } from '../../../services/SupabaseService';
 import ProductionTab from '../../../components/jobs/ProductionTab';
 import LogisticsTab from '../../../components/jobs/LogisticsTab';
 import JobSiteTab from '../../../components/jobs/JobSiteTab';
+import SafetyTab, { SAFETY_TYPES } from '../../../components/jobs/tabs/SafetyTab';
+import ReportJobIssueModal from '../../../components/modals/ReportJobIssueModal';
 
 const TABS = [
     { id: 'PRODUCTION', label: 'Production', icon: 'layers' },
@@ -93,8 +95,9 @@ export default function JobDetailsScreen() {
             case 'JOBSITE':
                 return <JobSiteTab job={job} />;
             case 'ISSUES':
-            case 'ISSUES':
-                return <JobIssuesTab jobId={job.id} />;
+                return <JobIssuesTab job={job} />;
+            case 'SAFETY':
+                return <SafetyTab job={job} />;
             default:
                 // Placeholder for the new tabs
                 return (
@@ -194,37 +197,46 @@ export default function JobDetailsScreen() {
 }
 
 // 3. JOB ISSUES TAB COMPONENT
-function JobIssuesTab({ jobId }: { jobId: string }) {
+function JobIssuesTab({ job }: { job: any }) {
+    const jobId = job.id;
     const [issues, setIssues] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState<'open' | 'resolved'>('open');
+    const [showReportModal, setShowReportModal] = useState(false);
     const router = useRouter();
 
-    useEffect(() => {
-        const loadIssues = async () => {
-            try {
-                const data = await SupabaseService.getJobIssues(jobId);
-                setIssues(data);
-            } catch (err) {
-                console.error("Failed to load job issues:", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        loadIssues();
+    const loadIssues = React.useCallback(async () => {
+        try {
+            const data = await SupabaseService.getJobIssues(jobId);
+            setIssues(data.filter((i: any) => !SAFETY_TYPES.includes(i.type)));
+        } catch (err) {
+            console.error("Failed to load job issues:", err);
+        } finally {
+            setLoading(false);
+        }
     }, [jobId]);
+
+    useEffect(() => {
+        loadIssues();
+    }, [loadIssues]);
 
     const filteredIssues = issues.filter(issue => issue.status === activeFilter);
 
     if (loading) return <ActivityIndicator className="py-20" color="#3b82f6" />;
 
     return (
+        <View className="flex-1">
         <ScrollView className="flex-1 p-6" contentContainerStyle={{ paddingBottom: 100 }}>
+            {/* Action Row */}
             <View className="flex-row justify-between items-center mb-6">
                 <Text className="text-slate-900 font-bold text-lg">Job Activity Feed</Text>
-                <View className="bg-blue-100 px-3 py-1 rounded-full">
-                    <Text className="text-blue-700 font-bold text-xs">{issues.length} Total</Text>
-                </View>
+                <TouchableOpacity
+                    onPress={() => setShowReportModal(true)}
+                    className="bg-blue-600 h-10 px-4 rounded-xl flex-row items-center gap-2 shadow-sm"
+                >
+                    <Ionicons name="add" size={16} color="white" />
+                    <Text className="text-white font-black uppercase text-xs tracking-widest">Report Issue</Text>
+                </TouchableOpacity>
             </View>
 
             {/* Filter Tabs */}
@@ -295,7 +307,7 @@ function JobIssuesTab({ jobId }: { jobId: string }) {
                                                 e.stopPropagation();
                                                 await SupabaseService.updateIssueStatus(issue.id, 'resolved');
                                                 const data = await SupabaseService.getJobIssues(jobId);
-                                                setIssues(data);
+                                                setIssues(data.filter((i: any) => !SAFETY_TYPES.includes(i.type)));
                                             }}
                                             className="bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 self-start mt-1 flex-row items-center gap-1.5"
                                         >
@@ -311,5 +323,13 @@ function JobIssuesTab({ jobId }: { jobId: string }) {
                 </View>
             )}
         </ScrollView>
+        <ReportJobIssueModal
+            isVisible={showReportModal}
+            onClose={() => setShowReportModal(false)}
+            onSuccess={loadIssues}
+            jobId={jobId}
+            floors={job.floors ?? []}
+        />
+        </View>
     );
 }
