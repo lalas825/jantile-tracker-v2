@@ -65,6 +65,7 @@ export default function ReceiveMaterialModal({ isVisible, onClose, ticket, onSuc
                 ticket.id,
                 receipts.map(r => ({
                     material_id: r.material_id,
+                    product_name: r.product_name,
                     qty_received: r.qty_received,
                     qty_expected: r.qty_expected,
                     condition: r.condition,

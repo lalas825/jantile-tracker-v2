@@ -3126,6 +3126,10 @@ export const SupabaseService = {
         const finalStatus = overallHasDiscrepancy ? 'RECEIVED_WITH_SHORTAGE' : 'RECEIVED';
 
         if (useSupabase) {
+            let ticketNumber = ticketId;
+            const { data: td } = await supabase.from('delivery_tickets').select('ticket_number').eq('id', ticketId).single();
+            if (td?.ticket_number) ticketNumber = td.ticket_number;
+
             // 1. Update Ticket Status
             const { error: ticketError } = await supabase
                 .from('delivery_tickets')
@@ -3155,7 +3159,7 @@ export const SupabaseService = {
                             type: 'Inventory Mismatch',
                             priority: 'High',
                             status: 'open',
-                            description: `CRITICAL: Warehouse inventory negative after receipt (DT #${ticketId}). Item: ${receipt.material_id}. System: ${newWarehouseQty}`,
+                            description: `CRITICAL: Warehouse inventory negative after receipt (DT #${ticketNumber}). Item: ${receipt.material_id}. System: ${newWarehouseQty}`,
                             created_by: userId,
                             created_at: now,
                             updated_at: now
@@ -3174,13 +3178,13 @@ export const SupabaseService = {
 
                 // Log as issue if damaged/missing/shortage
                 if (receipt.condition !== 'Verified' || (receipt.qty_expected !== undefined && receipt.qty_received < receipt.qty_expected)) {
-                    let desc = `Issue during delivery receipt (DT #${ticketId}): ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
+                    let desc = `Issue during delivery receipt (DT #${ticketNumber}): ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
 
                     if (receipt.qty_expected !== undefined && receipt.qty_received < receipt.qty_expected) {
                         const missingQty = receipt.qty_expected - receipt.qty_received;
-                        desc = `Shortage detected on receipt (DT #${ticketId}) for ${receipt.product_name || receipt.material_id}. Expected: ${receipt.qty_expected}, Received: ${receipt.qty_received}. Missing: ${missingQty}. Notes: ${receipt.notes || 'None'}`;
+                        desc = `Shortage detected on receipt (DT #${ticketNumber}) for ${receipt.product_name || receipt.material_id}. Expected: ${receipt.qty_expected}, Received: ${receipt.qty_received}. Missing: ${missingQty}. Notes: ${receipt.notes || 'None'}`;
                     } else if (receipt.product_name) {
-                        desc = `Issue during delivery receipt (DT #${ticketId}) for ${receipt.product_name}: ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
+                        desc = `Issue during delivery receipt (DT #${ticketNumber}) for ${receipt.product_name}: ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
                     }
 
                     await supabase.from('job_issues').insert({
@@ -3202,8 +3206,9 @@ export const SupabaseService = {
 
         // Native PowerSync logic
         await db.writeTransaction(async (tx: any) => {
+            const ticket = await tx.get(`SELECT job_id, ticket_number FROM delivery_tickets WHERE id = ?`, [ticketId]);
+            const ticketNumber = ticket?.ticket_number || ticketId;
             await tx.execute(`UPDATE delivery_tickets SET status = ?, updated_at = ? WHERE id = ?`, [finalStatus, now, ticketId]);
-            const ticket = await tx.get(`SELECT job_id FROM delivery_tickets WHERE id = ?`, [ticketId]);
 
             for (const receipt of itemReceipts) {
                 const mat = await tx.get(`SELECT in_warehouse_qty, received_at_job, qty_damaged, qty_missing FROM project_materials WHERE id = ?`, [receipt.material_id]);
@@ -3226,7 +3231,7 @@ export const SupabaseService = {
                             'Inventory Mismatch',
                             'High',
                             'open',
-                            `CRITICAL: Warehouse inventory negative after receipt (DT #${ticketId}). Item: ${receipt.material_id}. System: ${newWarehouseQty}`,
+                            `CRITICAL: Warehouse inventory negative after receipt (DT #${ticketNumber}). Item: ${receipt.material_id}. System: ${newWarehouseQty}`,
                             userId,
                             now,
                             now
@@ -3252,13 +3257,13 @@ export const SupabaseService = {
                 }
 
                 if (receipt.condition !== 'Verified' || (receipt.qty_expected !== undefined && receipt.qty_received < receipt.qty_expected)) {
-                    let desc = `Issue during delivery receipt (DT #${ticketId}): ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
+                    let desc = `Issue during delivery receipt (DT #${ticketNumber}): ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
 
                     if (receipt.qty_expected !== undefined && receipt.qty_received < receipt.qty_expected) {
                         const missingQty = receipt.qty_expected - receipt.qty_received;
-                        desc = `Shortage detected on receipt (DT #${ticketId}) for ${receipt.product_name || receipt.material_id}. Expected: ${receipt.qty_expected}, Received: ${receipt.qty_received}. Missing: ${missingQty}. Notes: ${receipt.notes || 'None'}`;
+                        desc = `Shortage detected on receipt (DT #${ticketNumber}) for ${receipt.product_name || receipt.material_id}. Expected: ${receipt.qty_expected}, Received: ${receipt.qty_received}. Missing: ${missingQty}. Notes: ${receipt.notes || 'None'}`;
                     } else if (receipt.product_name) {
-                        desc = `Issue during delivery receipt (DT #${ticketId}) for ${receipt.product_name}: ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
+                        desc = `Issue during delivery receipt (DT #${ticketNumber}) for ${receipt.product_name}: ${receipt.qty_received} ${receipt.condition}. Notes: ${receipt.notes || 'None'}`;
                     }
 
                     await tx.execute(`

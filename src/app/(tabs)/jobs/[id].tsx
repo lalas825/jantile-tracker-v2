@@ -197,6 +197,7 @@ export default function JobDetailsScreen() {
 function JobIssuesTab({ jobId }: { jobId: string }) {
     const [issues, setIssues] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [activeFilter, setActiveFilter] = useState<'open' | 'resolved'>('open');
     const router = useRouter();
 
     useEffect(() => {
@@ -213,6 +214,8 @@ function JobIssuesTab({ jobId }: { jobId: string }) {
         loadIssues();
     }, [jobId]);
 
+    const filteredIssues = issues.filter(issue => issue.status === activeFilter);
+
     if (loading) return <ActivityIndicator className="py-20" color="#3b82f6" />;
 
     return (
@@ -224,19 +227,41 @@ function JobIssuesTab({ jobId }: { jobId: string }) {
                 </View>
             </View>
 
-            {issues.length === 0 ? (
+            {/* Filter Tabs */}
+            <View className="flex-row mb-6 bg-slate-200/50 p-1 rounded-xl self-start">
+                <TouchableOpacity
+                    onPress={() => setActiveFilter('open')}
+                    className={`px-6 py-2 rounded-lg ${activeFilter === 'open' ? 'bg-white shadow-sm' : ''}`}
+                >
+                    <Text className={`text-sm font-bold ${activeFilter === 'open' ? 'text-slate-900' : 'text-slate-500'}`}>
+                        Open ({issues.filter(i => i.status === 'open').length})
+                    </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    onPress={() => setActiveFilter('resolved')}
+                    className={`px-6 py-2 rounded-lg ${activeFilter === 'resolved' ? 'bg-white shadow-sm' : ''}`}
+                >
+                    <Text className={`text-sm font-bold ${activeFilter === 'resolved' ? 'text-slate-900' : 'text-slate-500'}`}>
+                        Resolved ({issues.filter(i => i.status === 'resolved').length})
+                    </Text>
+                </TouchableOpacity>
+            </View>
+
+            {filteredIssues.length === 0 ? (
                 <View className="py-20 items-center justify-center bg-white rounded-3xl border border-dashed border-slate-200">
                     <Ionicons name="shield-checkmark" size={48} color="#94a3b8" />
-                    <Text className="text-slate-500 font-bold mt-4">No reported issues</Text>
-                    <Text className="text-slate-400 text-xs mt-1">This job site is running smoothly.</Text>
+                    <Text className="text-slate-500 font-bold mt-4">No {activeFilter} issues</Text>
+                    <Text className="text-slate-400 text-xs mt-1">
+                        {activeFilter === 'open' ? 'This job site is running smoothly.' : 'No issues have been marked as resolved yet.'}
+                    </Text>
                 </View>
             ) : (
                 <View className="flex-row flex-wrap gap-4">
-                    {issues.map(issue => (
+                    {filteredIssues.map(issue => (
                         <TouchableOpacity
                             key={issue.id}
                             onPress={() => router.push(`/job-issues/${issue.id}` as any)}
-                            style={Platform.OS === 'web' ? { width: '22%', minWidth: 280 } : { width: '100%' }}
+                            style={Platform.OS === 'web' ? { width: 'calc(25% - 12px)', minWidth: 240 } as any : { width: '100%' }}
                             className="bg-white p-5 rounded-2xl mb-4 border border-slate-200 shadow-sm"
                         >
                             <View className="flex-row justify-between items-start mb-3">
