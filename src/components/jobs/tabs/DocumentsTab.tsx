@@ -4,12 +4,12 @@ import {
     FileText, ClipboardList, CheckSquare,
     ShieldCheck, AlertOctagon, PenLine
 } from 'lucide-react-native';
-import ScopeOfWorkView from '../documents/ScopeOfWorkView';
-import TicketWorkView from '../documents/TicketWorkView';
-import PreTaskPlanView from '../documents/PreTaskPlanView';
-import SafetyToolboxView from '../documents/SafetyToolboxView';
-import JHAView from '../documents/JHAView';
-import SignOffsView from '../documents/SignOffsView';
+import ScopeOfWorkView from './ScopeOfWorkView';
+import TicketWorkView from './TicketWorkView';
+import PreTaskPlanView from './PreTaskPlanView';
+import SafetyToolboxView from './SafetyToolboxView';
+import JHAView from './JHAView';
+import SignOffsView from './SignOffsView';
 
 interface DocumentsTabProps {
     job: any;
