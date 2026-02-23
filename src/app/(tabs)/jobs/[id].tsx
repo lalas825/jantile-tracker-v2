@@ -7,6 +7,7 @@ import ProductionTab from '../../../components/jobs/ProductionTab';
 import LogisticsTab from '../../../components/jobs/LogisticsTab';
 import JobSiteTab from '../../../components/jobs/JobSiteTab';
 import SafetyTab, { SAFETY_TYPES } from '../../../components/jobs/tabs/SafetyTab';
+import DocumentsTab from '../../../components/jobs/tabs/DocumentsTab';
 import ReportJobIssueModal from '../../../components/modals/ReportJobIssueModal';
 
 const TABS = [
@@ -98,6 +99,8 @@ export default function JobDetailsScreen() {
                 return <JobIssuesTab job={job} />;
             case 'SAFETY':
                 return <SafetyTab job={job} />;
+            case 'DOCUMENTS':
+                return <DocumentsTab job={job} />;
             default:
                 // Placeholder for the new tabs
                 return (
