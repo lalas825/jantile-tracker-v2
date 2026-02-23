@@ -3,17 +3,18 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DeliveryTicket, formatDisplayDate } from '../../services/SupabaseService';
 import clsx from 'clsx';
-import { Truck, Clock, User, Package } from 'lucide-react-native';
+import { Truck, Clock, User, Package, Printer } from 'lucide-react-native';
 
 interface KanbanCardProps {
     ticket: DeliveryTicket;
     onPress?: () => void;
     onAssign?: () => void;
     onShortagePress?: () => void;
+    onPrint?: () => void;
     isRejected?: boolean;
 }
 
-export default function KanbanCard({ ticket, onPress, onAssign, onShortagePress, isRejected }: KanbanCardProps) {
+export default function KanbanCard({ ticket, onPress, onAssign, onShortagePress, onPrint, isRejected }: KanbanCardProps) {
     const totalQty = ticket.items?.reduce((sum, item) => sum + (item.qty || 0), 0) || 0;
     const firstItem = ticket.items?.[0];
     const itemCount = ticket.items?.length || 0;
@@ -88,7 +89,16 @@ export default function KanbanCard({ ticket, onPress, onAssign, onShortagePress,
                         {ticket.ticket_number}
                     </Text>
                 </View>
-                <View className="flex-row gap-2">
+                <View className="flex-row gap-2 items-center">
+                    {onPrint && (
+                        <TouchableOpacity
+                            onPress={(e) => { e.stopPropagation(); onPrint(); }}
+                            className="p-1.5 rounded-[4px] bg-slate-50 border border-slate-200"
+                            activeOpacity={0.6}
+                        >
+                            <Printer size={12} color="#64748b" />
+                        </TouchableOpacity>
+                    )}
                     {ticket.field_modified && ticket.status !== 'RECEIVED_WITH_SHORTAGE' && (
                         <View className="bg-orange-100 px-1.5 py-0.5 rounded-[2px] border border-orange-200">
                             <Text className="text-[8px] font-black text-orange-600 uppercase">MODIFIED</Text>

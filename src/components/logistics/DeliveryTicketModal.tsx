@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { ProjectMaterial, SupabaseService, formatDisplayDate, DeliveryTicket } from '../../services/SupabaseService';
 import { useAuth } from '../../context/AuthContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import WebDatePicker from '../pickers/WebDatePicker';
+import WebTimePicker from '../pickers/WebTimePicker';
 
 interface DeliveryTicketModalProps {
     visible: boolean;
@@ -356,12 +358,9 @@ export default function DeliveryTicketModal({
                                 <View>
                                     <Text className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Estimated Arrival</Text>
                                     {Platform.OS === 'web' ? (
-                                        <TextInput
-                                            className="bg-slate-50 border border-slate-100 p-4 rounded-2xl font-inter font-black text-slate-900"
-                                            placeholder="YYYY-MM-DD"
-                                            {...({ type: 'date' } as any)}
+                                        <WebDatePicker
                                             value={vendorData.estimated_arrival}
-                                            onChangeText={(v) => setVendorData(prev => ({ ...prev, estimated_arrival: v }))}
+                                            onChange={(v) => setVendorData(prev => ({ ...prev, estimated_arrival: v }))}
                                         />
                                     ) : (
                                         <TouchableOpacity
@@ -602,22 +601,18 @@ export default function DeliveryTicketModal({
                                     </View>
 
                                     {Platform.OS === 'web' ? (
-                                        <View className="bg-white px-4 py-2.5 rounded-xl border border-slate-200 flex-row items-center gap-2 relative">
-                                            <Text className="text-[10px] font-bold text-slate-400">Arrival:</Text>
-                                            <TextInput
-                                                className="text-[10px] font-black text-slate-900 bg-transparent outline-none"
-                                                {...({ type: 'date' } as any)}
-                                                value={destination === 'vendor_direct' ? vendorData.estimated_arrival : dueDate}
-                                                onChangeText={(v) => {
-                                                    if (destination === 'vendor_direct') {
-                                                        setVendorData(prev => ({ ...prev, estimated_arrival: v }));
-                                                    } else {
-                                                        setDueDate(v);
-                                                    }
-                                                }}
-                                            />
-                                            <Ionicons name="calendar-outline" size={12} color="#2563eb" />
-                                        </View>
+                                        <WebDatePicker
+                                            value={destination === 'vendor_direct' ? vendorData.estimated_arrival : dueDate}
+                                            onChange={(v) => {
+                                                if (destination === 'vendor_direct') {
+                                                    setVendorData(prev => ({ ...prev, estimated_arrival: v }));
+                                                } else {
+                                                    setDueDate(v);
+                                                }
+                                            }}
+                                            label="Arrival:"
+                                            compact
+                                        />
                                     ) : (
                                         <TouchableOpacity
                                             onPress={() => {
@@ -636,29 +631,10 @@ export default function DeliveryTicketModal({
 
                                     {destination === 'warehouse' && (
                                         Platform.OS === 'web' ? (
-                                            <View className="bg-white px-4 py-2.5 rounded-xl border border-slate-200 flex-row items-center gap-2">
-                                                <TextInput
-                                                    className="text-[10px] font-black text-slate-900 bg-transparent outline-none"
-                                                    {...({ type: 'time' } as any)}
-                                                    value={(() => {
-                                                        // Convert AM/PM to 24h for standard input
-                                                        const [time, ampm] = dueTime.split(' ');
-                                                        let [h, m] = time.split(':');
-                                                        let hours = parseInt(h);
-                                                        if (ampm === 'PM' && hours < 12) hours += 12;
-                                                        if (ampm === 'AM' && hours === 12) hours = 0;
-                                                        return `${hours.toString().padStart(2, '0')}:${m}`;
-                                                    })()}
-                                                    onChangeText={(v) => {
-                                                        const [h, m] = v.split(':');
-                                                        let hours = parseInt(h);
-                                                        const ampm = hours >= 12 ? 'PM' : 'AM';
-                                                        const displayH = hours % 12 || 12;
-                                                        setDueTime(`${displayH}:${m} ${ampm}`);
-                                                    }}
-                                                />
-                                                <Ionicons name="time-outline" size={12} color="#2563eb" />
-                                            </View>
+                                            <WebTimePicker
+                                                value={dueTime}
+                                                onChange={setDueTime}
+                                            />
                                         ) : (
                                             <TouchableOpacity
                                                 onPress={() => setShowTimePicker(true)}

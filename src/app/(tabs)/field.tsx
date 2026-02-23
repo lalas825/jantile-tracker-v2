@@ -61,16 +61,17 @@ export default function FieldScreen() {
 
     // Telemetry Queries (using useQuery for Native, web fallbacks below)
     const { data: qManpower } = useQuery("SELECT id FROM crew_checkins WHERE check_out IS NULL OR check_out = ''");
-    const { data: qTransit } = useQuery("SELECT id FROM delivery_tickets WHERE status = 'IN_TRANSIT' OR status = 'SHIPPED'");
-    // Combined Production/Budget for Overall Progress
-    const { data: qProd } = useQuery("SELECT SUM(sqft_installed) as installed FROM production_logs");
-    const { data: qBudget } = useQuery("SELECT SUM(budget_qty) as total FROM project_materials");
+    const { data: qTransit } = useQuery("SELECT id FROM delivery_tickets WHERE status IN ('IN_TRANSIT', 'SHIPPED', 'DISPATCHED')");
+    // Overall Progress: avg area progress across all jobs (like Jobs page)
+    const { data: qProgress } = useQuery("SELECT ROUND(AVG(progress)) as avg_progress FROM areas WHERE progress IS NOT NULL");
+    // Manpower: workers assigned to active jobs
+    const { data: qWorkers } = useQuery("SELECT id, assigned_job_ids FROM workers WHERE assigned_job_ids IS NOT NULL AND assigned_job_ids != '' AND assigned_job_ids != '[]'");
 
     // Web Fallbacks for Telemetry
     const [webManpower, setWebManpower] = useState(0);
     const [webTransit, setWebTransit] = useState(0);
-    const [webProd, setWebProd] = useState(0);
-    const [webBudget, setWebBudget] = useState(0);
+    const [webProgress, setWebProgress] = useState(0);
+    const [webWorkerCount, setWebWorkerCount] = useState(0);
 
     const loadData = async () => {
         setLoading(true);
@@ -92,7 +93,7 @@ export default function FieldScreen() {
                 const tickets = results[1].value;
                 setAllTickets(tickets);
                 const pending = tickets.filter(t => t.status?.toUpperCase() === 'PENDING_FIELD_REVIEW');
-                const active = tickets.filter(t => ['SCHEDULED', 'SHIPPED'].includes(t.status?.toUpperCase()));
+                const active = tickets.filter(t => ['SCHEDULED', 'SHIPPED', 'DISPATCHED', 'IN_TRANSIT'].includes(t.status?.toUpperCase()));
 
                 console.log(`FieldHub: Loaded ${tickets.length} total tickets. Pending: ${pending.length}, Active: ${active.length}`);
 
@@ -106,13 +107,45 @@ export default function FieldScreen() {
                 setMaterials(results[2].value as ProjectMaterial[]);
             }
 
-            // Web Fallbacks
+            // Web Fallbacks (Supabase direct — PowerSync local DB is empty on web)
             if (isWeb) {
-                // Simple aggregates for web since complex query builder might be needed otherwise
-                db.getAll("SELECT id FROM crew_checkins WHERE check_out IS NULL OR check_out = ''").then(res => setWebManpower(res.length));
-                db.getAll("SELECT id FROM delivery_tickets WHERE status = 'IN_TRANSIT' OR status = 'SHIPPED'").then(res => setWebTransit(res.length));
-                db.get("SELECT SUM(sqft_installed) as installed FROM production_logs").then(res => setWebProd((res as any)?.installed || 0));
-                db.get("SELECT SUM(budget_qty) as total FROM project_materials").then(res => setWebBudget((res as any)?.total || 0));
+                const sb = SupabaseService.supabase;
+
+                // Transit: tickets that are dispatched/in transit/shipped
+                try {
+                    const { data: transitData, error } = await sb.from('delivery_tickets').select('id')
+                        .in('status', ['IN_TRANSIT', 'SHIPPED', 'DISPATCHED']);
+                    if (!error) setWebTransit(transitData?.length || 0);
+                } catch (e) { }
+
+                // Workers assigned to jobs
+                try {
+                    const { data: workersData, error } = await sb.from('workers').select('id, assigned_job_ids');
+                    if (!error && workersData) {
+                        const assignedCount = workersData.filter((w: any) => {
+                            const ids = w.assigned_job_ids;
+                            return ids && ids !== '' && ids !== '[]';
+                        }).length;
+                        setWebWorkerCount(assignedCount);
+                    }
+                } catch (e) { }
+
+                // Active crew check-ins (wrapped in try-catch in case table is missing)
+                try {
+                    const { count: checkinCount, error } = await sb.from('crew_checkins')
+                        .select('id', { count: 'exact', head: true })
+                        .is('check_out', null);
+                    if (!error) setWebManpower(checkinCount || 0);
+                } catch (e) { }
+
+                // Avg area progress
+                try {
+                    const { data: areasData, error } = await sb.from('areas').select('progress').not('progress', 'is', null);
+                    if (!error && areasData && areasData.length > 0) {
+                        const avg = Math.round(areasData.reduce((s: number, a: any) => s + (a.progress || 0), 0) / areasData.length);
+                        setWebProgress(avg);
+                    }
+                } catch (e) { }
             }
 
         } catch (error) {
@@ -137,11 +170,11 @@ export default function FieldScreen() {
     };
 
     // Derived Telemetry Data
-    const liveManpower = isWeb ? webManpower : (qManpower?.length || 0);
+    const checkedInCount = isWeb ? webManpower : (qManpower?.length || 0);
+    const assignedWorkerCount = isWeb ? webWorkerCount : (qWorkers?.length || 0);
+    const liveManpower = Math.max(checkedInCount, assignedWorkerCount);
     const liveTransit = isWeb ? webTransit : (qTransit?.length || 0);
-    const installed = isWeb ? webProd : (qProd?.[0]?.installed || 0);
-    const budget = isWeb ? webBudget : (qBudget?.[0]?.total || 0);
-    const progressPercent = budget > 0 ? Math.min(100, Math.round((installed / budget) * 100)) : 0;
+    const progressPercent = isWeb ? webProgress : (qProgress?.[0]?.avg_progress || 0);
     const openIssues = issues.filter(i => i.status === 'open');
     const actionItemsCount = openIssues.length + pendingTickets.length;
 

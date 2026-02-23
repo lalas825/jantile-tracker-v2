@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, StatusBar, Image, useWindowDimensions } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, StatusBar, Image, useWindowDimensions, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -65,7 +65,10 @@ export default function Dashboard() {
     const { data: progressData } = useQuery("SELECT avg(progress) as avg_progress FROM areas");
     const { data: activeJobsCount } = useQuery("SELECT count(*) as count FROM jobs WHERE status = 'Active'");
 
-    const stats = {
+    // --- WEB FALLBACKS (Supabase direct) ---
+    const [webStats, setWebStats] = useState({ openIssues: 0, resolvedIssues: 0, rejectedTickets: 0, manpower: 0, avgProgress: 0, activeJobs: 0 });
+
+    const stats = Platform.OS === 'web' ? webStats : {
         openIssues: (openIssuesCount?.[0] as any)?.count || 0,
         resolvedIssues: (resolvedIssuesCount?.[0] as any)?.count || 0,
         rejectedTickets: (rejectedTicketsCount?.[0] as any)?.count || 0,
@@ -86,6 +89,64 @@ export default function Dashboard() {
                 floors: []
             }));
             setJobs(mappedJobs);
+
+            // Web: Supabase direct telemetry
+            if (Platform.OS === 'web') {
+                const sb = SupabaseService.supabase;
+
+                // 1. Avg Progress: Compute from nested areas in activeJobs
+                let totalAreas = 0;
+                let totalProgress = 0;
+                activeJobs.forEach((job: any) => {
+                    job.floors?.forEach((f: any) => {
+                        f.units?.forEach((u: any) => {
+                            u.areas?.forEach((a: any) => {
+                                if (a.progress != null) {
+                                    totalAreas++;
+                                    totalProgress += a.progress;
+                                }
+                            });
+                        });
+                    });
+                });
+                const avgProgress = totalAreas > 0 ? Math.round(totalProgress / totalAreas) : 0;
+
+                // 2. Open Issues
+                let openIssues = 0;
+                try {
+                    openIssues = await SupabaseService.getGlobalOpenIssuesCount();
+                } catch (e) {
+                    console.error('Failed to get open issues count', e);
+                }
+
+                // 3. Rejected Tickets
+                let rejectedTickets = 0;
+                try {
+                    const { count, error } = await sb.from('delivery_tickets').select('*', { count: 'exact', head: true }).eq('status', 'REJECTED');
+                    if (!error) rejectedTickets = count || 0;
+                } catch (e) { }
+
+                // 4. Manpower (Workers with assigned jobs)
+                let manpower = 0;
+                try {
+                    const { data, error } = await sb.from('workers').select('id, assigned_job_ids');
+                    if (!error && data) {
+                        manpower = data.filter((w: any) => {
+                            const ids = w.assigned_job_ids;
+                            return ids && ids !== '' && ids !== '[]';
+                        }).length;
+                    }
+                } catch (e) { }
+
+                setWebStats({
+                    openIssues,
+                    resolvedIssues: 0,
+                    rejectedTickets,
+                    manpower,
+                    avgProgress,
+                    activeJobs: activeJobs.length,
+                });
+            }
         } catch (error) {
             console.error("Failed to load dashboard data", error);
         }

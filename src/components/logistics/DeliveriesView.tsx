@@ -6,6 +6,7 @@ import LiveDeliveryTracker from './LiveDeliveryTracker';
 import KanbanCard from './KanbanCard';
 import clsx from 'clsx';
 import { DndContext, DragOverlay, useSensor, useSensors, PointerSensor, KeyboardSensor, closestCorners, DragEndEvent, useDroppable, useDraggable } from '@dnd-kit/core';
+import { printDeliveryTicket } from '../../utils/DeliveryTicketPDF';
 
 interface DeliveriesViewProps {
     tickets: DeliveryTicket[];
@@ -79,6 +80,7 @@ function DraggableCard({ ticket, onDelete, onAssign, onSendToWarehouse, onEdit, 
                 onPress={() => onEdit && onEdit(ticket)}
                 onAssign={() => onAssign(ticket)}
                 onShortagePress={() => onShortagePress && onShortagePress(ticket)}
+                onPrint={() => printDeliveryTicket(ticket)}
             />
             {ticket.status === 'FIELD_APPROVED' && (
                 <TouchableOpacity
