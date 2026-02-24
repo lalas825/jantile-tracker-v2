@@ -91,7 +91,15 @@ export default function ReportPunchlistItemModal({
             return;
         }
         if (!selectedFloor) {
-            Alert.alert('Location Required', 'Please select at least a floor for this item.');
+            Alert.alert('Location Required', 'Please select a floor for this item.');
+            return;
+        }
+        if (availableUnits.length > 0 && !selectedUnit) {
+            Alert.alert('Location Required', 'Please select a unit.');
+            return;
+        }
+        if (availableAreas.length > 0 && !selectedArea) {
+            Alert.alert('Location Required', 'Please select an area.');
             return;
         }
         setSubmitting(true);

@@ -7,7 +7,11 @@ import { X, Camera, AlertTriangle } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { SupabaseService } from '../../services/SupabaseService';
 import { useAuth } from '../../context/AuthContext';
-import { DEFICIENT_TYPES } from '../jobs/tabs/DeficientTab';
+
+const DEFICIENT_TYPES = [
+    'Missing Prep Work', 'Broken Substrate', 'Plumbing Issue',
+    'Structural Issue', 'Water Damage', 'Access Blocked', 'Other Deficiency'
+];
 
 interface Area {
     id: string;
@@ -87,7 +91,15 @@ export default function ReportDeficiencyModal({
             return;
         }
         if (!selectedFloor) {
-            Alert.alert('Location Required', 'Please select at least a floor for this item.');
+            Alert.alert('Location Required', 'Please select a floor for this item.');
+            return;
+        }
+        if (availableUnits.length > 0 && !selectedUnit) {
+            Alert.alert('Location Required', 'Please select a unit.');
+            return;
+        }
+        if (availableAreas.length > 0 && !selectedArea) {
+            Alert.alert('Location Required', 'Please select an area.');
             return;
         }
         setSubmitting(true);
