@@ -7,6 +7,7 @@ import ProductionTab from '../../../components/jobs/ProductionTab';
 import LogisticsTab from '../../../components/jobs/LogisticsTab';
 import JobSiteTab from '../../../components/jobs/JobSiteTab';
 import SafetyTab, { SAFETY_TYPES } from '../../../components/jobs/tabs/SafetyTab';
+import PunchlistTab, { PUNCHLIST_TYPES } from '../../../components/jobs/tabs/PunchlistTab';
 import DocumentsTab from '../../../components/jobs/tabs/DocumentsTab';
 import ReportJobIssueModal from '../../../components/modals/ReportJobIssueModal';
 
@@ -99,6 +100,8 @@ export default function JobDetailsScreen() {
                 return <JobIssuesTab job={job} />;
             case 'SAFETY':
                 return <SafetyTab job={job} />;
+            case 'PUNCHLIST':
+                return <PunchlistTab job={job} />;
             case 'DOCUMENTS':
                 return <DocumentsTab job={job} />;
             default:
@@ -211,7 +214,7 @@ function JobIssuesTab({ job }: { job: any }) {
     const loadIssues = React.useCallback(async () => {
         try {
             const data = await SupabaseService.getJobIssues(jobId);
-            setIssues(data.filter((i: any) => !SAFETY_TYPES.includes(i.type)));
+            setIssues(data.filter((i: any) => !SAFETY_TYPES.includes(i.type) && !PUNCHLIST_TYPES.includes(i.type)));
         } catch (err) {
             console.error("Failed to load job issues:", err);
         } finally {
@@ -310,7 +313,7 @@ function JobIssuesTab({ job }: { job: any }) {
                                                 e.stopPropagation();
                                                 await SupabaseService.updateIssueStatus(issue.id, 'resolved');
                                                 const data = await SupabaseService.getJobIssues(jobId);
-                                                setIssues(data.filter((i: any) => !SAFETY_TYPES.includes(i.type)));
+                                                setIssues(data.filter((i: any) => !SAFETY_TYPES.includes(i.type) && !PUNCHLIST_TYPES.includes(i.type)));
                                             }}
                                             className="bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 self-start mt-1 flex-row items-center gap-1.5"
                                         >
