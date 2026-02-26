@@ -7,7 +7,7 @@
     "icon": "./assets/images/jantile-logo.png",
     "scheme": "jantiletrackerv2",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true
     },
@@ -43,7 +43,26 @@
       "@react-native-community/datetimepicker",
       "expo-secure-store",
       "@journeyapps/react-native-quick-sqlite",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app needs access to your photos to attach images to issues.",
+          "cameraPermission": "The app needs access to your camera to take photos of issues."
+        }
+      ],
+      "expo-image",
+      "expo-crypto",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "The app needs access to your photo library.",
+          "savePhotosPermission": "The app needs permission to save photos."
+        }
+      ],
+      "expo-print",
+      "expo-sharing",
+      "expo-haptics"
     ],
     "experiments": {
       "typedRoutes": true,
