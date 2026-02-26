@@ -40,6 +40,6 @@ app-example
 
 # generated native folders
 /ios
-# /android — committed for EAS bare workflow build
+/android
 
 .vercel
