@@ -1,4 +1,4 @@
-package com.anonymous.jantiletrackerv2
+package com.jantile.trackerv2
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

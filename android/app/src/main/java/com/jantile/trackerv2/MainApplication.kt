@@ -1,4 +1,4 @@
-package com.anonymous.jantiletrackerv2
+package com.jantile.trackerv2
 
 import android.app.Application
 import android.content.res.Configuration

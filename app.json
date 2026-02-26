@@ -20,7 +20,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.jantiletrackerv2"
+      "package": "com.jantile.trackerv2"
     },
     "web": {
       "output": "static",
@@ -48,6 +48,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "233479d4-4e40-4e51-84ec-b56b21655443"
+      }
     }
   }
 }

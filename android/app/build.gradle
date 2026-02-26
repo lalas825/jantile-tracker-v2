@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.anonymous.jantiletrackerv2'
+    namespace 'com.jantile.trackerv2'
     defaultConfig {
-        applicationId 'com.anonymous.jantiletrackerv2'
+        applicationId 'com.jantile.trackerv2'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
