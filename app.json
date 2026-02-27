@@ -57,10 +57,7 @@
           "photosPermission": "The app needs access to your photo library.",
           "savePhotosPermission": "The app needs permission to save photos."
         }
-      ],
-      "expo-print",
-      "expo-sharing",
-      "expo-haptics"
+      ]
     ],
     "experiments": {
       "typedRoutes": true
