@@ -51,7 +51,6 @@
           "cameraPermission": "The app needs access to your camera to take photos of issues."
         }
       ],
-      "expo-crypto",
       [
         "expo-media-library",
         {
