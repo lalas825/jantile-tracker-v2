@@ -13,14 +13,22 @@ const isWeb = Platform.OS === 'web';
 
 console.log(`[db] platform: ${Platform.OS}, isWeb: ${isWeb}, isExpoGo: ${isExpoGo}`);
 
-const realDb = (isWeb || isExpoGo)
-    ? null
-    : new PowerSyncDatabase({
-        schema: AppSchema,
-        database: {
-            dbFilename: 'jantile_tracker.db',
-        },
-    });
+let realDb: any = null;
+
+if (!isWeb && !isExpoGo) {
+    try {
+        realDb = new PowerSyncDatabase({
+            schema: AppSchema,
+            database: {
+                dbFilename: 'jantile_tracker.db',
+            },
+        });
+        console.log('[db] PowerSyncDatabase created successfully');
+    } catch (e: any) {
+        console.error('[db] CRITICAL: PowerSyncDatabase constructor failed:', e?.message || e);
+        realDb = null;
+    }
+}
 
 export const db = realDb || ({
     isMock: true,
