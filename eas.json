@@ -7,14 +7,16 @@
       "android": {
         "buildType": "apk"
       },
-      "node": "22.12.0",
+      "node": "18.18.0",
+      "image": "ubuntu-22.04-jdk-17-ndk-26",
       "distribution": "internal"
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
       },
-      "node": "22.12.0"
+      "node": "18.18.0",
+      "image": "ubuntu-22.04-jdk-17-ndk-26"
     }
   }
 }
