@@ -6,17 +6,15 @@
     "preview": {
       "android": {
         "buildType": "apk",
-        "image": "ubuntu-22.04-jdk-17-ndk-r26b"
+        "image": "sdk-54"
       },
-      "node": "18.18.0",
       "distribution": "internal"
     },
     "production": {
       "android": {
         "buildType": "app-bundle",
-        "image": "ubuntu-22.04-jdk-17-ndk-r26b"
-      },
-      "node": "18.18.0"
+        "image": "sdk-54"
+      }
     }
   }
 }
