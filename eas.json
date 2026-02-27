@@ -7,12 +7,14 @@
       "android": {
         "buildType": "apk"
       },
+      "node": "22.12.0",
       "distribution": "internal"
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
-      }
+      },
+      "node": "22.12.0"
     }
   }
 }
