@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Modal, ScrollView, Platform } from 'react-native';
+import React from 'react';
+import { View, Text, TextInput, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ProjectMaterial } from '../../services/SupabaseService';
+import { useMaterialForm, CATEGORIES, COST_BASIS_OPTIONS, TROWEL_PRESETS, JOINT_WIDTHS } from '../../features/logistics/hooks/useMaterialForm';
 
 interface AddBudgetItemModalProps {
     visible: boolean;
@@ -14,368 +15,59 @@ interface AddBudgetItemModalProps {
     isGeneralStock?: boolean; // If true, hide area/unit selection for unallocated stock
 }
 
-const CATEGORIES = [
-    'Generic', 'Tile', 'Stone', 'Base', 'Setting Materials', 'Grout', 'Tools', 'Consumable', 'Misc'
-];
-
-const COST_BASIS_OPTIONS = [
-    { label: 'per SQFT', value: 'sqft' },
-    { label: 'per Piece', value: 'pcs' },
-    { label: 'per LF', value: 'lf' },
-    { label: 'per Unit', value: 'unit' }
-];
-
-const TROWEL_PRESETS = [
-    { label: '1/4 x 1/4 Square Notch (95 SQFT/Bag)', value: 95, presetName: 'notch_1_4_x_1_4' },
-    { label: '1/4 x 3/8 Square Notch (65 SQFT/Bag)', value: 65, presetName: 'notch_1_4_x_3_8' },
-    { label: '1/2 x 1/2 Square Notch (45 SQFT/Bag)', value: 45, presetName: 'notch_1_2_x_1_2' },
-    { label: 'Custom Coverage', value: 0, presetName: 'custom' }
-];
-
-const JOINT_WIDTHS = [
-    { label: '1/32"', value: 0.03125 },
-    { label: '1/16"', value: 0.0625 },
-    { label: '1/8"', value: 0.125 },
-    { label: '3/16"', value: 0.1875 },
-    { label: '1/4"', value: 0.25 }
-];
-
 export default function AddBudgetItemModal({ visible, onClose, onSave, initialData, areas = [], units = [], lockedAreaId, isGeneralStock }: AddBudgetItemModalProps) {
-    // Basic Info
-    const [code, setCode] = useState('');
-    const [category, setCategory] = useState('Generic');
-    const [productName, setProductName] = useState('');
-    const [specs, setSpecs] = useState('');
-    const [zone, setZone] = useState('');
-    const [areaId, setAreaId] = useState('');
-    const [subLocation, setSubLocation] = useState('');
-    const [defaultSubLocation, setDefaultSubLocation] = useState('');
-    const [supplier, setSupplier] = useState('');
+    const {
+        // Basic fields
+        code, setCode,
+        category,
+        productName, setProductName,
+        specs, setSpecs,
+        zone, setZone,
+        areaId, setAreaId,
+        subLocation, setSubLocation,
+        defaultSubLocation,
+        supplier, setSupplier,
 
-    // Calculator State
-    const [dimLength, setDimLength] = useState('');
-    const [dimWidth, setDimWidth] = useState('');
-    const [dimThickness, setDimThickness] = useState('');
-    const [linearFeet, setLinearFeet] = useState(''); // New State
-    const [netQty, setNetQty] = useState('0'); // Net Qty before waste
-    const [wastePercent, setWastePercent] = useState('10'); // Default 10%
-    const [manualQty, setManualQty] = useState('0'); // Total Budget Qty
-    const [manualPcs, setManualPcs] = useState('0'); // Total Pieces
-    const [yieldPerUnit, setYieldPerUnit] = useState('50'); // SQFT per Bag
-    const [trowelPreset, setTrowelPreset] = useState('custom');
-    const [jointWidth, setJointWidth] = useState('0.125'); // Default 1/8"
-    const [parentMaterialId, setParentMaterialId] = useState('');
-    const [bagWeight, setBagWeight] = useState('25'); // Default 25lb bag
+        // Calculator fields
+        dimLength, dimWidth, dimThickness,
+        linearFeet,
+        netQty, wastePercent,
+        manualQty, setManualQty,
+        manualPcs, setManualPcs,
+        yieldPerUnit, trowelPreset, jointWidth,
+        bagWeight,
 
-    // Base Specific
-    const [basePcLength, setBasePcLength] = useState('24'); // Inches
+        // Linked info
+        groutInfo, setGroutInfo,
+        caulkInfo, setCaulkInfo,
 
-    // Linked Info
-    const [groutInfo, setGroutInfo] = useState('');
-    const [caulkInfo, setCaulkInfo] = useState('');
+        // Financials
+        unitCost, setUnitCost,
+        costBasis, setCostBasis,
+        unit,
 
-    // Financials
-    const [unitCost, setUnitCost] = useState('0');
-    const [costBasis, setCostBasis] = useState('sqft');
-    const [unit, setUnit] = useState('sqft');
+        // UI state
+        showCategoryMenu, setShowCategoryMenu,
+        showCostBasisMenu, setShowCostBasisMenu,
+        showPresetMenu, setShowPresetMenu,
+        showJointMenu, setShowJointMenu,
+        showAreaMenu, setShowAreaMenu,
+        isCreatingNewArea, setIsCreatingNewArea,
+        newAreaName, setNewAreaName,
+        newAreaDescription, setNewAreaDescription,
 
-    // UI Helpers
-    const [showCategoryMenu, setShowCategoryMenu] = useState(false);
-    const [showCostBasisMenu, setShowCostBasisMenu] = useState(false);
-    const [showPresetMenu, setShowPresetMenu] = useState(false);
-    const [showJointMenu, setShowJointMenu] = useState(false);
-    const [showParentMaterialMenu, setShowParentMaterialMenu] = useState(false);
-    const [showAreaMenu, setShowAreaMenu] = useState(false);
-    const [isCreatingNewArea, setIsCreatingNewArea] = useState(false);
-    const [newAreaName, setNewAreaName] = useState('');
-    const [newAreaDescription, setNewAreaDescription] = useState('');
-    const [selectedUnitId, setSelectedUnitId] = useState('');
-    const [unitSearch, setUnitSearch] = useState('');
+        // Computed
+        totalEstimatedCost,
 
-    useEffect(() => {
-        if (initialData) {
-            setCode(initialData.product_code || '');
-            setCategory(initialData.category || 'Generic');
-            setProductName(initialData.product_name || '');
-            setSpecs(initialData.product_specs || '');
-            setZone(initialData.zone || '');
-            setAreaId(initialData.area_id || '');
-            setSubLocation(initialData.sub_location || '');
-            setDefaultSubLocation('');
-            setSupplier(initialData.supplier || '');
-            setNetQty(initialData.net_qty?.toString() || initialData.budget_qty.toString());
-            setWastePercent(initialData.waste_percent?.toString() || '10');
-            setManualQty(initialData.budget_qty.toString());
-            setUnitCost(initialData.unit_cost.toString());
-            setUnit(initialData.unit || 'sqft');
-            setManualPcs(((initialData.budget_qty || 0) * (initialData.pcs_per_unit || 1)).toString());
-            setGroutInfo(initialData.grout_info || '');
-            setCaulkInfo(initialData.caulk_info || '');
-            setDimLength(initialData.dim_length?.toString() || '');
-            setDimWidth(initialData.dim_width?.toString() || '');
-            setDimThickness(initialData.dim_thickness || '');
-            setLinearFeet(initialData.linear_feet?.toString() || '');
-            setCostBasis(initialData.unit || 'sqft');
-            setTrowelPreset(initialData.trowel_preset || 'custom');
-            setYieldPerUnit(initialData.yield_factor?.toString() || '50');
-            setJointWidth(initialData.joint_width || '0.125');
-            setParentMaterialId(initialData.parent_material_id || '');
-            setBagWeight(initialData.bag_weight?.toString() || '25');
-        } else {
-            resetForm(lockedAreaId);
-        }
-    }, [initialData, visible, lockedAreaId]);
+        // Smart handlers
+        onDimLengthChange, onDimWidthChange, onDimThicknessChange,
+        onNetQtyChange, onWastePercentChange,
+        onLinearFeetChange, onBagWeightChange, onYieldPerUnitChange,
+        onCategoryChange, onJointWidthSelect, onTrowelPresetSelect,
 
-    const resetForm = (initialAreaId?: string) => {
-        setCode('');
-        setCategory('Generic');
-        setProductName('');
-        setSpecs('');
-        setZone('');
-
-        // Handle Virtual Area IDs (loc-NAME)
-        if (initialAreaId && initialAreaId.startsWith('loc-')) {
-            setAreaId(''); // Clear Area ID so it doesn't fail UUID check
-            const virtName = initialAreaId.replace('loc-', '');
-            setDefaultSubLocation(virtName); // Store strictly for fallback
-            setSubLocation(''); // Visual: Empty
-        } else {
-            setAreaId(initialAreaId || '');
-            setDefaultSubLocation('');
-            setSubLocation('');
-        }
-
-        setSupplier('');
-        setNetQty('0');
-        setWastePercent('10');
-        setManualQty('0');
-        setManualPcs('0');
-        setUnitCost('0');
-        setUnit('sqft');
-        setGroutInfo('');
-        setCaulkInfo('');
-        setDimLength('');
-        setDimWidth('');
-        setDimThickness('');
-        setLinearFeet('');
-        setCostBasis('sqft');
-        setNewAreaName('');
-        setNewAreaDescription('');
-        setSelectedUnitId('');
-        setUnitSearch('');
-        setYieldPerUnit('50');
-        setTrowelPreset('custom');
-        setJointWidth('0.125');
-        setParentMaterialId('');
-        setBagWeight('25');
-    };
-
-    // Auto-Calculator Logic
-    const handleTileCalc = (l: string, w: string, count: string) => {
-        const len = parseFloat(l) || 0;
-        const wid = parseFloat(w) || 0;
-        const c = parseFloat(count) || 0;
-        if (len && wid) {
-            const sqft = (len * wid / 144) * c;
-            setManualQty(sqft.toFixed(2));
-        }
-    };
-
-    const handleSettingMaterialCalc = (area: string, yieldVal: string, waste: string) => {
-        const a = parseFloat(area) || 0;
-        const y = parseFloat(yieldVal) || 1; // Avoid div by zero
-        const w = parseFloat(waste) || 0;
-
-        if (a && y) {
-            // Formula: [(Area SQFT * (1 + Waste%)) / Yield per Unit] rounded UP
-            const totalWithWaste = a * (1 + w / 100);
-            const bags = Math.ceil(totalWithWaste / y);
-            setManualQty(bags.toString());
-        }
-    };
-
-    const handleGroutCalc = (l: string, w: string, t: string, j: string, area: string, waste: string, bagW: string) => {
-        const len = parseFloat(l) || 0;
-        const wid = parseFloat(w) || 0;
-        const thk = parseFloat(t) || 0;
-        const jnt = parseFloat(j) || 0;
-        const a = parseFloat(area) || 0;
-        const wst = parseFloat(waste) || 0;
-        const bw = parseFloat(bagW) || 25;
-
-        if (len && wid && thk && jnt && a) {
-            // Formula: Yield (Bags) = [ (L + W) * J * T * 1.58 * SQFT_Total ] / (L * W * BagWeight)
-            const totalSF = a * (1 + wst / 100);
-            const bags = Math.ceil(((len + wid) * jnt * thk * 1.58 * totalSF) / (len * wid * bw));
-            setManualQty(bags.toString());
-        }
-    };
-
-    const handleBaseCalc = (pcLen: string, pcHeight: string, totalLF: string) => {
-        const len = parseFloat(pcLen) || 0; // Inches
-        const height = parseFloat(pcHeight) || 0; // Inches (Reusing dimWidth)
-        const lf = parseFloat(totalLF) || 0;
-
-        if (len && lf) {
-            // Count = Total LF / (Length / 12)
-            const count = lf / (len / 12);
-            setManualPcs(Math.ceil(count).toString());
-
-            // SQFT = Total LF * (Height / 12)
-            if (height) {
-                const sqft = lf * (height / 12);
-                setNetQty(sqft.toFixed(2));
-                const w = parseFloat(wastePercent) || 0;
-                setManualQty((sqft * (1 + w / 100)).toFixed(2));
-
-                // Auto Description
-                if (code) {
-                    const desc = `${height}"x${len}" Base`;
-                    if (!productName.includes(desc)) {
-                        setProductName(prev => prev ? `${prev} - ${desc}` : desc);
-                    }
-                }
-            } else {
-                // Fallback if no height: just update Manual Qty based on LF if basis is LF?
-                // But manualQty is usually the budget quantity in units.
-                // If Base, we usually order by LF or Pieces?
-                // Let's assume Manual Qty holds the "Budget Qty" which depends on 'unit'
-                // But requirements say "SQFT Conversion: Automatically calculate the total Square Footage".
-                // So we must prioritize NetQty = SQFT.
-            }
-        }
-    };
-
-    const totalEstimatedCost = useMemo(() => {
-        return (parseFloat(manualQty) || 0) * (parseFloat(unitCost) || 0);
-    }, [manualQty, unitCost]);
-
-    const pcsPerUnitValue = useMemo(() => {
-        const cat = category.toLowerCase();
-        // Only calculate pieces/unit for relevant categories
-        if (!['tile', 'stone', 'base'].includes(cat)) return 0;
-
-        const qty = parseFloat(manualQty) || 1;
-        const pcs = parseFloat(manualPcs) || 0; // Default to 0 for pieces
-        return pcs / (qty || 1);
-    }, [manualQty, manualPcs, category]);
-
-    const handleSave = () => {
-        if (!productName) {
-            alert("Product Name is required");
-            return;
-        }
-
-        if (isCreatingNewArea) {
-            if (!newAreaName.trim()) {
-                alert("Please enter a name for the new area");
-                return;
-            }
-        }
-
-        // Auto-assign Unit ID logic
-        let linkedUnitId: string | undefined = undefined;
-        let newUnitName: string | undefined = undefined;
-
-        if (isCreatingNewArea) {
-            if (units && units.length > 0) {
-                linkedUnitId = units[0].id;
-            } else {
-                newUnitName = "General";
-            }
-        }
-
-        let finalAreaId = areaId;
-        let finalNewAreaPayload = isCreatingNewArea ? {
-            name: newAreaName,
-            description: newAreaDescription,
-            unit_id: linkedUnitId,
-            _new_unit_name: newUnitName
-        } : undefined;
-
-        // Smart Upgrade: If adding to a Virtual Area, convert it to a Real Area logic
-        // Case 1: Manual selection of a "loc-" area from dropdown
-        if (finalAreaId && finalAreaId.startsWith('loc-')) {
-            const targetName = finalAreaId.replace('loc-', '').trim();
-            // Find if a real area already exists with this name (exclude virtuals)
-            const existingRealArea = areas.find(a => !a.is_virtual && a.name.trim().toLowerCase() === targetName.toLowerCase());
-
-            if (existingRealArea) {
-                finalAreaId = existingRealArea.id;
-            } else {
-                // Auto-create new Real Area
-                finalAreaId = ''; // Clear the invalid "loc-" ID
-                const defaultUnitId = units && units.length > 0 ? units[0].id : undefined;
-                finalNewAreaPayload = {
-                    name: targetName,
-                    description: 'Auto-created from Logistics',
-                    unit_id: defaultUnitId,
-                    _new_unit_name: defaultUnitId ? undefined : 'General'
-                };
-            }
-        }
-        // Case 2: "Reset form" state where areaId is empty but defaultSubLocation is set (from initialData that was virtual)
-        else if (!isCreatingNewArea && !areaId && defaultSubLocation) {
-            // We are in a virtual area (e.g. "wall")
-            const targetName = defaultSubLocation.trim();
-            const existingRealArea = areas.find(a => !a.is_virtual && a.name.trim().toLowerCase() === targetName.toLowerCase());
-
-            if (existingRealArea) {
-                // Scenario A: Real Area already exists -> Link to it
-                finalAreaId = existingRealArea.id;
-            } else {
-                // Scenario B: Create new Real Area on the fly
-                // Default to first unit for the new area
-                const defaultUnitId = units && units.length > 0 ? units[0].id : undefined;
-                finalNewAreaPayload = {
-                    name: targetName,
-                    description: 'Auto-created from Logistics',
-                    unit_id: defaultUnitId,
-                    _new_unit_name: defaultUnitId ? undefined : 'General'
-                };
-            }
-        }
-
-        const payload = {
-            ...initialData,
-            product_code: code,
-            category,
-            product_name: productName,
-            product_specs: specs,
-            zone,
-            area_id: isCreatingNewArea ? undefined : (finalAreaId || undefined),
-            sub_location: subLocation, // Save exactly what user typed (e.g. "Left Side") or empty
-            supplier,
-            net_qty: parseFloat(netQty) || 0,
-            waste_percent: parseFloat(wastePercent) || 0,
-            budget_qty: parseFloat(manualQty) || 0,
-            unit_cost: parseFloat(unitCost) || 0,
-            total_value: totalEstimatedCost,
-            unit,
-            pcs_per_unit: pcsPerUnitValue,
-            grout_info: groutInfo,
-            caulk_info: caulkInfo,
-            dim_length: parseFloat(dimLength) || undefined,
-            dim_width: parseFloat(dimWidth) || undefined,
-            dim_thickness: dimThickness || undefined,
-            linear_feet: parseFloat(linearFeet) || undefined,
-            trowel_preset: category === 'Setting Materials' ? trowelPreset : undefined,
-            yield_factor: category === 'Setting Materials' ? (parseFloat(yieldPerUnit) || undefined) : (category === 'Grout' ? (parseFloat(yieldPerUnit) || undefined) : undefined),
-            joint_width: category === 'Grout' ? jointWidth : undefined,
-            bag_weight: category === 'Grout' ? (parseFloat(bagWeight) || undefined) : undefined,
-            parent_material_id: category === 'Grout' ? parentMaterialId : undefined,
-            ...(finalNewAreaPayload ? {
-                _new_area: finalNewAreaPayload
-            } : {})
-        };
-
-        onSave(payload);
-        setIsCreatingNewArea(false);
-        setNewAreaName('');
-        setSelectedUnitId('');
-        setUnitSearch('');
-        onClose();
-    };
+        // Actions
+        handleSave,
+    } = useMaterialForm({ visible, onClose, onSave, initialData, areas, units, lockedAreaId, isGeneralStock });
 
     const renderCalculator = () => {
         const pColor = "#94a3b8";
@@ -395,10 +87,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                     placeholder='L (e.g "24 7/8")'
                                     placeholderTextColor={pColor}
                                     value={dimLength}
-                                    onChangeText={(val) => {
-                                        setDimLength(val);
-                                        handleTileCalc(val, dimWidth, manualPcs);
-                                    }}
+                                    onChangeText={onDimLengthChange}
                                 />
                                 <Text className="text-blue-300 font-bold">×</Text>
                                 <TextInput
@@ -406,10 +95,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                     placeholder='W (e.g "12 1/2")'
                                     placeholderTextColor={pColor}
                                     value={dimWidth}
-                                    onChangeText={(val) => {
-                                        setDimWidth(val);
-                                        handleTileCalc(dimLength, val, manualPcs);
-                                    }}
+                                    onChangeText={onDimWidthChange}
                                 />
                             </View>
                         </View>
@@ -420,7 +106,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 placeholder='Thk (3/8")'
                                 placeholderTextColor={pColor}
                                 value={dimThickness}
-                                onChangeText={setDimThickness}
+                                onChangeText={onDimThicknessChange}
                             />
                         </View>
                     </View>
@@ -431,20 +117,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 className="bg-white border border-blue-200 p-2.5 rounded-lg text-sm font-bold text-slate-900"
                                 keyboardType="numeric"
                                 value={netQty}
-                                onChangeText={(val) => {
-                                    setNetQty(val);
-                                    const n = parseFloat(val) || 0;
-                                    const w = parseFloat(wastePercent) || 0;
-                                    const total = n * (1 + w / 100);
-                                    setManualQty(total.toFixed(2));
-
-                                    const len = parseFloat(dimLength) || 0;
-                                    const wid = parseFloat(dimWidth) || 0;
-                                    if (len && wid) {
-                                        const pcs = total / (len * wid / 144);
-                                        setManualPcs(Math.ceil(pcs).toString());
-                                    }
-                                }}
+                                onChangeText={onNetQtyChange}
                             />
                         </View>
                         <View className="flex-1">
@@ -453,20 +126,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 className="bg-white border border-blue-200 p-2.5 rounded-lg text-sm font-bold text-slate-900"
                                 keyboardType="numeric"
                                 value={wastePercent}
-                                onChangeText={(val) => {
-                                    setWastePercent(val);
-                                    const n = parseFloat(netQty) || 0;
-                                    const w = parseFloat(val) || 0;
-                                    const total = n * (1 + w / 100);
-                                    setManualQty(total.toFixed(2));
-
-                                    const len = parseFloat(dimLength) || 0;
-                                    const wid = parseFloat(dimWidth) || 0;
-                                    if (len && wid) {
-                                        const pcs = total / (len * wid / 144);
-                                        setManualPcs(Math.ceil(pcs).toString());
-                                    }
-                                }}
+                                onChangeText={onWastePercentChange}
                             />
                         </View>
                     </View>
@@ -531,10 +191,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 placeholder='Len (e.g "48")'
                                 placeholderTextColor="#94a3b8"
                                 value={dimLength}
-                                onChangeText={(val) => {
-                                    setDimLength(val);
-                                    handleBaseCalc(val, dimWidth, linearFeet);
-                                }}
+                                onChangeText={onDimLengthChange}
                             />
                         </View>
                         <View className="flex-[1]">
@@ -544,10 +201,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 placeholder='Hgt (e.g "4")'
                                 placeholderTextColor="#94a3b8"
                                 value={dimWidth}
-                                onChangeText={(val) => {
-                                    setDimWidth(val);
-                                    handleBaseCalc(dimLength, val, linearFeet);
-                                }}
+                                onChangeText={onDimWidthChange}
                             />
                         </View>
                     </View>
@@ -558,10 +212,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 className="bg-indigo-100 border border-indigo-200 p-2.5 rounded-lg text-lg font-black text-indigo-900"
                                 keyboardType="numeric"
                                 value={linearFeet}
-                                onChangeText={(val) => {
-                                    setLinearFeet(val);
-                                    handleBaseCalc(dimLength, dimWidth, val);
-                                }}
+                                onChangeText={onLinearFeetChange}
                             />
                         </View>
                         <View className="flex-[1]">
@@ -588,13 +239,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                             <TextInput
                                 className="bg-white border border-indigo-200 p-2.5 rounded-lg text-xs font-bold text-slate-900"
                                 value={wastePercent}
-                                onChangeText={(val) => {
-                                    setWastePercent(val);
-                                    // Recalc
-                                    const net = parseFloat(netQty) || 0;
-                                    const w = parseFloat(val) || 0;
-                                    setManualQty((net * (1 + w / 100)).toFixed(2));
-                                }}
+                                onChangeText={onWastePercentChange}
                             />
                         </View>
                         <View className="flex-1">
@@ -611,13 +256,6 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
         }
 
         if (category === 'Grout') {
-            // Auto-Sync Logic: Find a Tile/Stone material in the same area to pull dimensions
-            const parentTile = areas.find(a => a.id === areaId)?.materials?.find((m: any) => m.category === 'Tile' || m.category === 'Stone');
-
-            // We use a useEffect-like pattern or just check if dims are empty to pre-fill
-            // But since this is a render function, we should ideally do this in a useEffect or on category change.
-            // Let's ensure handleGroutCalc is reactive.
-
             return (
                 <View className="bg-slate-100 p-4 rounded-2xl border border-slate-200 mb-6" style={{ zIndex: 100, position: 'relative' }}>
                     <View className="flex-row items-center gap-2 mb-3">
@@ -644,16 +282,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                         <TouchableOpacity
                                             key={jw.label}
                                             className="p-3 border-b border-slate-50"
-                                            onPress={() => {
-                                                setJointWidth(jw.value.toString());
-                                                handleGroutCalc(dimLength, dimWidth, dimThickness, jw.value.toString(), netQty, wastePercent, bagWeight);
-
-                                                // Auto-fill Description: "Material Name - Joint Width Joint"
-                                                const baseName = productName.split(' - ')[0];
-                                                setProductName(`${baseName} - ${jw.label} Joint`);
-
-                                                setShowJointMenu(false);
-                                            }}
+                                            onPress={() => onJointWidthSelect(jw)}
                                         >
                                             <Text className="text-xs font-bold text-slate-700">{jw.label}</Text>
                                         </TouchableOpacity>
@@ -667,10 +296,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 className="bg-white border border-slate-200 p-2.5 rounded-lg text-sm font-bold text-slate-900"
                                 keyboardType="numeric"
                                 value={bagWeight}
-                                onChangeText={(val) => {
-                                    setBagWeight(val);
-                                    handleGroutCalc(dimLength, dimWidth, dimThickness, jointWidth, netQty, wastePercent, val);
-                                }}
+                                onChangeText={onBagWeightChange}
                             />
                         </View>
                         <View className="flex-1">
@@ -679,10 +305,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 className="bg-white border border-slate-200 p-2.5 rounded-lg text-sm font-bold text-slate-900"
                                 keyboardType="numeric"
                                 value={wastePercent}
-                                onChangeText={(val) => {
-                                    setWastePercent(val);
-                                    handleGroutCalc(dimLength, dimWidth, dimThickness, jointWidth, netQty, val, bagWeight);
-                                }}
+                                onChangeText={onWastePercentChange}
                             />
                         </View>
                     </View>
@@ -696,10 +319,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                     className="bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-inter font-bold text-slate-900 text-center"
                                     placeholder="Len"
                                     value={dimLength}
-                                    onChangeText={(val) => {
-                                        setDimLength(val);
-                                        handleGroutCalc(val, dimWidth, dimThickness, jointWidth, netQty, wastePercent, bagWeight);
-                                    }}
+                                    onChangeText={onDimLengthChange}
                                 />
                             </View>
                             <View className="flex-1">
@@ -707,10 +327,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                     className="bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-inter font-bold text-slate-900 text-center"
                                     placeholder="Wid"
                                     value={dimWidth}
-                                    onChangeText={(val) => {
-                                        setDimWidth(val);
-                                        handleGroutCalc(dimLength, val, dimThickness, jointWidth, netQty, wastePercent, bagWeight);
-                                    }}
+                                    onChangeText={onDimWidthChange}
                                 />
                             </View>
                             <View className="flex-1">
@@ -718,10 +335,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                     className="bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-inter font-bold text-slate-900 text-center"
                                     placeholder="Thk"
                                     value={dimThickness}
-                                    onChangeText={(val) => {
-                                        setDimThickness(val);
-                                        handleGroutCalc(dimLength, dimWidth, val, jointWidth, netQty, wastePercent, bagWeight);
-                                    }}
+                                    onChangeText={onDimThicknessChange}
                                 />
                             </View>
                         </View>
@@ -735,10 +349,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 className="bg-white border border-slate-200 p-2.5 rounded-lg text-xs font-bold text-slate-900"
                                 keyboardType="numeric"
                                 value={netQty}
-                                onChangeText={(val) => {
-                                    setNetQty(val);
-                                    handleGroutCalc(dimLength, dimWidth, dimThickness, jointWidth, val, wastePercent, bagWeight);
-                                }}
+                                onChangeText={onNetQtyChange}
                             />
                         </View>
                         <View className="flex-[1.5]">
@@ -778,14 +389,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                     <TouchableOpacity
                                         key={preset.presetName}
                                         className={`p-3 border-b border-amber-50 ${trowelPreset === preset.presetName ? 'bg-amber-50' : ''}`}
-                                        onPress={() => {
-                                            setTrowelPreset(preset.presetName);
-                                            if (preset.value > 0) {
-                                                setYieldPerUnit(preset.value.toString());
-                                                handleSettingMaterialCalc(netQty, preset.value.toString(), wastePercent);
-                                            }
-                                            setShowPresetMenu(false);
-                                        }}
+                                        onPress={() => onTrowelPresetSelect(preset)}
                                     >
                                         <Text className={`text-xs font-inter ${trowelPreset === preset.presetName ? 'text-amber-700 font-black' : 'text-slate-600 font-bold'}`}>{preset.label}</Text>
                                     </TouchableOpacity>
@@ -802,10 +406,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 keyboardType="numeric"
                                 placeholder="Total SQFT"
                                 value={netQty}
-                                onChangeText={(val) => {
-                                    setNetQty(val);
-                                    handleSettingMaterialCalc(val, yieldPerUnit, wastePercent);
-                                }}
+                                onChangeText={onNetQtyChange}
                             />
                         </View>
                         <View className="flex-1">
@@ -816,10 +417,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 placeholder="e.g. 50"
                                 value={yieldPerUnit}
                                 editable={trowelPreset === 'custom'}
-                                onChangeText={(val) => {
-                                    setYieldPerUnit(val);
-                                    handleSettingMaterialCalc(netQty, val, wastePercent);
-                                }}
+                                onChangeText={onYieldPerUnitChange}
                             />
                         </View>
                     </View>
@@ -830,10 +428,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                 className="bg-white border border-amber-200 p-2.5 rounded-lg text-sm font-bold text-slate-900"
                                 keyboardType="numeric"
                                 value={wastePercent}
-                                onChangeText={(val) => {
-                                    setWastePercent(val);
-                                    handleSettingMaterialCalc(netQty, yieldPerUnit, val);
-                                }}
+                                onChangeText={onWastePercentChange}
                             />
                         </View>
                         <View className="flex-1">
@@ -912,38 +507,7 @@ export default function AddBudgetItemModal({ visible, onClose, onSave, initialDa
                                             <TouchableOpacity
                                                 key={cat}
                                                 className={`p-3 border-b border-slate-50 ${category === cat ? 'bg-blue-50' : ''}`}
-                                                onPress={() => {
-                                                    setCategory(cat);
-                                                    const isSetting = cat === 'Setting Materials';
-                                                    const isGrout = cat === 'Grout';
-                                                    setUnit(cat === 'Base' ? 'lf' : (cat === 'Tile' || cat === 'Stone' ? 'sqft' : (isSetting || isGrout ? 'bags' : 'units')));
-                                                    // Default basis to 'lf' for Base, 'sqft' for Tile/Stone, 'unit' for Setting/Grout
-                                                    setCostBasis(cat === 'Base' ? 'lf' : (cat === 'Tile' || cat === 'Stone' ? 'sqft' : (isSetting || isGrout ? 'unit' : 'units')));
-                                                    if (isSetting) setYieldPerUnit('50');
-                                                    if (isGrout) {
-                                                        setBagWeight('25');
-                                                        // Auto-Sync Dimensions: Search for Tile/Stone in current area
-                                                        const currentArea = areas.find(a => a.id === areaId);
-                                                        const tileInArea = currentArea?.materials?.find((m: any) => m.category === 'Tile' || m.category === 'Stone');
-                                                        if (tileInArea) {
-                                                            setDimLength(tileInArea.dim_length?.toString() || '');
-                                                            setDimWidth(tileInArea.dim_width?.toString() || '');
-                                                            setDimThickness(tileInArea.dim_thickness || '');
-                                                            setNetQty(tileInArea.net_qty?.toString() || tileInArea.budget_qty?.toString() || '0');
-                                                            // Trigger calc
-                                                            handleGroutCalc(
-                                                                tileInArea.dim_length?.toString() || '',
-                                                                tileInArea.dim_width?.toString() || '',
-                                                                tileInArea.dim_thickness || '',
-                                                                jointWidth,
-                                                                tileInArea.net_qty?.toString() || tileInArea.budget_qty?.toString() || '0',
-                                                                wastePercent,
-                                                                '25'
-                                                            );
-                                                        }
-                                                    }
-                                                    setShowCategoryMenu(false);
-                                                }}
+                                                onPress={() => onCategoryChange(cat)}
                                             >
                                                 <Text className={`text-sm font-inter ${category === cat ? 'text-blue-600 font-black' : 'text-slate-600 font-bold'}`}>{cat}</Text>
                                             </TouchableOpacity>
