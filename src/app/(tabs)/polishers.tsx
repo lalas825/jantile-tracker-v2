@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../powersync/db';
 import { SupabaseService, UIWorkerWithLogs, UIJobLog, UICrewMember, formatDate, getInitials } from '../../services/SupabaseService';
 import ProductionRow from '../../components/ProductionRow';
+import { printPolishersReport } from '../../utils/PolishersReportPDF';
 import * as Crypto from 'expo-crypto';
 import { usePowerSyncQuery } from '@powersync/react';
 
@@ -302,6 +303,14 @@ function PolishersContent() {
     const [currentMonth, setCurrentMonth] = useState(new Date());
     const [addWorkerVisible, setAddWorkerVisible] = useState(false);
     const [selectedLogForJob, setSelectedLogForJob] = useState<{ workerId: string, logId: string } | null>(null);
+    const [collapsedWorkers, setCollapsedWorkers] = useState<Record<string, boolean>>({});
+    const toggleWorker = (id: string) => setCollapsedWorkers(prev => ({ ...prev, [id]: !prev[id] }));
+    const allCollapsed = displayWorkers.length > 0 && displayWorkers.every(w => collapsedWorkers[w.id]);
+    const toggleAll = () => {
+        const next: Record<string, boolean> = {};
+        displayWorkers.forEach(w => { next[w.id] = !allCollapsed; });
+        setCollapsedWorkers(next);
+    };
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: '#f8fafc' }} edges={['top']}>
@@ -314,9 +323,19 @@ function PolishersContent() {
                             <Text className="text-xs font-inter font-bold text-slate-500">{totalLogs}</Text>
                         </View>
                     </View>
-                    <TouchableOpacity onPress={() => setAddWorkerVisible(true)} className="bg-blue-50 px-4 py-2 rounded-lg">
-                        <Text className="text-blue-600 font-outfit font-black uppercase tracking-widest text-xs">+ Polisher</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                        <TouchableOpacity onPress={toggleAll} className="bg-slate-100 px-3 py-2 rounded-lg" style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                            <Ionicons name={allCollapsed ? 'expand-outline' : 'contract-outline'} size={16} color="#475569" />
+                            <Text className="text-slate-600 font-outfit font-black uppercase tracking-widest text-xs">{allCollapsed ? 'Expand' : 'Collapse'}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => printPolishersReport(displayWorkers, dateRange, totals)} className="bg-slate-100 px-3 py-2 rounded-lg" style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                            <Ionicons name="print-outline" size={16} color="#475569" />
+                            <Text className="text-slate-600 font-outfit font-black uppercase tracking-widest text-xs">Report</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setAddWorkerVisible(true)} className="bg-blue-50 px-4 py-2 rounded-lg">
+                            <Text className="text-blue-600 font-outfit font-black uppercase tracking-widest text-xs">+ Polisher</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* ERROR PANEL (If Web fetch fails) */}
@@ -361,10 +380,29 @@ function PolishersContent() {
                     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: isMobile ? 15 : 30 }}>
                         {displayWorkers.map(worker => (
                             <View key={worker.id} style={{ backgroundColor: '#fff', borderRadius: 16, marginBottom: 20, borderWidth: 1, borderColor: '#e2e8f0', overflow: 'hidden' }}>
-                                <View style={{ padding: 15, borderBottomWidth: 1, borderColor: '#f1f5f9', backgroundColor: '#fafcfd', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <Text style={{ fontWeight: 'bold', fontSize: 16, color: '#1e293b' }}>{worker.name}</Text>
+                                <TouchableOpacity activeOpacity={0.7} onPress={() => toggleWorker(worker.id)} style={{ padding: 15, borderBottomWidth: collapsedWorkers[worker.id] ? 0 : 1, borderColor: '#f1f5f9', backgroundColor: '#fafcfd', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                        <Ionicons name={collapsedWorkers[worker.id] ? 'chevron-forward' : 'chevron-down'} size={16} color="#94a3b8" />
+                                        <Text style={{ fontWeight: 'bold', fontSize: 16, color: '#1e293b' }}>{worker.name}</Text>
+                                        {(() => {
+                                            const wReg = worker.logs.reduce((s: number, l: any) => s + (parseFloat(l.regHours) || 0), 0);
+                                            const wOt = worker.logs.reduce((s: number, l: any) => s + (parseFloat(l.otHours) || 0), 0);
+                                            const wTotal = wReg + wOt;
+                                            return wTotal > 0 ? (
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, gap: 4 }}>
+                                                    <Ionicons name="time-outline" size={12} color="#64748b" />
+                                                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569' }}>{wTotal} hrs</Text>
+                                                    {wOt > 0 && <Text style={{ fontSize: 10, fontWeight: '700', color: '#dc2626' }}>({wOt} OT)</Text>}
+                                                </View>
+                                            ) : null;
+                                        })()}
+                                        {collapsedWorkers[worker.id] && worker.logs.length > 0 && (
+                                            <Text style={{ fontSize: 11, color: '#94a3b8', fontWeight: '600' }}>{worker.logs.length} {worker.logs.length === 1 ? 'entry' : 'entries'}</Text>
+                                        )}
+                                    </View>
                                     <TouchableOpacity onPress={() => addJobRow(worker.id)} style={{ padding: 5 }}><Ionicons name="add-circle-outline" size={24} color="#3b82f6" /></TouchableOpacity>
-                                </View>
+                                </TouchableOpacity>
+                                {!collapsedWorkers[worker.id] && (
                                 <View style={{ padding: 10 }}>
                                     {worker.logs.map(log => (
                                         <ProductionRow
@@ -375,6 +413,7 @@ function PolishersContent() {
                                         />
                                     ))}
                                 </View>
+                                )}
                             </View>
                         ))}
                         {workers.length === 0 && <View style={{ padding: 40, alignItems: 'center' }}><Text style={{ color: '#94a3b8' }}>No logs for this date.</Text></View>}

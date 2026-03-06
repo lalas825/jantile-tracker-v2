@@ -69,13 +69,18 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
                     if ('is_ticket' in cleanedData) cleanedData.is_ticket = cleanedData.is_ticket ? 1 : 0;
                 }
 
-                // REMOVE 'position' column (TEMPORARY FIX)
-                // We keep 'position' locally in PowerSync for sorting, but Supabase doesn't have it yet.
-                // If we send it, Supabase throws a 400 (PGRST204)
-                if (table === 'checklist_items' && cleanedData && typeof cleanedData === 'object') {
-                    const { position, ...rest } = cleanedData;
-                    cleanedData = rest;
-                    console.log(`[SupabaseConnector] Sanitized checklist_items (removed position)`);
+                // Remove columns that exist in local PowerSync schema but not in Supabase
+                // These cause PGRST204 errors and block the entire upload queue
+                const COLUMNS_TO_STRIP: Record<string, string[]> = {
+                    'checklist_items': ['position'],
+                    'jobs': ['foreman_email'],
+                };
+                const columnsToRemove = COLUMNS_TO_STRIP[table];
+                if (columnsToRemove && cleanedData && typeof cleanedData === 'object') {
+                    for (const col of columnsToRemove) {
+                        delete cleanedData[col];
+                    }
+                    console.log(`[SupabaseConnector] Sanitized ${table} (removed ${columnsToRemove.join(', ')})`);
                 }
 
                 if (operation === 'PUT') {
@@ -120,8 +125,14 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
             await transaction.complete();
             console.log(`[SupabaseConnector] Transaction Completed Successfully`);
         } catch (ex: any) {
-            console.error("[SupabaseConnector] TERMINAL UPLOAD FAILURE:", JSON.stringify(ex));
-            // PowerSync will retry automatically
+            console.error("[SupabaseConnector] Upload error:", JSON.stringify(ex));
+            // If it's a schema mismatch (column not found), complete the transaction
+            // to unblock the queue. The data will re-sync from the server.
+            if (ex?.code === 'PGRST204' || ex?.code === '42703') {
+                console.warn("[SupabaseConnector] Schema mismatch — completing transaction to unblock queue");
+                await transaction.complete();
+            }
+            // Otherwise PowerSync will retry automatically
         }
     }
 }

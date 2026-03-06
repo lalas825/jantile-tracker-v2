@@ -55,6 +55,16 @@ export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
                 const connector = new SupabaseConnector();
                 await db.connect(connector);
                 console.log("PowerSyncWrapper: Connected to backend.");
+                console.log("PowerSyncWrapper: Sync status after connect:", JSON.stringify(db.currentStatus));
+
+                // Log sync status periodically so we can see if sync completes
+                const statusInterval = setInterval(() => {
+                    if (db.currentStatus) {
+                        console.log("PowerSyncWrapper: Sync status:", JSON.stringify(db.currentStatus));
+                    }
+                }, 5000);
+                // Clear after 30s to avoid noise
+                setTimeout(() => clearInterval(statusInterval), 30000);
 
                 setDbInstance(db);
                 setIsReady(true);

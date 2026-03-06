@@ -1,12 +1,40 @@
 import React, { useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, useWindowDimensions, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, useWindowDimensions, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DeliveryTicket, formatDisplayDate, SupabaseService, Worker } from '../../services/SupabaseService';
 import LiveDeliveryTracker from './LiveDeliveryTracker';
 import KanbanCard from './KanbanCard';
 import clsx from 'clsx';
-import { DndContext, DragOverlay, useSensor, useSensors, PointerSensor, KeyboardSensor, closestCorners, DragEndEvent, useDroppable, useDraggable } from '@dnd-kit/core';
 import { printDeliveryTicket } from '../../utils/DeliveryTicketPDF';
+
+// Conditionally import @dnd-kit (web-only)
+let DndContext: any;
+let DragOverlay: any;
+let useSensor: any;
+let useSensors: any;
+let PointerSensor: any;
+let KeyboardSensor: any;
+let closestCorners: any;
+let useDroppable: any;
+let useDraggable: any;
+type DragEndEvent = any;
+
+if (Platform.OS === 'web') {
+    try {
+        const dndKit = require('@dnd-kit/core');
+        DndContext = dndKit.DndContext;
+        DragOverlay = dndKit.DragOverlay;
+        useSensor = dndKit.useSensor;
+        useSensors = dndKit.useSensors;
+        PointerSensor = dndKit.PointerSensor;
+        KeyboardSensor = dndKit.KeyboardSensor;
+        closestCorners = dndKit.closestCorners;
+        useDroppable = dndKit.useDroppable;
+        useDraggable = dndKit.useDraggable;
+    } catch {
+        // fallback if not installed
+    }
+}
 
 interface DeliveriesViewProps {
     tickets: DeliveryTicket[];
@@ -27,6 +55,22 @@ const KANBAN_COLUMNS = [
 
 // Helper: Droppable Column
 function DroppableColumn({ id, label, color, textColor, children, count }: any) {
+    if (Platform.OS !== 'web' || !useDroppable) {
+        return (
+            <View className="flex-1 min-w-[280px] flex-col h-full rounded-[4px] bg-slate-100 border border-slate-200 shadow-sm overflow-hidden mr-4">
+                <View className={clsx("p-4 border-b border-slate-200 flex-row justify-between items-center", color)}>
+                    <Text className={clsx("font-black text-[12px] uppercase tracking-[2px]", textColor)}>{label}</Text>
+                    <View className="bg-white/70 px-2 py-1 rounded-[4px] border border-slate-200">
+                        <Text className="font-black text-[10px] text-slate-800">{count}</Text>
+                    </View>
+                </View>
+                <ScrollView className="flex-1 p-3" contentContainerStyle={{ gap: 12 }}>
+                    {children}
+                </ScrollView>
+            </View>
+        );
+    }
+
     const { isOver, setNodeRef } = useDroppable({ id });
     return (
         <View
@@ -51,6 +95,34 @@ function DroppableColumn({ id, label, color, textColor, children, count }: any) 
 
 // Helper: Draggable Card Wrapper
 function DraggableCard({ ticket, onDelete, onAssign, onSendToWarehouse, onEdit, onShortagePress }: { ticket: DeliveryTicket; onDelete: (id: string) => void; onAssign: (t: DeliveryTicket) => void; onSendToWarehouse: (t: DeliveryTicket) => void; onEdit?: (t: DeliveryTicket) => void; onShortagePress?: (t: DeliveryTicket) => void; }) {
+    const cardContent = (
+        <>
+            <KanbanCard
+                ticket={ticket}
+                isRejected={(ticket.status === 'DRAFT' || ticket.status === 'DRAFTS') && !!ticket.notes}
+                onPress={() => onEdit && onEdit(ticket)}
+                onAssign={() => onAssign(ticket)}
+                onShortagePress={() => onShortagePress && onShortagePress(ticket)}
+                onPrint={() => printDeliveryTicket(ticket)}
+            />
+            {ticket.status === 'FIELD_APPROVED' && (
+                <TouchableOpacity
+                    onPress={() => onSendToWarehouse(ticket)}
+                    className="bg-emerald-500 p-3 rounded-b-xl -mt-2 mx-1 items-center shadow-lg shadow-emerald-200 z-50"
+                >
+                    <View className="flex-row items-center gap-2">
+                        <Ionicons name="paper-plane" size={14} color="white" />
+                        <Text className="text-white font-black uppercase text-[10px] tracking-widest">Send to Warehouse</Text>
+                    </View>
+                </TouchableOpacity>
+            )}
+        </>
+    );
+
+    if (Platform.OS !== 'web' || !useDraggable) {
+        return <View className="w-full">{cardContent}</View>;
+    }
+
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
         id: ticket.id,
         data: { ticket }
@@ -74,25 +146,7 @@ function DraggableCard({ ticket, onDelete, onAssign, onSendToWarehouse, onEdit, 
             className="w-full"
             tabIndex={dndAttributes?.tabIndex as 0 | -1 | undefined}
         >
-            <KanbanCard
-                ticket={ticket}
-                isRejected={(ticket.status === 'DRAFT' || ticket.status === 'DRAFTS') && !!ticket.notes}
-                onPress={() => onEdit && onEdit(ticket)}
-                onAssign={() => onAssign(ticket)}
-                onShortagePress={() => onShortagePress && onShortagePress(ticket)}
-                onPrint={() => printDeliveryTicket(ticket)}
-            />
-            {ticket.status === 'FIELD_APPROVED' && (
-                <TouchableOpacity
-                    onPress={() => onSendToWarehouse(ticket)}
-                    className="bg-emerald-500 p-3 rounded-b-xl -mt-2 mx-1 items-center shadow-lg shadow-emerald-200 z-50"
-                >
-                    <View className="flex-row items-center gap-2">
-                        <Ionicons name="paper-plane" size={14} color="white" />
-                        <Text className="text-white font-black uppercase text-[10px] tracking-widest">Send to Warehouse</Text>
-                    </View>
-                </TouchableOpacity>
-            )}
+            {cardContent}
         </View>
     );
 }
@@ -107,10 +161,12 @@ export default function DeliveriesView({
     const { width } = useWindowDimensions();
     const [activeId, setActiveId] = React.useState<string | null>(null);
 
-    const sensors = useSensors(
-        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-        useSensor(KeyboardSensor)
-    );
+    const sensors = (Platform.OS === 'web' && useSensors && useSensor)
+        ? useSensors(
+            useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+            useSensor(KeyboardSensor)
+        )
+        : null;
 
     // Grouping logic for columns
     const groupedTickets = useMemo(() => {
@@ -175,100 +231,107 @@ export default function DeliveriesView({
         }
     };
 
-    return (
-        <View className="flex-1 bg-white">
-            <LiveDeliveryTracker tickets={tickets} />
-
-            <DndContext
-                sensors={sensors}
-                collisionDetection={closestCorners}
-                onDragStart={(e) => setActiveId(e.active.id as string)}
-                onDragEnd={handleDragEnd}
-            >
-                <View className="flex-1 bg-slate-50">
-                    <View className="flex-row p-6 w-full h-full">
-                        {KANBAN_COLUMNS.map(col => (
-                            <DroppableColumn
-                                key={col.id}
-                                id={col.id}
-                                label={col.label}
-                                color={col.color}
-                                textColor={col.text}
-                                count={groupedTickets[col.id]?.length || 0}
-                            >
-                                {groupedTickets[col.id]?.map((t: DeliveryTicket) => (
-                                    <View key={t.id} className={t.status === 'FIELD_APPROVED' ? 'animate-pulse' : ''}>
-                                        <DraggableCard
-                                            ticket={t}
-                                            onDelete={onDeleteTicket}
-                                            onSendToWarehouse={(ticket) => onUpdateStatus(ticket, 'SCHEDULED')}
-                                            onEdit={onEditTicket}
-                                            onShortagePress={(ticket) => {
-                                                Alert.alert(
-                                                    "Shortage Detected",
-                                                    `Foreman Notes:\n${ticket.notes || 'No notes provided.'}`,
-                                                    [
-                                                        { text: "Cancel", style: "cancel" },
-                                                        {
-                                                            text: "Generate Replacement Ticket",
-                                                            onPress: () => {
-                                                                if (onEditTicket) {
-                                                                    onEditTicket({
-                                                                        ...ticket,
-                                                                        id: '',
-                                                                        ticket_number: '',
-                                                                        status: 'DRAFT',
-                                                                        notes: `Replacement for shortage on DT #${ticket.ticket_number}`
-                                                                    });
-                                                                } else {
-                                                                    onCreateTicket();
-                                                                }
-                                                            }
+    const gridContent = (
+        <View className="flex-1 bg-slate-50">
+            <View className="flex-row p-6 w-full h-full">
+                {KANBAN_COLUMNS.map(col => (
+                    <DroppableColumn
+                        key={col.id}
+                        id={col.id}
+                        label={col.label}
+                        color={col.color}
+                        textColor={col.text}
+                        count={groupedTickets[col.id]?.length || 0}
+                    >
+                        {groupedTickets[col.id]?.map((t: DeliveryTicket) => (
+                            <View key={t.id} className={t.status === 'FIELD_APPROVED' ? 'animate-pulse' : ''}>
+                                <DraggableCard
+                                    ticket={t}
+                                    onDelete={onDeleteTicket}
+                                    onSendToWarehouse={(ticket) => onUpdateStatus(ticket, 'SCHEDULED')}
+                                    onEdit={onEditTicket}
+                                    onShortagePress={(ticket) => {
+                                        Alert.alert(
+                                            "Shortage Detected",
+                                            `Foreman Notes:\n${ticket.notes || 'No notes provided.'}`,
+                                            [
+                                                { text: "Cancel", style: "cancel" },
+                                                {
+                                                    text: "Generate Replacement Ticket",
+                                                    onPress: () => {
+                                                        if (onEditTicket) {
+                                                            onEditTicket({
+                                                                ...ticket,
+                                                                id: '',
+                                                                ticket_number: '',
+                                                                status: 'DRAFT',
+                                                                notes: `Replacement for shortage on DT #${ticket.ticket_number}`
+                                                            });
+                                                        } else {
+                                                            onCreateTicket();
                                                         }
-                                                    ]
-                                                );
-                                            }}
-                                            onAssign={async (ticket) => {
-                                                try {
-                                                    const workers = await SupabaseService.getWorkers();
-                                                    const options = workers.map((w: any) => ({
-                                                        text: w.name,
-                                                        onPress: async () => {
-                                                            await SupabaseService.saveDeliveryTicket({ ...ticket, assigned_to: w.id });
-                                                            Alert.alert("Assigned", `Ticket #${ticket.ticket_number} assigned to ${w.name}`);
-                                                        }
-                                                    }));
-
-                                                    Alert.alert(
-                                                        "Assign Supervisor",
-                                                        "Select a supervisor for this ticket:",
-                                                        [
-                                                            ...options.slice(0, 2),
-                                                            { text: "Cancel", style: "cancel" }
-                                                        ]
-                                                    );
-                                                } catch (err) {
-                                                    console.error("Assign Error:", err);
+                                                    }
                                                 }
-                                            }}
-                                        />
-                                    </View>
-                                ))}
+                                            ]
+                                        );
+                                    }}
+                                    onAssign={async (ticket) => {
+                                        try {
+                                            const workers = await SupabaseService.getWorkers();
+                                            const options = workers.map((w: any) => ({
+                                                text: w.name,
+                                                onPress: async () => {
+                                                    await SupabaseService.saveDeliveryTicket({ ...ticket, assigned_to: w.id });
+                                                    Alert.alert("Assigned", `Ticket #${ticket.ticket_number} assigned to ${w.name}`);
+                                                }
+                                            }));
 
-                                {col.id === 'DRAFTS' && (
-                                    <TouchableOpacity
-                                        onPress={onCreateTicket}
-                                        className="mt-2 py-6 border border-dashed border-slate-300 rounded-[4px] items-center justify-center bg-white/50"
-                                    >
-                                        <Ionicons name="add" size={20} color="#94a3b8" />
-                                        <Text className="text-slate-400 font-black text-[11px] uppercase tracking-widest mt-1">New Ticket</Text>
-                                    </TouchableOpacity>
+                                            Alert.alert(
+                                                "Assign Supervisor",
+                                                "Select a supervisor for this ticket:",
+                                                [
+                                                    ...options.slice(0, 2),
+                                                    { text: "Cancel", style: "cancel" }
+                                                ]
+                                            );
+                                        } catch (err) {
+                                            console.error("Assign Error:", err);
+                                        }
+                                    }}
+                                />
+                            </View>
+                        ))}
+
+                        {col.id === 'DRAFTS' && (
+                            <TouchableOpacity
+                                onPress={onCreateTicket}
+                                className="mt-2 py-6 border border-dashed border-slate-300 rounded-[4px] items-center justify-center bg-white/50"
+                            >
+                                <Ionicons name="add" size={20} color="#94a3b8" />
+                                <Text className="text-slate-400 font-black text-[11px] uppercase tracking-widest mt-1">New Ticket</Text>
+                            </TouchableOpacity>
                                 )}
                             </DroppableColumn>
                         ))}
                     </View>
                 </View>
-            </DndContext>
+    );
+
+    return (
+        <View className="flex-1 bg-white">
+            <LiveDeliveryTracker tickets={tickets} />
+            {Platform.OS === 'web' && DndContext ? (
+                <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCorners}
+                    onDragStart={(e: any) => setActiveId(e.active.id as string)}
+                    onDragEnd={handleDragEnd}
+                >
+                    {gridContent}
+                </DndContext>
+            ) : (
+                gridContent
+            )}
         </View>
     );
 }

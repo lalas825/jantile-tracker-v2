@@ -48,6 +48,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'date', type: ColumnType.TEXT }),
             new Column({ name: 'worker_id', type: ColumnType.TEXT }),
             new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'area_id', type: ColumnType.TEXT }),
             new Column({ name: 'reg_hours', type: ColumnType.TEXT }),
             new Column({ name: 'ot_hours', type: ColumnType.TEXT }),
             new Column({ name: 'job_name', type: ColumnType.TEXT }),
@@ -58,6 +59,8 @@ export const AppSchema = new Schema([
             new Column({ name: 'is_ticket', type: ColumnType.INTEGER }),
             new Column({ name: 'notes', type: ColumnType.TEXT }),
             new Column({ name: 'status_color', type: ColumnType.TEXT }),
+            new Column({ name: 'sqft_installed', type: ColumnType.REAL }),
+            new Column({ name: 'status', type: ColumnType.TEXT }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
         ],
     }),
@@ -296,17 +299,6 @@ export const AppSchema = new Schema([
             new Column({ name: 'role', type: ColumnType.TEXT }),
             new Column({ name: 'type', type: ColumnType.TEXT }),
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
-        ]
-    }),
-    new Table({
-        name: 'production_logs',
-        columns: [
-            new Column({ name: 'job_id', type: ColumnType.TEXT }),
-            new Column({ name: 'area_id', type: ColumnType.TEXT }),
-            new Column({ name: 'sqft_installed', type: ColumnType.REAL }),
-            new Column({ name: 'status', type: ColumnType.TEXT }),
-            new Column({ name: 'created_at', type: ColumnType.TEXT }),
-            new Column({ name: 'worker_id', type: ColumnType.TEXT }),
         ]
     }),
 ]);

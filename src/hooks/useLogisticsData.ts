@@ -1,39 +1,52 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
 import { PowerSyncContext } from '@powersync/react';
 
 // Native (iOS/Android) version - uses PowerSync SQLite
-// Updates for Expo Go: Handle missing DB gracefully
+// Polls every 2s to pick up data after sync completes
 export const useLogisticsData = () => {
-    // Safely attempt to get DB. If Provider is invalid/missing (Expo Go), context might be null or throw inside the library's hook.
-    // We use useContext directly to avoid the strict check of usePowerSync() hook if possible.
     const db = useContext(PowerSyncContext);
 
     const [jobs, setJobs] = useState<any[]>([]);
     const [inventory, setInventory] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const lastJsonRef = useRef('');
 
     useEffect(() => {
-        const fetchData = async () => {
-            // If DB is missing (Expo Go fallback), return empty data
-            if (!db) {
-                setLoading(false);
-                return;
-            }
+        if (!db || (db as any).isMock) {
+            setLoading(false);
+            return;
+        }
 
+        let active = true;
+
+        const fetchData = async () => {
             try {
                 const jobsData = await db.getAll('SELECT * FROM jobs ORDER BY name ASC');
                 const inventoryData = await db.getAll('SELECT * FROM inventory ORDER BY item_name ASC');
 
-                setJobs(jobsData);
-                setInventory(inventoryData);
+                if (!active) return;
+
+                // Only update state if data actually changed
+                const json = JSON.stringify({ j: jobsData, i: inventoryData });
+                if (json !== lastJsonRef.current) {
+                    lastJsonRef.current = json;
+                    setJobs(jobsData);
+                    setInventory(inventoryData);
+                    setLoading(false);
+                }
             } catch (error) {
                 console.error("Failed to fetch logistics data:", error);
-            } finally {
-                setLoading(false);
+                if (active) setLoading(false);
             }
         };
 
         fetchData();
+        const interval = setInterval(fetchData, 2000);
+
+        return () => {
+            active = false;
+            clearInterval(interval);
+        };
     }, [db]);
 
     return { jobs, inventory, loading };

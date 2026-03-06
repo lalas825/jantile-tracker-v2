@@ -1,35 +1,27 @@
 /**
  * Local PowerSync React Shim
- * 
- * This module provides the same exports as @powersync/react but uses
- * a local createContext instead of importing from the package directly.
- * 
- * This fixes a runtime crash on Android where importing @powersync/react
- * causes "TypeError: undefined is not a function" in New Architecture mode.
+ *
+ * Replaces @powersync/react on native (Android New Architecture) to avoid
+ * runtime crash. Uses polling with db.getAll() for reactive queries.
  */
-const { createContext, useContext, useState, useEffect, useCallback, useRef } = require('react');
+const { createContext, useContext, useState, useEffect, useRef } = require('react');
 
-// Create a local PowerSync context (replaces the one from @powersync/react)
+console.log('[PowerSync Shim] Module loaded successfully');
+
 const PowerSyncContext = createContext(null);
 
-/**
- * Hook to get the PowerSync database instance from context
- */
 function usePowerSync() {
-    const db = useContext(PowerSyncContext);
-    if (!db) {
-        console.warn('[PowerSync Shim] usePowerSync called outside PowerSyncContext');
-    }
-    return db;
+    return useContext(PowerSyncContext);
 }
 
 /**
- * Hook to run a SQL query reactively (re-runs when data changes)
- * Simplified version that polls for changes
+ * Reactive SQL query hook. Polls every 2s for updates after sync.
+ * getAll() always returns plain arrays — safe on all platforms.
  */
 function useQuery(sqlStatement, parameters = [], options = {}) {
     const db = usePowerSync();
     const [data, setData] = useState({ data: [], isLoading: true, error: undefined });
+    const lastJsonRef = useRef('');
 
     useEffect(() => {
         if (!db || db.isMock) {
@@ -37,82 +29,68 @@ function useQuery(sqlStatement, parameters = [], options = {}) {
             return;
         }
 
-        let isMounted = true;
+        let active = true;
 
         const fetchData = async () => {
             try {
                 const results = await db.getAll(sqlStatement, parameters);
-                if (isMounted) {
+                if (!active) return;
+                const json = JSON.stringify(results || []);
+                if (json !== lastJsonRef.current) {
+                    lastJsonRef.current = json;
                     setData({ data: results || [], isLoading: false, error: undefined });
                 }
             } catch (e) {
-                console.error('[PowerSync Shim] Query error:', e);
-                if (isMounted) {
+                console.error('[PowerSync Shim] Query error:', e?.message || e);
+                if (active) {
                     setData({ data: [], isLoading: false, error: e });
                 }
             }
         };
 
+        // Initial fetch
         fetchData();
 
-        // Set up watching for changes
-        let watcher;
-        try {
-            // Extract table names from SQL for change detection
-            const tables = extractTablesFromSQL(sqlStatement);
-            if (tables.length > 0 && db.onChange) {
-                watcher = db.onChange({
-                    onChange: () => { fetchData(); }
-                }, { tables });
-            }
-        } catch (e) {
-            // onChange not available, use polling fallback
-            const interval = setInterval(fetchData, 5000);
-            return () => {
-                isMounted = false;
-                clearInterval(interval);
-            };
-        }
+        // Poll every 2s — simple, reliable, no compatibility issues
+        const interval = setInterval(fetchData, 2000);
 
         return () => {
-            isMounted = false;
-            if (watcher && watcher.close) {
-                watcher.close();
-            }
+            active = false;
+            clearInterval(interval);
         };
-    }, [sqlStatement, JSON.stringify(parameters)]);
+    }, [db, sqlStatement, JSON.stringify(parameters)]);
 
     return data;
 }
 
-/**
- * Alias for useQuery (backward compatibility)
- */
 function usePowerSyncQuery(sqlStatement, parameters = []) {
     const result = useQuery(sqlStatement, parameters);
     return result.data;
 }
 
-/**
- * Hook to get PowerSync connection status
- */
 function useStatus() {
     const db = usePowerSync();
-    if (!db || db.isMock) {
-        return { connected: false, uploading: false, downloading: false, lastSyncedAt: null };
-    }
-    return db.currentStatus || { connected: false, uploading: false, downloading: false, lastSyncedAt: null };
+    const [status, setStatus] = useState(
+        { connected: false, uploading: false, downloading: false, lastSyncedAt: null }
+    );
+
+    useEffect(() => {
+        if (!db || db.isMock) return;
+
+        const update = () => {
+            if (db.currentStatus) {
+                setStatus({ ...db.currentStatus });
+            }
+        };
+
+        update();
+        const interval = setInterval(update, 3000);
+        return () => clearInterval(interval);
+    }, [db]);
+
+    return status;
 }
 
-/**
- * Simple SQL table name extractor for change detection
- */
-function extractTablesFromSQL(sql) {
-    const matches = sql.match(/\bFROM\s+(\w+)/gi) || [];
-    return matches.map(m => m.replace(/FROM\s+/i, '').trim()).filter(Boolean);
-}
-
-// These are the same exports that @powersync/react provides
 module.exports = {
     PowerSyncContext,
     usePowerSync,
