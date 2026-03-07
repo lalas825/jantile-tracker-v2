@@ -140,26 +140,30 @@ export const OfflinePhotoService = {
 
                     console.log(`📸 [Sync] Upload successful. Metadata sync...`);
 
-                    // 1. Insert into Supabase REAL photos table (FOR WEB/OTHERS)
-                    // We try this first. If it fails due to network, we catch it.
+                    // 1. Upsert into Supabase REAL photos table (FOR WEB/OTHERS)
+                    // Uses upsert to handle re-syncs without duplicate key errors
                     const { error: dbUpstreamError } = await supabase
                         .from('area_photos')
-                        .insert({
+                        .upsert({
                             id: item.id,
                             area_id: item.area_id,
                             url: publicUrl,
                             storage_path: storagePath
-                        });
+                        }, { onConflict: 'id' });
 
                     if (dbUpstreamError) {
-                        // If it's a duplicate error, we can ignore and proceed
-                        if (!dbUpstreamError.message?.includes('unique_violation')) {
+                        // If it's a duplicate key error (23505), treat as success and continue
+                        const isDuplicate = dbUpstreamError.code === '23505'
+                            || dbUpstreamError.message?.includes('duplicate key')
+                            || dbUpstreamError.message?.includes('unique_violation');
+
+                        if (!isDuplicate) {
                             console.error('❌ [Sync] Failed to push photo metadata to Supabase:', dbUpstreamError);
                             throw dbUpstreamError;
                         }
-                        console.log('ℹ️ [Sync] Supabase insert ignored (duplicate).');
+                        console.log('ℹ️ [Sync] Record already exists in Supabase, continuing...');
                     } else {
-                        console.log('✅ [Sync] Supabase insert success.');
+                        console.log('✅ [Sync] Supabase upsert success.');
                     }
 
                     // 2. Insert into REAL photos table (local PowerSync/SQLite)
