@@ -62,12 +62,12 @@ async function getJobIds(profile: Profile): Promise<{ jobIds: string[] | null; e
 
 async function handleStart(profile: Profile): Promise<string> {
   return [
-    `\u{1F44B} Hola <b>${profile.full_name || 'Usuario'}</b>!`,
+    `\u{1F44B} Hi <b>${profile.full_name || 'User'}</b>!`,
     '',
-    'Comandos disponibles:',
-    '/jobs \u2014 Mis obras activas',
-    '/issues \u2014 Problemas abiertos',
-    '/equipo \u2014 Personal en campo',
+    'Available commands:',
+    '/jobs \u2014 My active jobs',
+    '/issues \u2014 Open issues',
+    '/manpower \u2014 Field crew',
   ].join('\n')
 }
 
@@ -78,11 +78,11 @@ async function handleJobs(profile: Profile): Promise<string> {
 
     if (assignError) {
       console.error('[/jobs] assignments query:', assignError)
-      return '\u26A0\uFE0F Error al consultar tus obras. Intenta de nuevo.'
+      return '\u26A0\uFE0F Error fetching your jobs. Please try again.'
     }
 
     if (jobIds !== null && !jobIds.length) {
-      return '\u{1F4CB} No tienes obras asignadas en este momento.'
+      return '\u{1F4CB} You have no assigned jobs at this time.'
     }
 
     // 2. Get active jobs
@@ -100,15 +100,15 @@ async function handleJobs(profile: Profile): Promise<string> {
 
     if (jobsErr) {
       console.error('[/jobs] jobs query:', jobsErr)
-      return '\u26A0\uFE0F Error al consultar obras. Intenta de nuevo.'
+      return '\u26A0\uFE0F Error fetching jobs. Please try again.'
     }
 
     if (!jobs?.length) {
-      return '\u{1F4CB} No tienes obras activas en este momento.'
+      return '\u{1F4CB} No active jobs at this time.'
     }
 
     // 3. Get progress per job
-    const lines: string[] = ['\u{1F3D7}\uFE0F <b>Mis Obras Activas</b>\n']
+    const lines: string[] = ['\u{1F3D7}\uFE0F <b>Active Jobs</b>\n']
 
     for (const job of jobs) {
       // Calculate avg progress from areas via floors/units
@@ -147,7 +147,7 @@ async function handleJobs(profile: Profile): Promise<string> {
     return lines.join('\n')
   } catch (err) {
     console.error('[/jobs] exception:', err)
-    return '\u26A0\uFE0F Error interno. Intenta de nuevo.'
+    return '\u26A0\uFE0F Internal error. Please try again.'
   }
 }
 
@@ -158,11 +158,11 @@ async function handleIssues(profile: Profile): Promise<string> {
 
     if (assignError) {
       console.error('[/issues] assignments query:', assignError)
-      return '\u26A0\uFE0F Error al consultar. Intenta de nuevo.'
+      return '\u26A0\uFE0F Error fetching data. Please try again.'
     }
 
     if (jobIds !== null && !jobIds.length) {
-      return '\u{1F4CB} No tienes obras asignadas en este momento.'
+      return '\u{1F4CB} You have no assigned jobs at this time.'
     }
 
     // 2. Get open issues for those jobs
@@ -181,11 +181,11 @@ async function handleIssues(profile: Profile): Promise<string> {
 
     if (issuesErr) {
       console.error('[/issues] issues query:', issuesErr)
-      return '\u26A0\uFE0F Error al consultar problemas. Intenta de nuevo.'
+      return '\u26A0\uFE0F Error fetching issues. Please try again.'
     }
 
     if (!issues?.length) {
-      return '\u2705 No hay problemas abiertos. \u00A1Todo en orden!'
+      return '\u2705 No open issues. All good!'
     }
 
     // 3. Get job names from the issues found
@@ -202,14 +202,14 @@ async function handleIssues(profile: Profile): Promise<string> {
       High: '\u{1F534}', Medium: '\u{1F7E1}', Low: '\u{1F7E2}',
     }
 
-    const lines = [`\u26A0\uFE0F <b>Problemas Abiertos (${issues.length})</b>\n`]
+    const lines = [`\u26A0\uFE0F <b>Open Issues (${issues.length})</b>\n`]
 
     for (const issue of issues) {
       const icon = priorityIcon[issue.priority] || '\u26AA'
-      const jobName = jobMap[issue.job_id] || 'Obra desconocida'
+      const jobName = jobMap[issue.job_id] || 'Unknown job'
       const desc = issue.description
         ? issue.description.substring(0, 80) + (issue.description.length > 80 ? '...' : '')
-        : 'Sin descripcion'
+        : 'No description'
       lines.push(`${icon} <b>${jobName}</b>`)
       lines.push(`   ${issue.type}: ${desc}`)
       lines.push('')
@@ -218,7 +218,7 @@ async function handleIssues(profile: Profile): Promise<string> {
     return lines.join('\n')
   } catch (err) {
     console.error('[/issues] exception:', err)
-    return '\u26A0\uFE0F Error interno. Intenta de nuevo.'
+    return '\u26A0\uFE0F Internal error. Please try again.'
   }
 }
 
@@ -228,33 +228,35 @@ async function handleManpower(profile: Profile): Promise<string> {
     const { jobIds, error: assignError } = await getJobIds(profile)
 
     if (assignError) {
-      console.error('[/equipo] assignments query:', assignError)
-      return '\u26A0\uFE0F Error al consultar. Intenta de nuevo.'
+      console.error('[/manpower] assignments query:', assignError)
+      return '\u26A0\uFE0F Error fetching data. Please try again.'
     }
 
     if (jobIds !== null && !jobIds.length) {
-      return '\u{1F4CB} No tienes obras asignadas en este momento.'
+      return '\u{1F4CB} You have no assigned jobs at this time.'
     }
 
-    // 2. Get active checkins (no checkout)
+    // 2. Get active checkins (no checkout) — check both null and empty string
     let query = supabase
       .from('crew_checkins')
       .select('job_id, worker_id')
-      .is('check_out', null)
 
     if (jobIds !== null) {
       query = query.in('job_id', jobIds)
     }
 
-    const { data: checkins, error: checkErr } = await query
+    const { data: allCheckins, error: checkErr } = await query
 
     if (checkErr) {
-      console.error('[/equipo] checkins query:', checkErr)
-      return '\u26A0\uFE0F Error al consultar equipo. Intenta de nuevo.'
+      console.error('[/manpower] checkins query:', JSON.stringify(checkErr))
+      return '\u26A0\uFE0F Error fetching crew data. Please try again.'
     }
 
-    if (!checkins?.length) {
-      return '\u{1F477} No hay personal activo en campo en este momento.'
+    // Filter active checkins (check_out is null or empty string)
+    const checkins = allCheckins?.filter((c: any) => !c.check_out) || []
+
+    if (!checkins.length) {
+      return '\u{1F477} No active crew in the field right now.'
     }
 
     // 3. Get job names from checkins found
@@ -276,19 +278,19 @@ async function handleManpower(profile: Profile): Promise<string> {
     }
 
     let total = 0
-    const lines = ['\u{1F477} <b>Equipo en Campo</b>\n']
+    const lines = ['\u{1F477} <b>Field Crew</b>\n']
 
     for (const [, g] of Object.entries(grouped)) {
-      lines.push(`\u{1F3D7}\uFE0F ${g.name}: <b>${g.count}</b> trabajadores`)
+      lines.push(`\u{1F3D7}\uFE0F ${g.name}: <b>${g.count}</b> workers`)
       total += g.count
     }
 
-    lines.push(`\n\u{1F4CA} Total activo: <b>${total}</b>`)
+    lines.push(`\n\u{1F4CA} Total active: <b>${total}</b>`)
 
     return lines.join('\n')
   } catch (err) {
-    console.error('[/equipo] exception:', err)
-    return '\u26A0\uFE0F Error interno. Intenta de nuevo.'
+    console.error('[/manpower] exception:', err)
+    return '\u26A0\uFE0F Internal error. Please try again.'
   }
 }
 
@@ -323,12 +325,12 @@ Deno.serve(async (req) => {
 
     if (profileErr || !profile) {
       console.warn('[Security] Unknown telegram_id:', telegramId)
-      await sendMessage(chatId, '\u26D4 Acceso no autorizado. Contacta al administrador de Jantile.')
+      await sendMessage(chatId, '\u26D4 Unauthorized access. Contact your Jantile administrator.')
       return new Response('OK')
     }
 
     if (profile.status !== 'approved') {
-      await sendMessage(chatId, '\u23F3 Tu cuenta esta pendiente de aprobacion.')
+      await sendMessage(chatId, '\u23F3 Your account is pending approval.')
       return new Response('OK')
     }
 
@@ -346,11 +348,11 @@ Deno.serve(async (req) => {
       case '/issues':
         response = await handleIssues(profile)
         break
-      case '/equipo':
+      case '/manpower':
         response = await handleManpower(profile)
         break
       default:
-        response = 'Comando no reconocido. Usa /start para ver opciones disponibles.'
+        response = 'Unknown command. Use /start to see available options.'
     }
 
     await sendMessage(chatId, response)
