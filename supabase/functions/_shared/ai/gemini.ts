@@ -1,4 +1,4 @@
-import { ToolContext, ChatMessage, UserRole, Profile } from './types.ts'
+import { ToolContext, ChatMessage, UserRole, Profile } from '../types.ts'
 import { toolDeclarations } from './tools.ts'
 import { handleToolCall } from './tool-handlers.ts'
 
@@ -8,16 +8,28 @@ const GEMINI_VISION_MODEL = 'gemini-2.5-flash-lite'
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
 const GEMINI_VISION_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_VISION_MODEL}:generateContent?key=${GEMINI_API_KEY}`
 
-const SYSTEM_INSTRUCTION = `You are Jantile Bot, an AI construction management assistant for the Jantile team.
+// ─── Response Format ─────────────────────────────────────────────────────────────
+
+export type ResponseFormat = 'html' | 'markdown'
+
+const FORMAT_INSTRUCTIONS: Record<ResponseFormat, string> = {
+  html: '- Format with HTML: <b>bold</b>, <i>italic</i>, <code>code</code>',
+  markdown: '- Format with Markdown: **bold**, *italic*, `code`',
+}
+
+// ─── System Instructions ─────────────────────────────────────────────────────────
+
+const BASE_INSTRUCTION = `You are Jantile Bot, an AI construction management assistant for the Jantile team.
 You have FULL read and write access to the system. You can:
 - Query jobs, floors, units, areas, checklists, issues, crew, and production data
 - CREATE jobs (create_job) and entire job structures (bulk_create_structure)
 - CREATE issues (create_issue) — do it when the user reports a problem
 - UPDATE checklist items (update_checklist_items) — mark tasks complete/incomplete
 - Query warehouse data: materials inventory, delivery tickets, purchase orders
+- Query crew data: workers roster (get_workers), production logs/polisher hours (get_production_logs), crew check-ins (get_crew_checkins)
 
 RESPONSE STYLE:
-- Format with HTML for Telegram: <b>bold</b>, <i>italic</i>, <code>code</code>
+{FORMAT_INSTRUCTION}
 - Use emojis to make responses scannable
 - Give rich, informative summaries — don't just repeat raw numbers
 - NEVER expose internal IDs (UUIDs) to the user
@@ -44,9 +56,14 @@ TOOL USAGE:
 - For detailed breakdowns, follow up with get_job_details using the job_id from get_jobs
 - For checklist ops: find_areas → get_checklist → update_checklist_items
 - For warehouse: get_materials, get_deliveries, get_purchase_orders (all need job_id)
+- For crew/workers: get_workers (roster, filter by role/status/job)
+- For polisher hours: get_production_logs (needs start_date + end_date, optionally job_id or worker_id)
+- For attendance: get_crew_checkins (needs date, optionally job_id)
 - Default issue priority=Medium, type=General unless user specifies otherwise
 - When user asks "how many units" or wants detail, use get_job_details
 - When user asks about materials, deliveries, or inventory, use warehouse tools
+- When user asks about workers, crew, polishers, or hours worked, use crew tools
+- "This week" means Monday to today. Calculate the dates yourself.
 
 CREATING JOB STRUCTURES:
 - Use create_job to create a new job, then bulk_create_structure to add floors/units/areas
@@ -68,7 +85,7 @@ CONVERSATION CONTEXT:
 - If user says "that job" or "it", refer to the most recent job discussed
 - Don't ask for clarification if context makes it obvious`
 
-const VISION_INSTRUCTION = `You are Jantile Bot, an AI construction management assistant.
+const BASE_VISION_INSTRUCTION = `You are Jantile Bot, an AI construction management assistant.
 You are analyzing an image sent by a team member.
 
 IF THE IMAGE IS A CONSTRUCTION PHOTO:
@@ -86,7 +103,7 @@ IF THE IMAGE IS A FLOOR PLAN, SPREADSHEET, OR UNIT LIST:
 - Example: "I can see 3 floors with 6 units each. Want me to create this structure?"
 
 If the user provides a caption or question, address it specifically.
-Format with HTML for Telegram: <b>bold</b>, <i>italic</i>
+{FORMAT_INSTRUCTION}
 Use emojis to make the response scannable.
 Be specific — reference what you actually see in the image.
 Respond in the same language the user writes in (English or Spanish).`
@@ -97,40 +114,41 @@ const ROLE_INSTRUCTIONS: Record<UserRole, string> = {
   admin: `YOUR ROLE: Admin (full access)
 You have FULL access to all tools and all jobs.
 - You CAN create jobs (create_job), create structures (bulk_create_structure), and delete jobs (delete_job)
-- You CAN view all jobs, issues, crew, production, warehouse, and shop data
+- You CAN view all jobs, issues, crew, production, warehouse, workers, production logs, and crew check-ins
 - You CAN update checklists and create issues for any job`,
 
   supervisor: `YOUR ROLE: Supervisor
 You can view all your assigned jobs and their full data.
-- You CAN view jobs, issues, crew/manpower, production, warehouse data
+- You CAN view jobs, issues, crew/manpower, production, warehouse data, workers, production logs, and crew check-ins
 - You CAN update checklists and create issues
 - You CANNOT create or delete jobs`,
 
   pm: `YOUR ROLE: Project Manager
 You can view your assigned jobs with full logistics access.
 - You CAN view jobs, issues, production, warehouse data (materials, deliveries, purchase orders)
+- You CAN view workers roster and production logs
 - You CAN update checklists and create issues
-- You CANNOT create or delete jobs
-- You CANNOT view manpower/crew data`,
+- You CANNOT create or delete jobs`,
 
   foreman: `YOUR ROLE: Foreman
 You can view your assigned jobs with field-level access.
-- You CAN view jobs, issues, production, and checklists
+- You CAN view jobs, issues, production, checklists, workers, production logs, and crew check-ins
 - You CAN update checklists and create issues
 - You CANNOT create or delete jobs
 - You CANNOT view warehouse or purchase order data`,
 
   worker: `YOUR ROLE: Worker
 You have basic access to your assigned jobs.
-- You CAN view jobs and checklists assigned to you
+- You CAN view jobs, checklists, and crew check-ins assigned to you
 - You CAN create issues to report problems
 - You CANNOT create or delete jobs
-- You CANNOT view warehouse or purchase order data`,
+- You CANNOT view warehouse, purchase orders, or production logs`,
 
   warehouse: `YOUR ROLE: Warehouse
 You specialize in materials and logistics.
 - You CAN view all jobs (read-only for general info)
 - You CAN view and focus on: materials inventory, delivery tickets, purchase orders
+- You CAN view workers roster
 - You CAN create issues related to materials
 - You CANNOT create or delete jobs
 - You CANNOT update checklists`,
@@ -138,20 +156,23 @@ You specialize in materials and logistics.
   shop: `YOUR ROLE: Shop
 You handle shop-related operations.
 - You CAN view all jobs (read-only for general info)
+- You CAN view workers roster
 - You CAN create issues related to shop work
 - You CANNOT create or delete jobs
 - You CANNOT view warehouse data or update checklists`,
 }
 
-function getSystemInstruction(profile: Profile): string {
+function getSystemInstruction(profile: Profile, format: ResponseFormat): string {
   const roleBlock = ROLE_INSTRUCTIONS[profile.role] || ROLE_INSTRUCTIONS['worker']
-  return SYSTEM_INSTRUCTION + '\n\n' + roleBlock +
+  const instruction = BASE_INSTRUCTION.replace('{FORMAT_INSTRUCTION}', FORMAT_INSTRUCTIONS[format])
+  return instruction + '\n\n' + roleBlock +
     `\nCurrent user: ${profile.full_name || 'User'} (role: ${profile.role})`
 }
 
-function getVisionInstruction(profile: Profile): string {
+function getVisionInstruction(profile: Profile, format: ResponseFormat): string {
   const roleBlock = ROLE_INSTRUCTIONS[profile.role] || ROLE_INSTRUCTIONS['worker']
-  return VISION_INSTRUCTION + '\n\n' + roleBlock +
+  const instruction = BASE_VISION_INSTRUCTION.replace('{FORMAT_INSTRUCTION}', FORMAT_INSTRUCTIONS[format])
+  return instruction + '\n\n' + roleBlock +
     `\nUser: ${profile.full_name || 'User'} (role: ${profile.role})`
 }
 
@@ -168,11 +189,12 @@ export async function chatWithGemini(
   userMessage: string,
   ctx: ToolContext,
   history: ChatMessage[] = [],
-  imageData?: { base64: string; mimeType: string }
+  imageData?: { base64: string; mimeType: string },
+  responseFormat: ResponseFormat = 'html'
 ): Promise<string> {
   // If there's an image, use vision-only mode (no tools)
   if (imageData) {
-    return analyzePhoto(userMessage, imageData, ctx)
+    return analyzePhoto(userMessage, imageData, ctx, responseFormat)
   }
 
   // Text mode with tools and history
@@ -195,7 +217,7 @@ export async function chatWithGemini(
       contents,
       tools,
       systemInstruction: {
-        parts: [{ text: getSystemInstruction(ctx.profile) }],
+        parts: [{ text: getSystemInstruction(ctx.profile, responseFormat) }],
       },
       generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
     }
@@ -263,7 +285,8 @@ export async function chatWithGemini(
 async function analyzePhoto(
   caption: string,
   imageData: { base64: string; mimeType: string },
-  ctx: ToolContext
+  ctx: ToolContext,
+  responseFormat: ResponseFormat = 'html'
 ): Promise<string> {
   const userParts: any[] = [
     { inlineData: { mimeType: imageData.mimeType, data: imageData.base64 } },
@@ -277,7 +300,7 @@ async function analyzePhoto(
   const body = {
     contents: [{ role: 'user', parts: userParts }],
     systemInstruction: {
-      parts: [{ text: getVisionInstruction(ctx.profile) }],
+      parts: [{ text: getVisionInstruction(ctx.profile, responseFormat) }],
     },
     generationConfig: { temperature: 0.5, maxOutputTokens: 1024 },
   }

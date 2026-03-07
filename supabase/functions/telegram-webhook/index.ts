@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { chatWithGemini } from './gemini.ts'
-import type { Profile, ChatMessage } from './types.ts'
-import { authenticateUser, getJobIds, buildToolContext } from './middleware/auth.ts'
+import { chatWithGemini } from '../_shared/ai/gemini.ts'
+import type { Profile, ChatMessage } from '../_shared/types.ts'
+import { authenticateByTelegramId, getJobIds, buildToolContext } from '../_shared/auth/auth.ts'
 
 // ─── Environment ────────────────────────────────────────────────────────────────
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!
@@ -28,8 +28,6 @@ function progressBar(pct: number): string {
   const filled = Math.round(pct / 10)
   return '\u2593'.repeat(filled) + '\u2591'.repeat(10 - filled)
 }
-
-// ─── Data Helpers ────────────────────────────────────────────────────────────────
 
 // ─── Command Handlers ───────────────────────────────────────────────────────────
 
@@ -521,7 +519,7 @@ Deno.serve(async (req) => {
     }
 
     // 2. Authenticate user
-    const authResult = await authenticateUser(supabase, telegramId)
+    const authResult = await authenticateByTelegramId(supabase, telegramId)
 
     if (!authResult.ok) {
       if (authResult.reason === 'pending') {

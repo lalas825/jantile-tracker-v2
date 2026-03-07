@@ -1,13 +1,15 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import type { Profile, ToolContext } from '../types.ts'
 
-// ─── Authentication ─────────────────────────────────────────────────────────────
+// ─── Auth Result ────────────────────────────────────────────────────────────────
 
 export type AuthResult =
   | { ok: true; profile: Profile }
   | { ok: false; reason: 'unknown' | 'pending' }
 
-export async function authenticateUser(
+// ─── Telegram Authentication ────────────────────────────────────────────────────
+
+export async function authenticateByTelegramId(
   supabase: SupabaseClient,
   telegramId: string
 ): Promise<AuthResult> {
@@ -18,6 +20,40 @@ export async function authenticateUser(
     .single()
 
   if (error || !profile) {
+    return { ok: false, reason: 'unknown' }
+  }
+
+  if (profile.status !== 'approved') {
+    return { ok: false, reason: 'pending' }
+  }
+
+  return { ok: true, profile: profile as Profile }
+}
+
+// ─── Web Authentication (Supabase JWT) ──────────────────────────────────────────
+
+export async function authenticateBySupabaseToken(
+  supabase: SupabaseClient,
+  authHeader: string | null
+): Promise<AuthResult> {
+  if (!authHeader) {
+    return { ok: false, reason: 'unknown' }
+  }
+
+  const token = authHeader.replace('Bearer ', '')
+
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
+  if (authErr || !user) {
+    return { ok: false, reason: 'unknown' }
+  }
+
+  const { data: profile, error: profileErr } = await supabase
+    .from('profiles')
+    .select('id, full_name, role, status')
+    .eq('id', user.id)
+    .single()
+
+  if (profileErr || !profile) {
     return { ok: false, reason: 'unknown' }
   }
 

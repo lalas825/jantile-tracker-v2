@@ -254,4 +254,73 @@ export const toolDeclarations = [
       required: ['job_id', 'floors'],
     },
   },
+  {
+    name: 'get_workers',
+    description:
+      'Get crew roster. Shows name, role, status, phone, email, and assigned jobs.',
+    parameters: {
+      type: 'object',
+      properties: {
+        role_filter: {
+          type: 'string',
+          description: 'Optional role filter (e.g. Polisher, Foreman, Helper)',
+        },
+        status: {
+          type: 'string',
+          enum: ['Active', 'Inactive'],
+          description: 'Optional status filter (default: all)',
+        },
+        job_id: {
+          type: 'string',
+          description: 'Optional job UUID — only workers assigned to this job',
+        },
+      },
+    },
+  },
+  {
+    name: 'get_production_logs',
+    description:
+      'Get production logs (polisher hours). Shows worker, job, unit, regular hours, overtime hours, date, and ticket info.',
+    parameters: {
+      type: 'object',
+      properties: {
+        start_date: {
+          type: 'string',
+          description: 'Start date YYYY-MM-DD (required)',
+        },
+        end_date: {
+          type: 'string',
+          description: 'End date YYYY-MM-DD (required)',
+        },
+        job_id: {
+          type: 'string',
+          description: 'Optional job UUID filter',
+        },
+        worker_id: {
+          type: 'string',
+          description: 'Optional worker UUID filter',
+        },
+      },
+      required: ['start_date', 'end_date'],
+    },
+  },
+  {
+    name: 'get_crew_checkins',
+    description:
+      'Get crew check-in/check-out records for attendance tracking. Shows worker, job, check-in time, check-out time, and hours worked.',
+    parameters: {
+      type: 'object',
+      properties: {
+        date: {
+          type: 'string',
+          description: 'Date YYYY-MM-DD (required)',
+        },
+        job_id: {
+          type: 'string',
+          description: 'Optional job UUID filter',
+        },
+      },
+      required: ['date'],
+    },
+  },
 ]

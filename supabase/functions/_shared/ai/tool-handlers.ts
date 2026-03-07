@@ -1,4 +1,4 @@
-import { ToolContext } from './types.ts'
+import { ToolContext } from '../types.ts'
 import { getPresetForArea } from './checklist-presets.ts'
 
 // ─── Access Helpers ──────────────────────────────────────────────────────────────
@@ -55,6 +55,12 @@ export async function handleToolCall(
       return deleteJob(args, ctx)
     case 'bulk_create_structure':
       return bulkCreateStructure(args, ctx)
+    case 'get_workers':
+      return getWorkers(args, ctx)
+    case 'get_production_logs':
+      return getProductionLogs(args, ctx)
+    case 'get_crew_checkins':
+      return getCrewCheckins(args, ctx)
     default:
       return { error: `Unknown tool: ${name}` }
   }
@@ -72,7 +78,6 @@ async function getJobs(args: any, ctx: ToolContext) {
   query = applyJobFilter(query, ctx, 'id')
 
   if (args.job_name_filter) {
-    // Split into words so "waldorf residences" matches "Waldorf Astoria Residences"
     const words = args.job_name_filter.trim().split(/\s+/)
     for (const word of words) {
       query = query.ilike('name', `%${word}%`)
@@ -83,7 +88,6 @@ async function getJobs(args: any, ctx: ToolContext) {
   if (error) return { error: `get_jobs failed: ${error.message} (${error.code})` }
   if (!jobs?.length) return { jobs: [], message: 'No active jobs found.' }
 
-  // Calculate progress per job
   const results = []
   for (const job of jobs) {
     const { data: floors } = await ctx.supabase
@@ -321,7 +325,6 @@ async function getChecklist(args: any, ctx: ToolContext) {
 async function updateChecklistItems(args: any, ctx: ToolContext) {
   if (!args.items?.length) return { error: 'No items provided.' }
 
-  // Get area_id from first item to verify access
   const { data: firstItem } = await ctx.supabase
     .from('checklist_items')
     .select('area_id')
@@ -331,7 +334,6 @@ async function updateChecklistItems(args: any, ctx: ToolContext) {
 
   const areaId = firstItem.area_id
 
-  // Verify access: area → unit → floor → job
   const { data: area } = await ctx.supabase
     .from('areas')
     .select('unit_id')
@@ -356,7 +358,6 @@ async function updateChecklistItems(args: any, ctx: ToolContext) {
   const deny = accessCheck(ctx, floor.job_id)
   if (deny) return { error: deny }
 
-  // Update each item
   let updated = 0
   for (const item of args.items) {
     const completed = item.status === 'COMPLETED' ? 1 : 0
@@ -367,7 +368,6 @@ async function updateChecklistItems(args: any, ctx: ToolContext) {
     if (!error) updated++
   }
 
-  // Recalculate area progress (mirrors JobService.recalculateAreaProgress)
   const { data: allItems } = await ctx.supabase
     .from('checklist_items')
     .select('status, completed')
@@ -550,7 +550,6 @@ async function getDeliveries(args: any, ctx: ToolContext) {
   if (!tickets?.length)
     return { deliveries: [], message: 'No delivery tickets found.' }
 
-  // Parse items JSON string
   const deliveries = tickets.map((t: any) => {
     let parsedItems = []
     try {
@@ -586,14 +585,12 @@ async function getPurchaseOrders(args: any, ctx: ToolContext) {
   if (!orders?.length)
     return { purchase_orders: [], message: 'No purchase orders found.' }
 
-  // Get items for each PO
   const poIds = orders.map((o: any) => o.id)
   const { data: items } = await ctx.supabase
     .from('po_items')
     .select('po_id, material_id, quantity_ordered, received_qty, item_cost')
     .in('po_id', poIds)
 
-  // Get material names for items
   const materialIds = [
     ...new Set((items || []).map((i: any) => i.material_id).filter(Boolean)),
   ]
@@ -608,7 +605,6 @@ async function getPurchaseOrders(args: any, ctx: ToolContext) {
     })
   }
 
-  // Attach items to POs
   const result = orders.map((o: any) => ({
     ...o,
     items: (items || [])
@@ -627,7 +623,6 @@ async function getPurchaseOrders(args: any, ctx: ToolContext) {
 // ─── Job Creation Tools ──────────────────────────────────────────────────────────
 
 async function createNewJob(args: any, ctx: ToolContext) {
-  // Admin only
   if (ctx.profile.role !== 'admin') {
     return { error: 'Only admins can create jobs.' }
   }
@@ -652,7 +647,6 @@ async function createNewJob(args: any, ctx: ToolContext) {
 }
 
 async function bulkCreateStructure(args: any, ctx: ToolContext) {
-  // Admin only
   if (ctx.profile.role !== 'admin') {
     return { error: 'Only admins can create job structures.' }
   }
@@ -663,7 +657,6 @@ async function bulkCreateStructure(args: any, ctx: ToolContext) {
     return { error: 'Max 10 floors per call. Call again for more.' }
   }
 
-  // Verify job exists
   const { data: job } = await ctx.supabase
     .from('jobs')
     .select('id, name')
@@ -677,7 +670,6 @@ async function bulkCreateStructure(args: any, ctx: ToolContext) {
   let checklistItemsCreated = 0
 
   for (const floor of args.floors) {
-    // Create floor
     const floorId = crypto.randomUUID()
     const { error: floorErr } = await ctx.supabase.from('floors').insert({
       id: floorId,
@@ -694,7 +686,6 @@ async function bulkCreateStructure(args: any, ctx: ToolContext) {
     if (!floor.units?.length) continue
 
     for (const unit of floor.units) {
-      // Create unit
       const unitId = crypto.randomUUID()
       const { error: unitErr } = await ctx.supabase.from('units').insert({
         id: unitId,
@@ -712,7 +703,6 @@ async function bulkCreateStructure(args: any, ctx: ToolContext) {
       if (!unit.areas?.length) continue
 
       for (const areaName of unit.areas) {
-        // Create area
         const areaId = crypto.randomUUID()
         const { error: areaErr } = await ctx.supabase.from('areas').insert({
           id: areaId,
@@ -729,7 +719,6 @@ async function bulkCreateStructure(args: any, ctx: ToolContext) {
         }
         areasCreated++
 
-        // Create checklist items from preset
         const preset = getPresetForArea(areaName)
         if (preset.length > 0) {
           const baseTime = Date.now()
@@ -774,7 +763,6 @@ async function deleteJob(args: any, ctx: ToolContext) {
 
   if (!args.job_id) return { error: 'job_id is required.' }
 
-  // Verify job exists
   const { data: job } = await ctx.supabase
     .from('jobs')
     .select('id, name')
@@ -782,7 +770,6 @@ async function deleteJob(args: any, ctx: ToolContext) {
     .single()
   if (!job) return { error: 'Job not found.' }
 
-  // Get all floors for this job
   const { data: floors } = await ctx.supabase
     .from('floors')
     .select('id')
@@ -795,7 +782,6 @@ async function deleteJob(args: any, ctx: ToolContext) {
   let checklistDeleted = 0
 
   if (floorIds.length > 0) {
-    // Get all units
     const { data: units } = await ctx.supabase
       .from('units')
       .select('id')
@@ -804,7 +790,6 @@ async function deleteJob(args: any, ctx: ToolContext) {
     const unitIds = (units || []).map((u: any) => u.id)
 
     if (unitIds.length > 0) {
-      // Get all areas
       const { data: areas } = await ctx.supabase
         .from('areas')
         .select('id')
@@ -813,20 +798,17 @@ async function deleteJob(args: any, ctx: ToolContext) {
       const areaIds = (areas || []).map((a: any) => a.id)
 
       if (areaIds.length > 0) {
-        // Delete checklist items
         const { count: ciCount } = await ctx.supabase
           .from('checklist_items')
           .delete({ count: 'exact' })
           .in('area_id', areaIds)
         checklistDeleted = ciCount || 0
 
-        // Delete area photos
         await ctx.supabase
           .from('area_photos')
           .delete()
           .in('area_id', areaIds)
 
-        // Delete areas
         await ctx.supabase
           .from('areas')
           .delete()
@@ -834,7 +816,6 @@ async function deleteJob(args: any, ctx: ToolContext) {
         areasDeleted = areaIds.length
       }
 
-      // Delete units
       await ctx.supabase
         .from('units')
         .delete()
@@ -842,20 +823,17 @@ async function deleteJob(args: any, ctx: ToolContext) {
       unitsDeleted = unitIds.length
     }
 
-    // Delete floors
     await ctx.supabase
       .from('floors')
       .delete()
       .eq('job_id', args.job_id)
   }
 
-  // Delete job-level data (issues, materials, deliveries, POs — may cascade via FK)
   await ctx.supabase.from('job_issues').delete().eq('job_id', args.job_id)
   await ctx.supabase.from('project_materials').delete().eq('job_id', args.job_id)
   await ctx.supabase.from('delivery_tickets').delete().eq('job_id', args.job_id)
   await ctx.supabase.from('purchase_orders').delete().eq('job_id', args.job_id)
 
-  // Delete the job itself
   const { error: jobErr } = await ctx.supabase
     .from('jobs')
     .delete()
@@ -870,5 +848,195 @@ async function deleteJob(args: any, ctx: ToolContext) {
     units_deleted: unitsDeleted,
     areas_deleted: areasDeleted,
     checklist_items_deleted: checklistDeleted,
+  }
+}
+
+// ─── Workers ────────────────────────────────────────────────────────────────────
+
+async function getWorkers(args: any, ctx: ToolContext) {
+  let query = ctx.supabase
+    .from('workers')
+    .select('id, name, role, status, phone, email, assigned_job_ids')
+    .order('name')
+
+  if (args.status) {
+    query = query.eq('status', args.status)
+  }
+
+  if (args.role_filter) {
+    query = query.ilike('role', `%${args.role_filter}%`)
+  }
+
+  const { data, error } = await query
+
+  if (error) return { error: error.message }
+  if (!data?.length) return { workers: [], message: 'No workers found' }
+
+  let workers = data
+
+  // Filter by job assignment if requested
+  if (args.job_id) {
+    workers = workers.filter((w: any) => {
+      try {
+        const jobIds = typeof w.assigned_job_ids === 'string'
+          ? JSON.parse(w.assigned_job_ids)
+          : w.assigned_job_ids || []
+        return Array.isArray(jobIds) && jobIds.includes(args.job_id)
+      } catch {
+        return false
+      }
+    })
+  }
+
+  // Resolve job names for assigned_job_ids
+  const allJobIds = new Set<string>()
+  for (const w of workers) {
+    try {
+      const ids = typeof w.assigned_job_ids === 'string'
+        ? JSON.parse(w.assigned_job_ids)
+        : w.assigned_job_ids || []
+      if (Array.isArray(ids)) ids.forEach((id: string) => allJobIds.add(id))
+    } catch { /* ignore */ }
+  }
+
+  let jobMap: Record<string, string> = {}
+  if (allJobIds.size > 0) {
+    const { data: jobs } = await ctx.supabase
+      .from('jobs')
+      .select('id, name')
+      .in('id', [...allJobIds])
+    if (jobs) {
+      jobMap = Object.fromEntries(jobs.map((j: any) => [j.id, j.name]))
+    }
+  }
+
+  return {
+    count: workers.length,
+    workers: workers.map((w: any) => {
+      let assignedJobs: string[] = []
+      try {
+        const ids = typeof w.assigned_job_ids === 'string'
+          ? JSON.parse(w.assigned_job_ids)
+          : w.assigned_job_ids || []
+        if (Array.isArray(ids)) {
+          assignedJobs = ids.map((id: string) => jobMap[id] || 'Unknown')
+        }
+      } catch { /* ignore */ }
+
+      return {
+        name: w.name,
+        role: w.role,
+        status: w.status,
+        phone: w.phone || null,
+        email: w.email || null,
+        assigned_jobs: assignedJobs,
+      }
+    }),
+  }
+}
+
+// ─── Production Logs ────────────────────────────────────────────────────────────
+
+async function getProductionLogs(args: any, ctx: ToolContext) {
+  let query = ctx.supabase
+    .from('production_logs')
+    .select('id, date, worker_id, job_id, job_name, pl_number, unit, reg_hours, ot_hours, ticket_number, is_jantile, is_ticket, notes, workers(name)')
+    .gte('date', args.start_date)
+    .lte('date', args.end_date)
+    .order('date', { ascending: false })
+
+  if (args.job_id) {
+    query = query.eq('job_id', args.job_id)
+  }
+
+  if (args.worker_id) {
+    query = query.eq('worker_id', args.worker_id)
+  }
+
+  // Apply job access filter
+  query = applyJobFilter(query, ctx)
+
+  const { data, error } = await query
+
+  if (error) return { error: error.message }
+  if (!data?.length) return { logs: [], message: 'No production logs found for this period' }
+
+  // Summarize
+  let totalRegHours = 0
+  let totalOtHours = 0
+  const byWorker: Record<string, { name: string; reg: number; ot: number; days: number }> = {}
+
+  for (const log of data) {
+    const reg = parseFloat(log.reg_hours) || 0
+    const ot = parseFloat(log.ot_hours) || 0
+    totalRegHours += reg
+    totalOtHours += ot
+
+    const workerName = (log as any).workers?.name || 'Unknown'
+    if (!byWorker[workerName]) {
+      byWorker[workerName] = { name: workerName, reg: 0, ot: 0, days: 0 }
+    }
+    byWorker[workerName].reg += reg
+    byWorker[workerName].ot += ot
+    byWorker[workerName].days += 1
+  }
+
+  return {
+    period: `${args.start_date} to ${args.end_date}`,
+    total_entries: data.length,
+    total_regular_hours: Math.round(totalRegHours * 100) / 100,
+    total_overtime_hours: Math.round(totalOtHours * 100) / 100,
+    total_hours: Math.round((totalRegHours + totalOtHours) * 100) / 100,
+    by_worker: Object.values(byWorker).map(w => ({
+      name: w.name,
+      regular_hours: Math.round(w.reg * 100) / 100,
+      overtime_hours: Math.round(w.ot * 100) / 100,
+      total_hours: Math.round((w.reg + w.ot) * 100) / 100,
+      days_worked: w.days,
+    })).sort((a, b) => b.total_hours - a.total_hours),
+  }
+}
+
+// ─── Crew Check-ins ─────────────────────────────────────────────────────────────
+
+async function getCrewCheckins(args: any, ctx: ToolContext) {
+  let query = ctx.supabase
+    .from('crew_checkins')
+    .select('id, worker_id, job_id, check_in, check_out, workers(name), jobs(name)')
+    .gte('check_in', `${args.date}T00:00:00`)
+    .lt('check_in', `${args.date}T23:59:59`)
+    .order('check_in', { ascending: false })
+
+  if (args.job_id) {
+    query = query.eq('job_id', args.job_id)
+  }
+
+  query = applyJobFilter(query, ctx)
+
+  const { data, error } = await query
+
+  if (error) return { error: error.message }
+  if (!data?.length) return { checkins: [], message: 'No check-ins found for this date' }
+
+  return {
+    date: args.date,
+    total_checkins: data.length,
+    checkins: data.map((c: any) => {
+      const checkIn = new Date(c.check_in)
+      const checkOut = c.check_out ? new Date(c.check_out) : null
+      const hoursWorked = checkOut
+        ? Math.round(((checkOut.getTime() - checkIn.getTime()) / 3600000) * 100) / 100
+        : null
+
+      return {
+        worker: c.workers?.name || 'Unknown',
+        job: c.jobs?.name || 'Unknown',
+        check_in: checkIn.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        check_out: checkOut
+          ? checkOut.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+          : 'Still on site',
+        hours_worked: hoursWorked,
+      }
+    }),
   }
 }

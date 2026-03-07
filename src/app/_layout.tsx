@@ -25,6 +25,7 @@ import {
 } from '@expo-google-fonts/inter';
 
 import { AuthProvider, useAuth } from '../context/AuthContext';
+import { FloatingChat } from '../components/FloatingChat';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -93,6 +94,7 @@ function RootLayoutNav() {
             </Stack>
 
             <AuthGuard />
+            <FloatingChat />
 
             {isLoading && (
                 <View style={{
