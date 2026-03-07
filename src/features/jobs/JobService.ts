@@ -98,8 +98,42 @@ export const JobService = {
         );
     },
 
-    async getActiveJobs(): Promise<any[]> {
+    async getActiveJobs(filter?: { userId?: string; role?: string }): Promise<any[]> {
         if (useSupabase) {
+            const isGlobal = !filter?.role || ['admin', 'pm'].includes(filter.role);
+
+            if (isGlobal) {
+                // Admin/PM see all active jobs
+                const { data, error } = await supabase
+                    .from('jobs')
+                    .select(`
+                        id, name, status, address, general_contractor,
+                        floors (
+                            id, name,
+                            units (
+                                id, name,
+                                areas (
+                                    id, name, progress
+                                )
+                            )
+                        )
+                    `)
+                    .ilike('status', 'active')
+                    .order('name');
+                if (error) throw error;
+                return data || [];
+            }
+
+            // Non-admin: fetch assigned job IDs first, then filter
+            const { data: assignments, error: aErr } = await supabase
+                .from('job_assignments')
+                .select('job_id')
+                .eq('user_id', filter!.userId!);
+            if (aErr) throw aErr;
+
+            const assignedJobIds = (assignments || []).map(a => a.job_id);
+            if (assignedJobIds.length === 0) return [];
+
             const { data, error } = await supabase
                 .from('jobs')
                 .select(`
@@ -115,12 +149,18 @@ export const JobService = {
                     )
                 `)
                 .ilike('status', 'active')
+                .in('id', assignedJobIds)
                 .order('name');
             if (error) throw error;
             return data || [];
         }
 
-        // Efficient single query for stats with ROUNDing
+        // On native (PowerSync), filter locally by job_assignments for non-admin/pm users.
+        const isGlobal = !filter?.role || ['admin', 'pm'].includes(filter.role);
+        const assignmentFilter = isGlobal
+            ? ''
+            : `AND j.id IN (SELECT job_id FROM job_assignments WHERE user_id = '${filter!.userId}')`;
+
         const query = `
             SELECT
                 j.*,
@@ -129,6 +169,7 @@ export const JobService = {
                 (SELECT ROUND(AVG(a.progress)) FROM areas a JOIN units u ON a.unit_id = u.id JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as overall_progress
             FROM jobs j
             WHERE LOWER(j.status) = 'active'
+            ${assignmentFilter}
             ORDER BY j.name ASC
         `;
 
@@ -136,8 +177,6 @@ export const JobService = {
 
         return jobs.map((j: any) => ({
             ...j,
-            // For backward compatibility with calculateJobProgress in index.tsx
-            // if overall_progress is null, we set it to 0
             computed_progress: j.overall_progress || 0
         }));
     },

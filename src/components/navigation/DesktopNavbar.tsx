@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'expo-router';
 import { Search, Bell, LogOut } from 'lucide-react-native';
 import clsx from 'clsx';
 import { useAuth } from '../../context/AuthContext';
+import { RoleVisible } from '../../features/admin';
 import { useQuery } from '@powersync/react';
 import { SupabaseService } from '../../services/SupabaseService';
 
@@ -67,15 +68,31 @@ export default function DesktopNavbar() {
 
             {/* Zone 2: The Navigation */}
             <View className="flex-1 flex-row items-center space-x-10 h-full overflow-x-auto no-scrollbar">
-                <NavLink title="Dashboard" route="/(tabs)" />
-                <NavLink title="Jobs" route="/(tabs)/jobs" />
-                <NavLink title="Warehouse" route="/(tabs)/warehouse" />
-                <NavLink title="Field" route="/(tabs)/field" />
-                <NavLink title="Shop" route="/(tabs)/shop" />
-                <NavLink title="Manpower" route="/(tabs)/manpower" />
-                <NavLink title="Reports" route="/(tabs)/reports" />
-                <NavLink title="Polishers" route="/(tabs)/polishers" />
-                {profile?.role === 'admin' && <NavLink title="Admin" route="/(tabs)/admin" />}
+                {/* Role-based nav: admin=all, supervisor=dashboard+jobs+warehouse+field+shop+manpower+polishers, pm=dashboard+jobs+warehouse+shop, foreman=dashboard+jobs, warehouse=dashboard+warehouse, shop=dashboard+shop */}
+                <RoleVisible allowed={['admin', 'supervisor', 'pm', 'foreman', 'warehouse', 'shop']}>
+                    <NavLink title="Dashboard" route="/(tabs)" />
+                </RoleVisible>
+                <RoleVisible allowed={['admin', 'supervisor', 'pm', 'foreman']}>
+                    <NavLink title="Jobs" route="/(tabs)/jobs" />
+                </RoleVisible>
+                <RoleVisible allowed={['admin', 'supervisor', 'pm', 'warehouse']}>
+                    <NavLink title="Warehouse" route="/(tabs)/warehouse" />
+                </RoleVisible>
+                <RoleVisible allowed={['admin', 'supervisor']}>
+                    <NavLink title="Field" route="/(tabs)/field" />
+                </RoleVisible>
+                <RoleVisible allowed={['admin', 'supervisor', 'pm', 'shop']}>
+                    <NavLink title="Shop" route="/(tabs)/shop" />
+                </RoleVisible>
+                <RoleVisible allowed={['admin', 'supervisor']}>
+                    <NavLink title="Manpower" route="/(tabs)/manpower" />
+                </RoleVisible>
+                <RoleVisible allowed={['admin', 'supervisor']}>
+                    <NavLink title="Polishers" route="/(tabs)/polishers" />
+                </RoleVisible>
+                <RoleVisible allowed={['admin']}>
+                    <NavLink title="Admin" route="/admin" />
+                </RoleVisible>
             </View>
 
             {/* Zone 3: The Tools */}

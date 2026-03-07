@@ -115,6 +115,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'role', type: ColumnType.TEXT }),
             new Column({ name: 'avatar_url', type: ColumnType.TEXT }),
             new Column({ name: 'updated_at', type: ColumnType.TEXT }),
+            new Column({ name: 'status', type: ColumnType.TEXT }),
         ]
     }),
     new Table({
@@ -307,6 +308,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'user_id', type: ColumnType.TEXT }),
             new Column({ name: 'job_id', type: ColumnType.TEXT }),
             new Column({ name: 'role', type: ColumnType.TEXT }), // 'owner' | 'pm' | 'foreman' | 'viewer'
+            new Column({ name: 'is_manual', type: ColumnType.INTEGER }), // 1 = manual override, 0 = auto
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
         ]
     }),

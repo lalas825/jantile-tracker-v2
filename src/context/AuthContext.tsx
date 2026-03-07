@@ -3,7 +3,7 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../config/supabase';
 import { db } from '../powersync/db';
 
-type Role = 'admin' | 'pm' | 'foreman' | 'warehouse';
+type Role = 'admin' | 'pm' | 'foreman' | 'supervisor' | 'worker' | 'warehouse' | 'shop';
 
 type Permission =
     | 'view_jobs'
@@ -17,6 +17,7 @@ interface UserProfile {
     id: string;
     role: Role;
     full_name: string;
+    status: 'pending' | 'approved';
 }
 
 interface AuthContextType {
@@ -31,10 +32,13 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
-    foreman: ['view_jobs', 'edit_daily_logs', 'view_my_tickets'],
-    warehouse: ['view_logistics', 'edit_inventory'],
-    pm: ['*'],
     admin: ['*'],
+    supervisor: ['view_jobs', 'edit_daily_logs', 'view_my_tickets', 'view_logistics', 'edit_inventory'],
+    pm: ['view_jobs', 'edit_daily_logs', 'view_my_tickets', 'view_logistics'],
+    foreman: ['view_jobs', 'edit_daily_logs', 'view_my_tickets'],
+    worker: ['view_jobs'],
+    warehouse: ['view_logistics', 'edit_inventory'],
+    shop: [],
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -76,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const fetchProfile = async (userId: string) => {
         try {
-            // 1. Try Local DB (Offline First)
+            // 1. Try Local DB for quick initial render
             const localResult = await db.getAll(`SELECT * FROM profiles WHERE id = ?`, [userId]);
 
             if (localResult.length > 0) {
@@ -84,13 +88,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setProfile({
                     id: userId,
                     role: localProfile.role,
-                    full_name: localProfile.full_name
+                    full_name: localProfile.full_name,
+                    status: localProfile.status || 'approved',
                 } as UserProfile);
                 setIsLoading(false);
-                return;
+                // Don't return — always refresh from Supabase for authoritative status
             }
 
-            // 2. Fallback to Supabase (Online)
+            // 2. Always fetch from Supabase (source of truth for status)
             const { data, error } = await supabase
                 .from('profiles')
                 .select('*')
@@ -99,17 +104,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             if (error) {
                 console.error('Error fetching profile:', error);
+                return; // Keep local profile if Supabase fails (offline)
             }
 
             if (data) {
-                const userProfile = data as UserProfile;
+                const userProfile = {
+                    ...data,
+                    status: data.status || 'approved',
+                } as UserProfile;
                 setProfile(userProfile);
 
-                // 3. Cache to Local DB for next time
-                await db.execute(
-                    `INSERT OR REPLACE INTO profiles (id, role, full_name, email) VALUES (?, ?, ?, ?)`,
-                    [userProfile.id, userProfile.role, userProfile.full_name, session?.user.email || null]
-                );
+                // 3. Cache to Local DB
+                try {
+                    await db.execute(
+                        `INSERT OR REPLACE INTO profiles (id, role, full_name, email, status) VALUES (?, ?, ?, ?, ?)`,
+                        [userProfile.id, userProfile.role, userProfile.full_name, data.email || null, userProfile.status]
+                    );
+                } catch (cacheErr) {
+                    console.error('Error caching profile:', cacheErr);
+                }
             }
         } catch (e) {
             console.error('Error fetching profile exception', e);

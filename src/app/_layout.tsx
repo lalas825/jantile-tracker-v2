@@ -34,21 +34,31 @@ export const unstable_settings = {
 };
 
 function AuthGuard() {
-    const { session, isLoading } = useAuth();
+    const { session, profile, isLoading } = useAuth();
     const segments = useSegments();
     const router = useRouter();
 
     useEffect(() => {
+        console.log('[AuthGuard]', { isLoading, hasSession: !!session, status: profile?.status, role: profile?.role, segment: segments[0] });
         if (isLoading) return;
 
         const inAuthGroup = segments[0] === 'login';
+        const inPendingPage = segments[0] === 'pending-approval';
 
         if (!session && !inAuthGroup) {
+            console.log('[AuthGuard] → redirect to /login');
             router.replace('/login');
         } else if (session && inAuthGroup) {
+            console.log('[AuthGuard] → redirect to /(tabs)');
+            router.replace('/(tabs)');
+        } else if (session && profile?.status === 'pending' && !inPendingPage && !inAuthGroup) {
+            console.log('[AuthGuard] → redirect to /pending-approval');
+            router.replace('/pending-approval');
+        } else if (session && profile?.status === 'approved' && inPendingPage) {
+            console.log('[AuthGuard] → redirect to /(tabs) from pending');
             router.replace('/(tabs)');
         }
-    }, [session, isLoading, segments]);
+    }, [session, profile, isLoading, segments]);
 
     return null;
 }
@@ -76,7 +86,9 @@ function RootLayoutNav() {
         <View style={{ flex: 1 }}>
             <Stack>
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="admin" options={{ headerShown: false }} />
                 <Stack.Screen name="login" options={{ headerShown: false }} />
+                <Stack.Screen name="pending-approval" options={{ headerShown: false }} />
                 <Stack.Screen name="logistics/new-request" options={{ headerShown: false }} />
             </Stack>
 

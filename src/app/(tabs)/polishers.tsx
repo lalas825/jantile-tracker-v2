@@ -10,6 +10,7 @@ import * as Crypto from 'expo-crypto';
 import { usePowerSyncQuery } from '@powersync/react';
 
 import { supabase } from '../../config/supabase';
+import { RoleGuard } from '../../features/admin';
 
 // RECONSTRUCTION PHASE 9
 // Objective: Phase 8 + Supabase Realtime (Web) + Forced Refresh (Native).
@@ -313,7 +314,8 @@ function PolishersContent() {
     };
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#f8fafc' }} edges={['top']}>
+        <RoleGuard allowed={['admin', 'pm', 'supervisor']}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: '#f8fafc' }} edges={['top']}>
             {/* Header */}
             <View style={{ paddingTop: 60, paddingHorizontal: 20, paddingBottom: 15, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#e2e8f0' }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -529,6 +531,7 @@ function PolishersContent() {
                     </View>
                 </View>
             </Modal>
-        </SafeAreaView>
+            </SafeAreaView>
+        </RoleGuard>
     );
 }

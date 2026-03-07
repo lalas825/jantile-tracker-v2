@@ -7,6 +7,7 @@ import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { Stack } from 'expo-router';
 import { SupabaseService, UICrewMember } from '../../services/SupabaseService';
 import { useQuery } from '@powersync/react';
+import { RoleGuard } from '../../features/admin';
 
 // --- CONFIGURATION ---
 const ROLES = [
@@ -200,7 +201,8 @@ export default function ManpowerScreen() {
     );
 
     return (
-        <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
+        <RoleGuard allowed={['admin', 'pm', 'supervisor']}>
+            <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
             <Stack.Screen options={{ headerShown: false }} />
 
             {/* HEADER */}
@@ -394,6 +396,7 @@ export default function ManpowerScreen() {
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
-        </SafeAreaView>
+            </SafeAreaView>
+        </RoleGuard>
     );
 }

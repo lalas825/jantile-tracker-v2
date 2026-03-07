@@ -9,6 +9,7 @@ import ReceiveMaterialModal from '../../components/modals/ReceiveMaterialModal';
 import DeliveryTicketModal from '../../components/logistics/DeliveryTicketModal';
 import { useAuth } from '../../context/AuthContext';
 import { useQuery, usePowerSync } from '@powersync/react';
+import { RoleGuard } from '../../features/admin';
 
 type ActiveTab = 'action-center' | 'site-pulse' | 'logistics-radar';
 
@@ -516,7 +517,8 @@ export default function FieldScreen() {
     };
 
     return (
-        <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
+        <RoleGuard allowed={['admin', 'pm', 'supervisor']}>
+            <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
             {/* TELEMETRY WIDGETS (TOP ROW) */}
             <View className="px-6 py-4 bg-slate-900 flex-row justify-between items-center overflow-x-auto no-scrollbar gap-2 z-10 border-b-4 border-slate-800">
                 <View className="flex-1 min-w-[120px] bg-slate-800/80 rounded-2xl p-4 border border-slate-700/50">
@@ -614,6 +616,7 @@ export default function FieldScreen() {
                     />
                 )
             }
-        </SafeAreaView >
+            </SafeAreaView>
+        </RoleGuard>
     );
 }

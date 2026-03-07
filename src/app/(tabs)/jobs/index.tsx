@@ -6,11 +6,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SupabaseService } from '../../../services/SupabaseService';
 import { useQuery as usePowerSyncQuery } from '@powersync/react';
 import { useSafeStatus } from '../../../hooks/useSafeStatus';
+import { useAuth } from '../../../context/AuthContext';
 import clsx from 'clsx';
 
 export default function JobsScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
+    const { profile, user } = useAuth();
     const [search, setSearch] = useState('');
     const [jobs, setJobs] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
@@ -62,7 +64,10 @@ export default function JobsScreen() {
     const loadJobs = async () => {
         setRefreshing(true);
         try {
-            const data = await SupabaseService.getActiveJobs();
+            const data = await SupabaseService.getActiveJobs({
+                userId: user?.id,
+                role: profile?.role,
+            });
             setJobs(data || []);
         } catch (e) {
             console.error(e);
@@ -78,7 +83,12 @@ export default function JobsScreen() {
     );
 
     // 0. REACTIVE FETCH (PowerSync)
-    // We use a powerful subquery to fetch stats reactively for the Projects list
+    // Admin/PM see all active jobs; others only see assigned jobs.
+    const isGlobalRole = !profile?.role || ['admin', 'pm'].includes(profile.role);
+    const assignmentFilter = isGlobalRole
+        ? ''
+        : `AND j.id IN (SELECT job_id FROM job_assignments WHERE user_id = '${user?.id}')`;
+
     const psJobs = usePowerSyncQuery(
         `SELECT
             j.*,
@@ -87,6 +97,7 @@ export default function JobsScreen() {
             (SELECT ROUND(AVG(a.progress)) FROM areas a JOIN units u ON a.unit_id = u.id JOIN floors f ON u.floor_id = f.id WHERE f.job_id = j.id) as overall_progress
          FROM jobs j
          WHERE LOWER(j.status) = 'active'
+         ${assignmentFilter}
          ORDER BY j.name ASC`
     ).data || [];
 

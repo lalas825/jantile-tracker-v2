@@ -7,6 +7,7 @@ import {
     LayoutDashboard, Building2, HardHat, Box, Factory, LogOut
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
+import { RoleVisible } from '../../features/admin';
 
 const MenuButton = ({ title, icon: Icon, route }: { title: string, icon: any, route: string }) => {
     const router = useRouter();
@@ -38,53 +39,62 @@ export default function MenuScreen() {
 
             <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 40 }}>
                 <View className="mt-2">
-                    <MenuButton
-                        title="Dashboard"
-                        icon={LayoutDashboard}
-                        route="/(tabs)"
-                    />
-                    <MenuButton
-                        title="Jobs"
-                        icon={Building2}
-                        route="/(tabs)/jobs"
-                    />
-                    <MenuButton
-                        title="Warehouse"
-                        icon={Box}
-                        route="/(tabs)/warehouse"
-                    />
-                    <MenuButton
-                        title="Field"
-                        icon={HardHat}
-                        route="/(tabs)/field"
-                    />
-                    <MenuButton
-                        title="Shop"
-                        icon={Factory}
-                        route="/(tabs)/shop"
-                    />
-                    <MenuButton
-                        title="Manpower"
-                        icon={Users}
-                        route="/(tabs)/manpower"
-                    />
-                    <MenuButton
-                        title="Reports"
-                        icon={FileBarChart}
-                        route="/(tabs)/reports"
-                    />
-                    <MenuButton
-                        title="Polishers"
-                        icon={Hammer}
-                        route="/(tabs)/polishers"
-                    />
-                    {profile?.role === 'admin' && (
+                    <RoleVisible allowed={['admin', 'supervisor', 'pm', 'foreman', 'warehouse', 'shop']}>
+                        <MenuButton
+                            title="Dashboard"
+                            icon={LayoutDashboard}
+                            route="/(tabs)"
+                        />
+                    </RoleVisible>
+                    <RoleVisible allowed={['admin', 'supervisor', 'pm', 'foreman']}>
+                        <MenuButton
+                            title="Jobs"
+                            icon={Building2}
+                            route="/(tabs)/jobs"
+                        />
+                    </RoleVisible>
+                    <RoleVisible allowed={['admin', 'supervisor', 'pm', 'warehouse']}>
+                        <MenuButton
+                            title="Warehouse"
+                            icon={Box}
+                            route="/(tabs)/warehouse"
+                        />
+                    </RoleVisible>
+                    <RoleVisible allowed={['admin', 'supervisor']}>
+                        <MenuButton
+                            title="Field"
+                            icon={HardHat}
+                            route="/(tabs)/field"
+                        />
+                    </RoleVisible>
+                    <RoleVisible allowed={['admin', 'supervisor', 'pm', 'shop']}>
+                        <MenuButton
+                            title="Shop"
+                            icon={Factory}
+                            route="/(tabs)/shop"
+                        />
+                    </RoleVisible>
+                    <RoleVisible allowed={['admin', 'supervisor']}>
+                        <MenuButton
+                            title="Manpower"
+                            icon={Users}
+                            route="/(tabs)/manpower"
+                        />
+                    </RoleVisible>
+                    <RoleVisible allowed={['admin', 'supervisor']}>
+                        <MenuButton
+                            title="Polishers"
+                            icon={Hammer}
+                            route="/(tabs)/polishers"
+                        />
+                    </RoleVisible>
+                    <RoleVisible allowed={['admin']}>
                         <MenuButton
                             title="Admin"
                             icon={Key}
-                            route="/(tabs)/admin"
+                            route="/admin"
                         />
-                    )}
+                    </RoleVisible>
 
                     <View className="mt-8 px-4">
                         <TouchableOpacity

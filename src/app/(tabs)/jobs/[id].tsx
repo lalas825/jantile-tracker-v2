@@ -11,26 +11,34 @@ import PunchlistTab, { PUNCHLIST_TYPES } from '../../../components/jobs/tabs/Pun
 import DeficientTab, { DEFICIENT_TYPES } from '../../../components/jobs/tabs/DeficientTab';
 import DocumentsTab from '../../../components/jobs/tabs/DocumentsTab';
 import ReportJobIssueModal from '../../../components/modals/ReportJobIssueModal';
+import { useAuth } from '../../../context/AuthContext';
 
 const TABS = [
     { id: 'PRODUCTION', label: 'Production', icon: 'layers' },
-    { id: 'LOGISTICS', label: 'Logistics', icon: 'cube' },
-    { id: 'JOBSITE', label: 'Job Site', icon: 'construct' },
+    { id: 'LOGISTICS', label: 'Logistics', icon: 'cube', roles: ['admin', 'supervisor', 'pm'] },
+    { id: 'JOBSITE', label: 'Job Site', icon: 'construct', roles: ['admin', 'supervisor', 'foreman'] },
     { id: 'ISSUES', label: 'Job Issues', icon: 'alert-circle' },
     { id: 'SAFETY', label: 'Safety', icon: 'shield-checkmark' },
     { id: 'DOCUMENTS', label: 'Documents', icon: 'document-text' },
     { id: 'PUNCHLIST', label: 'Punchlist', icon: 'checkbox' },
     { id: 'DEFICIENT', label: 'Deficient List', icon: 'warning' },
-    { id: 'PAYROLL', label: 'Payroll', icon: 'cash' },
-    { id: 'ANALYTICS', label: 'Analytics', icon: 'bar-chart' },
+    { id: 'PAYROLL', label: 'Payroll', icon: 'cash', roles: ['admin', 'supervisor', 'pm'] },
+    { id: 'ANALYTICS', label: 'Analytics', icon: 'bar-chart', roles: ['admin', 'supervisor', 'pm'] },
 ];
 
 export default function JobDetailsScreen() {
     const { id } = useLocalSearchParams();
     const router = useRouter();
+    const { profile } = useAuth();
     const [job, setJob] = useState<any>(null);
     const [activeTab, setActiveTab] = useState('PRODUCTION'); // Default to Production
     const [loading, setLoading] = useState(true);
+
+    // Filter tabs based on user role
+    const visibleTabs = TABS.filter(tab => {
+        if (!tab.roles) return true; // No restriction — visible to all
+        return profile && tab.roles.includes(profile.role);
+    });
 
     const fetchJob = React.useCallback(async () => {
         const fetchedJob = await SupabaseService.getJob(id as string);
@@ -173,7 +181,7 @@ export default function JobDetailsScreen() {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={{ paddingHorizontal: 16 }}
                 >
-                    {TABS.map((tab) => (
+                    {visibleTabs.map((tab) => (
                         <TouchableOpacity
                             key={tab.id}
                             onPress={() => setActiveTab(tab.id)}

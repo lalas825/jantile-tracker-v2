@@ -44,8 +44,23 @@ src/
 - NativeWind (Tailwind CSS for RN)
 - Android package: `com.jantile.trackerv2`
 
+## Roles & Access Control
+
+| Role | Main Menu | Job Sub-tabs |
+|------|-----------|--------------|
+| admin | All modules + Admin panel | All tabs |
+| supervisor | Dashboard(assigned), Jobs, Warehouse, Field, Shop, Manpower, Polishers | All tabs |
+| pm | Dashboard(assigned), Jobs(assigned), Warehouse, Shop | Production, Logistics, Issues, Safety, Docs, Punchlist, Deficient, Payroll, Analytics |
+| foreman | Dashboard(assigned), Jobs(assigned) | Production, Job Site, Issues, Safety, Docs, Punchlist, Deficient |
+| warehouse | Dashboard(global, view-only), Warehouse | N/A |
+| shop | Dashboard(global, view-only), Shop | N/A |
+
+- **Pending Access**: New users get `status: 'pending'`, redirected to `/pending-approval`. Admin approves from `/admin`.
+- Role visibility enforced by `RoleVisible` component and `visibleTabs` filter in `[id].tsx`.
+
 ## Historico de Arquitectura
 
 | Fecha | Cambio | Estado |
 |-------|--------|--------|
+| 2026-03-07 | Pending Access System: `status` column on profiles, AuthGuard redirect, pending-approval page, admin approval UI. Job selector fix (`.ilike`). Role access overhaul: 7 roles (admin, supervisor, pm, foreman, worker, warehouse, shop) with granular main menu + job sub-tab permissions. | En produccion. |
 | 2026-03-06 | Implementacion de RLS Estricto (Multi-tenancy). Tabla `job_assignments` creada, funciones helper `user_has_job_access()` y `job_id_for_area()`, policies RLS en 10 tablas (jobs, floors, units, areas, checklist_items, area_photos, job_issues, issue_comments, profiles, system_notifications). Migracion: `src/powersync/RLS_Migration.sql`. | Base de datos blindada, `job_assignments` en produccion, `AppSchema` actualizado. |

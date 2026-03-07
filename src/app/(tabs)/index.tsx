@@ -54,16 +54,31 @@ const DonutChart = ({ percentage, radius = 40, strokeWidth = 10, color = "#3b82f
 export default function Dashboard() {
     const { profile, user } = useAuth();
     const router = useRouter();
+    const { width } = useWindowDimensions();
     const [jobs, setJobs] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
 
-    // --- POWER SYNC REAL-TIME TELEMETRY ---
-    const { data: openIssuesCount } = useQuery("SELECT count(*) as count FROM job_issues WHERE status = 'open'");
-    const { data: resolvedIssuesCount } = useQuery("SELECT count(*) as count FROM job_issues WHERE status = 'resolved'");
-    const { data: rejectedTicketsCount } = useQuery("SELECT count(*) as count FROM delivery_tickets WHERE status = 'REJECTED'");
-    const { data: manpowerCount } = useQuery("SELECT count(*) as count FROM crew_checkins WHERE check_out IS NULL");
-    const { data: progressData } = useQuery("SELECT avg(progress) as avg_progress FROM areas");
-    const { data: activeJobsCount } = useQuery("SELECT count(*) as count FROM jobs WHERE status = 'Active'");
+    // Scope telemetry: admin/pm/warehouse/shop see global, others see only assigned jobs
+    const isViewOnly = !!profile?.role && ['warehouse', 'shop'].includes(profile.role);
+    const isGlobal = !profile?.role || ['admin', 'pm', 'warehouse', 'shop'].includes(profile.role);
+    const uid = user?.id || '';
+    const jobScope = isGlobal ? '' : ` AND job_id IN (SELECT job_id FROM job_assignments WHERE user_id = '${uid}')`;
+
+    // --- POWER SYNC REAL-TIME TELEMETRY (scoped by assignments) ---
+    const { data: openIssuesCount } = useQuery(`SELECT count(*) as count FROM job_issues WHERE status = 'open'${jobScope}`);
+    const { data: resolvedIssuesCount } = useQuery(`SELECT count(*) as count FROM job_issues WHERE status = 'resolved'${jobScope}`);
+    const { data: rejectedTicketsCount } = useQuery(`SELECT count(*) as count FROM delivery_tickets WHERE status = 'REJECTED'${jobScope}`);
+    const { data: manpowerCount } = useQuery(`SELECT count(*) as count FROM crew_checkins WHERE check_out IS NULL${jobScope}`);
+    const { data: progressData } = useQuery(
+        isGlobal
+            ? "SELECT avg(progress) as avg_progress FROM areas"
+            : `SELECT avg(a.progress) as avg_progress FROM areas a JOIN units u ON a.unit_id = u.id JOIN floors f ON u.floor_id = f.id WHERE f.job_id IN (SELECT job_id FROM job_assignments WHERE user_id = '${uid}')`
+    );
+    const { data: activeJobsCount } = useQuery(
+        isGlobal
+            ? "SELECT count(*) as count FROM jobs WHERE status = 'Active'"
+            : `SELECT count(*) as count FROM jobs WHERE status = 'Active' AND id IN (SELECT job_id FROM job_assignments WHERE user_id = '${uid}')`
+    );
 
     // --- WEB FALLBACKS (Supabase direct) ---
     const [webStats, setWebStats] = useState({ openIssues: 0, resolvedIssues: 0, rejectedTickets: 0, manpower: 0, avgProgress: 0, activeJobs: 0 });
@@ -79,7 +94,10 @@ export default function Dashboard() {
 
     const loadData = async () => {
         try {
-            const activeJobs = await SupabaseService.getActiveJobs();
+            const activeJobs = await SupabaseService.getActiveJobs({
+                userId: user?.id,
+                role: profile?.role,
+            });
             const mappedJobs = activeJobs.map(job => ({
                 id: job.id,
                 name: job.name,
@@ -111,30 +129,58 @@ export default function Dashboard() {
                 });
                 const avgProgress = totalAreas > 0 ? Math.round(totalProgress / totalAreas) : 0;
 
-                // 2. Open Issues
+                // Collect assigned job IDs for scoped queries
+                const assignedJobIds = activeJobs.map((j: any) => j.id);
+
+                // 2. Open Issues (scoped to user's jobs for non-admin)
                 let openIssues = 0;
                 try {
-                    openIssues = await SupabaseService.getGlobalOpenIssuesCount();
+                    if (isGlobal) {
+                        openIssues = await SupabaseService.getGlobalOpenIssuesCount();
+                    } else {
+                        if (assignedJobIds.length > 0) {
+                            const { count, error } = await sb.from('job_issues')
+                                .select('*', { count: 'exact', head: true })
+                                .eq('status', 'open')
+                                .in('job_id', assignedJobIds);
+                            if (!error) openIssues = count || 0;
+                        }
+                    }
                 } catch (e) {
                     console.error('Failed to get open issues count', e);
                 }
 
-                // 3. Rejected Tickets
+                // 3. Rejected Tickets (scoped)
                 let rejectedTickets = 0;
                 try {
-                    const { count, error } = await sb.from('delivery_tickets').select('*', { count: 'exact', head: true }).eq('status', 'REJECTED');
+                    let query = sb.from('delivery_tickets').select('*', { count: 'exact', head: true }).eq('status', 'REJECTED');
+                    if (!isGlobal && assignedJobIds.length > 0) {
+                        query = query.in('job_id', assignedJobIds);
+                    }
+                    const { count, error } = await query;
                     if (!error) rejectedTickets = count || 0;
                 } catch (e) { }
 
-                // 4. Manpower (Workers with assigned jobs)
+                // 4. Manpower (scoped to user's jobs)
                 let manpower = 0;
                 try {
-                    const { data, error } = await sb.from('workers').select('id, assigned_job_ids');
-                    if (!error && data) {
-                        manpower = data.filter((w: any) => {
-                            const ids = w.assigned_job_ids;
-                            return ids && ids !== '' && ids !== '[]';
-                        }).length;
+                    if (isGlobal) {
+                        const { data, error } = await sb.from('workers').select('id, assigned_job_ids');
+                        if (!error && data) {
+                            manpower = data.filter((w: any) => {
+                                const ids = w.assigned_job_ids;
+                                return ids && ids !== '' && ids !== '[]';
+                            }).length;
+                        }
+                    } else {
+                        // Count crew checkins for user's assigned jobs
+                        if (assignedJobIds.length > 0) {
+                            const { count, error } = await sb.from('crew_checkins')
+                                .select('*', { count: 'exact', head: true })
+                                .is('check_out', null)
+                                .in('job_id', assignedJobIds);
+                            if (!error) manpower = count || 0;
+                        }
                     }
                 } catch (e) { }
 
@@ -215,36 +261,38 @@ export default function Dashboard() {
                 {/* 2. TELEMETRY & COMMAND CARD ROW */}
                 <View className="flex-row gap-4 mb-4">
                     {/* Issues Card */}
-                    <TouchableOpacity
-                        activeOpacity={0.7}
-                        onPress={() => router.push('/(tabs)/field')}
-                        className="flex-1 bg-white p-5 rounded-3xl shadow-sm border border-slate-100"
-                    >
-                        <View className="flex-row justify-between items-start mb-2">
-                            <View className={`p-2 rounded-xl ${(stats.openIssues + stats.rejectedTickets) > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
-                                <Ionicons
-                                    name={(stats.openIssues + stats.rejectedTickets) > 0 ? "alert-circle" : "checkmark-circle"}
-                                    size={24}
-                                    color={(stats.openIssues + stats.rejectedTickets) > 0 ? "#ef4444" : "#10b981"}
-                                />
+                    <View className="flex-1 bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
+                        <TouchableOpacity
+                            activeOpacity={isViewOnly ? 1 : 0.7}
+                            onPress={isViewOnly ? undefined : () => router.push('/(tabs)/field')}
+                            disabled={isViewOnly}
+                        >
+                            <View className="flex-row justify-between items-start mb-2">
+                                <View className={`p-2 rounded-xl ${(stats.openIssues + stats.rejectedTickets) > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
+                                    <Ionicons
+                                        name={(stats.openIssues + stats.rejectedTickets) > 0 ? "alert-circle" : "checkmark-circle"}
+                                        size={24}
+                                        color={(stats.openIssues + stats.rejectedTickets) > 0 ? "#ef4444" : "#10b981"}
+                                    />
+                                </View>
                             </View>
-                        </View>
 
-                        <View className="mt-2">
-                            <Text className="text-[24px] font-inter font-black text-slate-900">
-                                {stats.openIssues + stats.rejectedTickets}
-                            </Text>
-                            <Text className="text-slate-500 text-[10px] font-inter font-bold uppercase tracking-wide mt-1">Open Issues</Text>
-                        </View>
+                            <View className="mt-2">
+                                <Text className="text-[24px] font-inter font-black text-slate-900">
+                                    {stats.openIssues + stats.rejectedTickets}
+                                </Text>
+                                <Text className="text-slate-500 text-[10px] font-inter font-bold uppercase tracking-wide mt-1">Open Issues</Text>
+                            </View>
 
-                        <View className="mt-4 pt-4 border-t border-slate-100">
-                            <Text className="text-slate-400 text-[10px] font-inter font-medium">
-                                {(stats.openIssues + stats.rejectedTickets) > 0
-                                    ? "Delays possible across active jobs."
-                                    : "All sites running smoothly."}
-                            </Text>
-                        </View>
-                    </TouchableOpacity>
+                            <View className="mt-4 pt-4 border-t border-slate-100">
+                                <Text className="text-slate-400 text-[10px] font-inter font-medium">
+                                    {(stats.openIssues + stats.rejectedTickets) > 0
+                                        ? "Delays possible across active jobs."
+                                        : "All sites running smoothly."}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                    </View>
 
                     {/* Manpower Card */}
                     <View className="flex-1 bg-white p-5 rounded-3xl shadow-sm border border-slate-100 justify-between">
@@ -263,12 +311,13 @@ export default function Dashboard() {
                     </View>
                 </View>
 
-                {/* COMMAND CARDS ROW (NEW) */}
+                {/* COMMAND CARDS ROW — hidden for view-only roles */}
+                {!isViewOnly && (
                 <View className="flex-row gap-4 mb-8">
                     {/* Pending Approvals */}
                     <TouchableOpacity
                         activeOpacity={0.7}
-                        onPress={() => router.push('/(tabs)/field')} // Field ops handles approvals
+                        onPress={() => router.push('/(tabs)/field')}
                         className="flex-1 bg-emerald-50 p-5 rounded-3xl border border-emerald-100"
                     >
                         <View className="flex-row justify-between items-start mb-2">
@@ -283,7 +332,7 @@ export default function Dashboard() {
                     {/* Delivery Tracker */}
                     <TouchableOpacity
                         activeOpacity={0.7}
-                        onPress={() => router.push('/(tabs)/field')} // Or a dedicated delivery view if one exists
+                        onPress={() => router.push('/(tabs)/field')}
                         className="flex-1 bg-blue-50 p-5 rounded-3xl border border-blue-100"
                     >
                         <View className="flex-row justify-between items-start mb-2">
@@ -295,25 +344,25 @@ export default function Dashboard() {
                         <Text className="text-blue-600 text-[10px] font-inter font-bold uppercase">Live Updates</Text>
                     </TouchableOpacity>
                 </View>
+                )}
 
-                {/* 3. QUICK ACCESS GRID */}
+                {/* 3. QUICK ACCESS GRID (role-filtered) */}
                 <Text className="text-slate-800 font-bold text-lg mb-4">Quick Access Modules</Text>
 
                 <View className="flex-row flex-wrap" style={{ marginHorizontal: -8 }}>
                     {[
-                        { title: 'Projects/Jobs', icon: 'briefcase', color: '#3b82f6', route: '/jobs', bg: 'bg-blue-50' },
-                        { title: 'Polishers Hub', icon: 'construct', color: '#f97316', route: '/polishers', bg: 'bg-orange-50' },
-                        { title: 'Manpower', icon: 'people', color: '#8b5cf6', route: '/manpower', bg: 'bg-violet-50' },
-                        { title: 'Warehouse', icon: 'cube', color: '#10b981', route: '/warehouse', bg: 'bg-emerald-50' },
-                        { title: 'Field Ops', icon: 'map', color: '#6366f1', route: '/field', bg: 'bg-indigo-50' },
-                        { title: 'Shop', icon: 'hammer', color: '#f59e0b', route: '/shop', bg: 'bg-amber-50' },
-                        { title: 'Reports', icon: 'bar-chart', color: '#f43f5e', route: '/reports', bg: 'bg-rose-50' },
-                        { title: 'Team Access', icon: 'key', color: '#64748b', route: '/team-access', bg: 'bg-slate-50' },
-                    ].map((item, idx) => (
+                        { title: 'Projects/Jobs', icon: 'briefcase', color: '#3b82f6', route: '/jobs', bg: 'bg-blue-50', roles: ['admin', 'supervisor', 'pm', 'foreman'] },
+                        { title: 'Warehouse', icon: 'cube', color: '#10b981', route: '/warehouse', bg: 'bg-emerald-50', roles: ['admin', 'supervisor', 'pm', 'warehouse'] },
+                        { title: 'Field Ops', icon: 'map', color: '#6366f1', route: '/field', bg: 'bg-indigo-50', roles: ['admin', 'supervisor'] },
+                        { title: 'Shop', icon: 'hammer', color: '#f59e0b', route: '/shop', bg: 'bg-amber-50', roles: ['admin', 'supervisor', 'pm', 'shop'] },
+                        { title: 'Manpower', icon: 'people', color: '#8b5cf6', route: '/manpower', bg: 'bg-violet-50', roles: ['admin', 'supervisor'] },
+                        { title: 'Polishers Hub', icon: 'construct', color: '#f97316', route: '/polishers', bg: 'bg-orange-50', roles: ['admin', 'supervisor'] },
+                        { title: 'Team Access', icon: 'key', color: '#64748b', route: '/team-access', bg: 'bg-slate-50', roles: ['admin'] },
+                    ].filter(item => !profile?.role || item.roles.includes(profile.role)).map((item, idx) => (
                         <View
                             key={idx}
                             style={{
-                                width: useWindowDimensions().width > 768 ? '25%' : '50%',
+                                width: width > 768 ? '25%' : '50%',
                                 padding: 8
                             }}
                         >

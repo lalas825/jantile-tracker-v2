@@ -21,23 +21,29 @@ export default function LoginScreen() {
         let error = null;
 
         if (isSignUp) {
-            const { error: signUpError } = await supabase.auth.signUp({
+            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
                 email,
                 password,
             });
             if (signUpError) error = signUpError;
-            else Alert.alert('Success', 'Account created! Please sign in.');
+            // If session was created (email confirmation disabled), AuthGuard handles redirect
+            // Otherwise prompt user to sign in
+            else if (!signUpData.session) {
+                Alert.alert('Success', 'Account created! Please sign in.');
+            }
         } else {
-            const { error: signInError } = await supabase.auth.signInWithPassword({
+            const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
                 email,
                 password,
             });
             error = signInError;
+            console.log('[LOGIN] signIn result:', signInError ? signInError.message : 'SUCCESS', signInData?.session ? 'has session' : 'no session');
         }
 
         setLoading(false);
 
         if (error) {
+            console.error('[LOGIN] Auth error:', error.message);
             Alert.alert(isSignUp ? 'Sign Up Failed' : 'Login Failed', error.message);
         }
     };
