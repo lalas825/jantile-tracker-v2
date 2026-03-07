@@ -1,4 +1,4 @@
-import { ToolContext, ChatMessage } from './types.ts'
+import { ToolContext, ChatMessage, UserRole, Profile } from './types.ts'
 import { toolDeclarations } from './tools.ts'
 import { handleToolCall } from './tool-handlers.ts'
 
@@ -91,6 +91,70 @@ Use emojis to make the response scannable.
 Be specific — reference what you actually see in the image.
 Respond in the same language the user writes in (English or Spanish).`
 
+// ─── Role-Based Instructions ─────────────────────────────────────────────────────
+
+const ROLE_INSTRUCTIONS: Record<UserRole, string> = {
+  admin: `YOUR ROLE: Admin (full access)
+You have FULL access to all tools and all jobs.
+- You CAN create jobs (create_job), create structures (bulk_create_structure), and delete jobs (delete_job)
+- You CAN view all jobs, issues, crew, production, warehouse, and shop data
+- You CAN update checklists and create issues for any job`,
+
+  supervisor: `YOUR ROLE: Supervisor
+You can view all your assigned jobs and their full data.
+- You CAN view jobs, issues, crew/manpower, production, warehouse data
+- You CAN update checklists and create issues
+- You CANNOT create or delete jobs`,
+
+  pm: `YOUR ROLE: Project Manager
+You can view your assigned jobs with full logistics access.
+- You CAN view jobs, issues, production, warehouse data (materials, deliveries, purchase orders)
+- You CAN update checklists and create issues
+- You CANNOT create or delete jobs
+- You CANNOT view manpower/crew data`,
+
+  foreman: `YOUR ROLE: Foreman
+You can view your assigned jobs with field-level access.
+- You CAN view jobs, issues, production, and checklists
+- You CAN update checklists and create issues
+- You CANNOT create or delete jobs
+- You CANNOT view warehouse or purchase order data`,
+
+  worker: `YOUR ROLE: Worker
+You have basic access to your assigned jobs.
+- You CAN view jobs and checklists assigned to you
+- You CAN create issues to report problems
+- You CANNOT create or delete jobs
+- You CANNOT view warehouse or purchase order data`,
+
+  warehouse: `YOUR ROLE: Warehouse
+You specialize in materials and logistics.
+- You CAN view all jobs (read-only for general info)
+- You CAN view and focus on: materials inventory, delivery tickets, purchase orders
+- You CAN create issues related to materials
+- You CANNOT create or delete jobs
+- You CANNOT update checklists`,
+
+  shop: `YOUR ROLE: Shop
+You handle shop-related operations.
+- You CAN view all jobs (read-only for general info)
+- You CAN create issues related to shop work
+- You CANNOT create or delete jobs
+- You CANNOT view warehouse data or update checklists`,
+}
+
+function getSystemInstruction(profile: Profile): string {
+  const roleBlock = ROLE_INSTRUCTIONS[profile.role] || ROLE_INSTRUCTIONS['worker']
+  return SYSTEM_INSTRUCTION + '\n\n' + roleBlock +
+    `\nCurrent user: ${profile.full_name || 'User'} (role: ${profile.role})`
+}
+
+function getVisionInstruction(profile: Profile): string {
+  const roleBlock = ROLE_INSTRUCTIONS[profile.role] || ROLE_INSTRUCTIONS['worker']
+  return VISION_INSTRUCTION + '\n\n' + roleBlock +
+    `\nUser: ${profile.full_name || 'User'} (role: ${profile.role})`
+}
+
 interface GeminiPart {
   text?: string
   inlineData?: { mimeType: string; data: string }
@@ -131,13 +195,7 @@ export async function chatWithGemini(
       contents,
       tools,
       systemInstruction: {
-        parts: [
-          {
-            text:
-              SYSTEM_INSTRUCTION +
-              `\nCurrent user: ${ctx.profile.full_name || 'User'} (role: ${ctx.profile.role})`,
-          },
-        ],
+        parts: [{ text: getSystemInstruction(ctx.profile) }],
       },
       generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
     }
@@ -219,13 +277,7 @@ async function analyzePhoto(
   const body = {
     contents: [{ role: 'user', parts: userParts }],
     systemInstruction: {
-      parts: [
-        {
-          text:
-            VISION_INSTRUCTION +
-            `\nUser: ${ctx.profile.full_name || 'User'} (role: ${ctx.profile.role})`,
-        },
-      ],
+      parts: [{ text: getVisionInstruction(ctx.profile) }],
     },
     generationConfig: { temperature: 0.5, maxOutputTokens: 1024 },
   }

@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { chatWithGemini } from './gemini.ts'
-import type { Profile, ToolContext, ChatMessage } from './types.ts'
+import type { Profile, ChatMessage } from './types.ts'
+import { authenticateUser, getJobIds, buildToolContext } from './middleware/auth.ts'
 
 // ─── Environment ────────────────────────────────────────────────────────────────
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!
@@ -30,28 +31,6 @@ function progressBar(pct: number): string {
 
 // ─── Data Helpers ────────────────────────────────────────────────────────────────
 
-async function getJobIds(profile: Profile): Promise<{ jobIds: string[] | null; error?: string }> {
-  // Admins see all jobs, others only their assigned ones
-  if (profile.role === 'admin') {
-    return { jobIds: null } // null = no filter (all jobs)
-  }
-
-  const { data: assignments, error } = await supabase
-    .from('job_assignments')
-    .select('job_id')
-    .eq('user_id', profile.id)
-
-  if (error) {
-    return { jobIds: [], error: error.message }
-  }
-
-  if (!assignments?.length) {
-    return { jobIds: [] }
-  }
-
-  return { jobIds: assignments.map((a: any) => a.job_id) }
-}
-
 // ─── Command Handlers ───────────────────────────────────────────────────────────
 
 async function handleStart(profile: Profile): Promise<string> {
@@ -75,7 +54,7 @@ async function handleStart(profile: Profile): Promise<string> {
 async function handleJobs(profile: Profile): Promise<string> {
   try {
     // 1. Get job IDs (admin sees all, others see assigned)
-    const { jobIds, error: assignError } = await getJobIds(profile)
+    const { jobIds, error: assignError } = await getJobIds(supabase, profile)
 
     if (assignError) {
       console.error('[/jobs] assignments query:', assignError)
@@ -155,7 +134,7 @@ async function handleJobs(profile: Profile): Promise<string> {
 async function handleIssues(profile: Profile): Promise<string> {
   try {
     // 1. Get job IDs (admin sees all, others see assigned)
-    const { jobIds, error: assignError } = await getJobIds(profile)
+    const { jobIds, error: assignError } = await getJobIds(supabase, profile)
 
     if (assignError) {
       console.error('[/issues] assignments query:', assignError)
@@ -226,7 +205,7 @@ async function handleIssues(profile: Profile): Promise<string> {
 async function handleManpower(profile: Profile): Promise<string> {
   try {
     // 1. Get job IDs (admin sees all, others see assigned)
-    const { jobIds, error: assignError } = await getJobIds(profile)
+    const { jobIds, error: assignError } = await getJobIds(supabase, profile)
 
     if (assignError) {
       console.error('[/manpower] assignments query:', assignError)
@@ -302,7 +281,7 @@ async function handleNewIssue(profile: Profile, text: string): Promise<string> {
 
     if (!args) {
       // Show usage with numbered job list
-      const { jobIds } = await getJobIds(profile)
+      const { jobIds } = await getJobIds(supabase, profile)
 
       let query = supabase
         .from('jobs')
@@ -350,7 +329,7 @@ async function handleNewIssue(profile: Profile, text: string): Promise<string> {
     }
 
     // Get jobs list to resolve number → id
-    const { jobIds } = await getJobIds(profile)
+    const { jobIds } = await getJobIds(supabase, profile)
 
     let query = supabase
       .from('jobs')
@@ -405,13 +384,6 @@ async function handleNewIssue(profile: Profile, text: string): Promise<string> {
     console.error('[/new_issue] exception:', err)
     return '\u26A0\uFE0F Internal error. Please try again.'
   }
-}
-
-// ─── AI Helpers ──────────────────────────────────────────────────────────────────
-
-async function buildToolContext(profile: Profile): Promise<ToolContext> {
-  const { jobIds } = await getJobIds(profile)
-  return { profile, jobIds, supabase }
 }
 
 // ─── Chat History ────────────────────────────────────────────────────────────────
@@ -548,26 +520,23 @@ Deno.serve(async (req) => {
       return new Response('OK')
     }
 
-    // 2. Lookup user by telegram_id
-    const { data: profile, error: profileErr } = await supabase
-      .from('profiles')
-      .select('id, full_name, role, status')
-      .eq('telegram_id', telegramId)
-      .single()
+    // 2. Authenticate user
+    const authResult = await authenticateUser(supabase, telegramId)
 
-    if (profileErr || !profile) {
-      console.warn('[Security] Unknown telegram_id:', telegramId)
-      await sendMessage(
-        chatId,
-        '\u26D4 Unauthorized access. Contact your Jantile administrator.'
-      )
+    if (!authResult.ok) {
+      if (authResult.reason === 'pending') {
+        await sendMessage(chatId, '\u23F3 Your account is pending approval.')
+      } else {
+        console.warn('[Security] Unknown telegram_id:', telegramId)
+        await sendMessage(
+          chatId,
+          '\u26D4 Unauthorized access. Contact your Jantile administrator.'
+        )
+      }
       return new Response('OK')
     }
 
-    if (profile.status !== 'approved') {
-      await sendMessage(chatId, '\u23F3 Your account is pending approval.')
-      return new Response('OK')
-    }
+    const profile = authResult.profile
 
     // 3. Route: commands vs AI
     if (text.startsWith('/')) {
@@ -625,7 +594,7 @@ async function handleAI(
   chatId: number
 ): Promise<string> {
   try {
-    const ctx = await buildToolContext(profile)
+    const ctx = await buildToolContext(supabase, profile)
     const history = await loadHistory(chatId)
 
     // Save user message
@@ -662,7 +631,7 @@ async function handlePhoto(
     }
 
     const caption = (message.caption || '').trim()
-    const ctx = await buildToolContext(profile)
+    const ctx = await buildToolContext(supabase, profile)
     const history = await loadHistory(chatId)
 
     // Save user message
