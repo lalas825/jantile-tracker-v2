@@ -68,6 +68,7 @@ async function handleStart(profile: Profile): Promise<string> {
     '/jobs \u2014 My active jobs',
     '/issues \u2014 Open issues',
     '/manpower \u2014 Field crew',
+    '/new_issue \u2014 Report a new issue',
   ].join('\n')
 }
 
@@ -294,6 +295,114 @@ async function handleManpower(profile: Profile): Promise<string> {
   }
 }
 
+async function handleNewIssue(profile: Profile, text: string): Promise<string> {
+  try {
+    // Parse: /new_issue <job_number> <description>
+    const args = text.replace(/^\/new_issue\s*/i, '').trim()
+
+    if (!args) {
+      // Show usage with numbered job list
+      const { jobIds } = await getJobIds(profile)
+
+      let query = supabase
+        .from('jobs')
+        .select('id, name')
+        .ilike('status', 'active')
+        .order('name')
+
+      if (jobIds !== null) {
+        if (!jobIds.length) return '\u{1F4CB} You have no assigned jobs.'
+        query = query.in('id', jobIds)
+      }
+
+      const { data: jobs } = await query
+
+      if (!jobs?.length) return '\u{1F4CB} No active jobs found.'
+
+      const lines = [
+        '\u{1F4DD} <b>Create New Issue</b>\n',
+        'Usage: <code>/new_issue [job#] [description]</code>\n',
+        '<b>Your jobs:</b>',
+      ]
+      jobs.forEach((j: any, i: number) => {
+        lines.push(`  <b>${i + 1}.</b> ${j.name}`)
+      })
+      lines.push('\nExample: <code>/new_issue 1 Water leak in unit 302</code>')
+
+      return lines.join('\n')
+    }
+
+    // Parse job number and description
+    const spaceIdx = args.indexOf(' ')
+    if (spaceIdx === -1) {
+      return '\u26A0\uFE0F Please provide a description.\nUsage: <code>/new_issue [job#] [description]</code>'
+    }
+
+    const jobNum = parseInt(args.substring(0, spaceIdx), 10)
+    const description = args.substring(spaceIdx + 1).trim()
+
+    if (isNaN(jobNum) || jobNum < 1) {
+      return '\u26A0\uFE0F Invalid job number. Send /new_issue to see the list.'
+    }
+
+    if (!description) {
+      return '\u26A0\uFE0F Please provide a description.'
+    }
+
+    // Get jobs list to resolve number → id
+    const { jobIds } = await getJobIds(profile)
+
+    let query = supabase
+      .from('jobs')
+      .select('id, name')
+      .ilike('status', 'active')
+      .order('name')
+
+    if (jobIds !== null) {
+      if (!jobIds.length) return '\u{1F4CB} You have no assigned jobs.'
+      query = query.in('id', jobIds)
+    }
+
+    const { data: jobs } = await query
+
+    if (!jobs?.length || jobNum > jobs.length) {
+      return `\u26A0\uFE0F Job #${jobNum} not found. Send /new_issue to see the list.`
+    }
+
+    const selectedJob = jobs[jobNum - 1]
+
+    // Insert the issue
+    const { error: insertErr } = await supabase
+      .from('job_issues')
+      .insert({
+        job_id: selectedJob.id,
+        type: 'General',
+        priority: 'Medium',
+        status: 'open',
+        description,
+        created_by: profile.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+
+    if (insertErr) {
+      console.error('[/new_issue] insert error:', JSON.stringify(insertErr))
+      return '\u26A0\uFE0F Error creating issue. Please try again.'
+    }
+
+    return [
+      '\u2705 <b>Issue Created</b>\n',
+      `\u{1F3D7}\uFE0F Job: <b>${selectedJob.name}</b>`,
+      `\u{1F4CB} Type: General`,
+      `\u{1F7E1} Priority: Medium`,
+      `\u{1F4DD} ${description}`,
+    ].join('\n')
+  } catch (err) {
+    console.error('[/new_issue] exception:', err)
+    return '\u26A0\uFE0F Internal error. Please try again.'
+  }
+}
+
 // ─── Main Handler ───────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   // 1. Validate webhook secret
@@ -350,6 +459,9 @@ Deno.serve(async (req) => {
         break
       case '/manpower':
         response = await handleManpower(profile)
+        break
+      case '/new_issue':
+        response = await handleNewIssue(profile, text)
         break
       default:
         response = 'Unknown command. Use /start to see available options.'
