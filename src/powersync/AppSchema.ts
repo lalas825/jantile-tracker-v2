@@ -116,6 +116,7 @@ export const AppSchema = new Schema([
             new Column({ name: 'avatar_url', type: ColumnType.TEXT }),
             new Column({ name: 'updated_at', type: ColumnType.TEXT }),
             new Column({ name: 'status', type: ColumnType.TEXT }),
+            new Column({ name: 'telegram_id', type: ColumnType.TEXT }),
         ]
     }),
     new Table({
