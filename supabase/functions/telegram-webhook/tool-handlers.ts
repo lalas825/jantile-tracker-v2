@@ -1,4 +1,5 @@
 import { ToolContext } from './types.ts'
+import { getPresetForArea } from './checklist-presets.ts'
 
 // ─── Access Helpers ──────────────────────────────────────────────────────────────
 
@@ -42,6 +43,18 @@ export async function handleToolCall(
       return findAreas(args, ctx)
     case 'get_production_summary':
       return getProductionSummary(args, ctx)
+    case 'get_materials':
+      return getMaterials(args, ctx)
+    case 'get_deliveries':
+      return getDeliveries(args, ctx)
+    case 'get_purchase_orders':
+      return getPurchaseOrders(args, ctx)
+    case 'create_job':
+      return createNewJob(args, ctx)
+    case 'delete_job':
+      return deleteJob(args, ctx)
+    case 'bulk_create_structure':
+      return bulkCreateStructure(args, ctx)
     default:
       return { error: `Unknown tool: ${name}` }
   }
@@ -484,5 +497,378 @@ async function getProductionSummary(args: any, ctx: ToolContext) {
     total_ot_hours: Math.round(totalOtHours * 10) / 10,
     total_sqft: Math.round(totalSqft * 10) / 10,
     by_job: Object.values(byJob),
+  }
+}
+
+// ─── Warehouse Tools ─────────────────────────────────────────────────────────────
+
+async function getMaterials(args: any, ctx: ToolContext) {
+  const deny = accessCheck(ctx, args.job_id)
+  if (deny) return { error: deny }
+
+  let query = ctx.supabase
+    .from('project_materials')
+    .select(
+      'id, product_name, product_code, category, supplier, unit, net_qty, budget_qty, ordered_qty, in_warehouse_qty, in_transit, received_at_job, qty_damaged, qty_missing, expected_date'
+    )
+    .eq('job_id', args.job_id)
+    .order('category')
+    .order('product_name')
+    .limit(50)
+
+  if (args.category) {
+    query = query.ilike('category', `%${args.category}%`)
+  }
+
+  const { data: materials, error } = await query
+  if (error) return { error: error.message }
+  if (!materials?.length)
+    return { materials: [], message: 'No materials found for this job.' }
+
+  return { materials }
+}
+
+async function getDeliveries(args: any, ctx: ToolContext) {
+  const deny = accessCheck(ctx, args.job_id)
+  if (deny) return { error: deny }
+
+  let query = ctx.supabase
+    .from('delivery_tickets')
+    .select(
+      'id, ticket_number, status, destination, requested_date, due_date, due_time, items, notes, assigned_to, created_at'
+    )
+    .eq('job_id', args.job_id)
+    .order('due_date', { ascending: false })
+    .limit(20)
+
+  if (args.status) {
+    query = query.eq('status', args.status)
+  }
+
+  const { data: tickets, error } = await query
+  if (error) return { error: error.message }
+  if (!tickets?.length)
+    return { deliveries: [], message: 'No delivery tickets found.' }
+
+  // Parse items JSON string
+  const deliveries = tickets.map((t: any) => {
+    let parsedItems = []
+    try {
+      parsedItems = typeof t.items === 'string' ? JSON.parse(t.items) : t.items || []
+    } catch {
+      parsedItems = []
+    }
+    return { ...t, items: parsedItems }
+  })
+
+  return { deliveries }
+}
+
+async function getPurchaseOrders(args: any, ctx: ToolContext) {
+  const deny = accessCheck(ctx, args.job_id)
+  if (deny) return { error: deny }
+
+  let query = ctx.supabase
+    .from('purchase_orders')
+    .select(
+      'id, po_number, vendor, status, order_date, expected_date, total_amount, notes, created_at'
+    )
+    .eq('job_id', args.job_id)
+    .order('created_at', { ascending: false })
+    .limit(20)
+
+  if (args.status) {
+    query = query.eq('status', args.status)
+  }
+
+  const { data: orders, error } = await query
+  if (error) return { error: error.message }
+  if (!orders?.length)
+    return { purchase_orders: [], message: 'No purchase orders found.' }
+
+  // Get items for each PO
+  const poIds = orders.map((o: any) => o.id)
+  const { data: items } = await ctx.supabase
+    .from('po_items')
+    .select('po_id, material_id, quantity_ordered, received_qty, item_cost')
+    .in('po_id', poIds)
+
+  // Get material names for items
+  const materialIds = [
+    ...new Set((items || []).map((i: any) => i.material_id).filter(Boolean)),
+  ]
+  let materialMap: Record<string, string> = {}
+  if (materialIds.length) {
+    const { data: mats } = await ctx.supabase
+      .from('project_materials')
+      .select('id, product_name')
+      .in('id', materialIds)
+    mats?.forEach((m: any) => {
+      materialMap[m.id] = m.product_name
+    })
+  }
+
+  // Attach items to POs
+  const result = orders.map((o: any) => ({
+    ...o,
+    items: (items || [])
+      .filter((i: any) => i.po_id === o.id)
+      .map((i: any) => ({
+        material_name: materialMap[i.material_id] || 'Unknown',
+        quantity_ordered: i.quantity_ordered,
+        received_qty: i.received_qty,
+        item_cost: i.item_cost,
+      })),
+  }))
+
+  return { purchase_orders: result }
+}
+
+// ─── Job Creation Tools ──────────────────────────────────────────────────────────
+
+async function createNewJob(args: any, ctx: ToolContext) {
+  // Admin only
+  if (ctx.profile.role !== 'admin') {
+    return { error: 'Only admins can create jobs.' }
+  }
+
+  if (!args.name?.trim()) return { error: 'Job name is required.' }
+
+  const id = crypto.randomUUID()
+  const now = new Date().toISOString()
+
+  const { error } = await ctx.supabase.from('jobs').insert({
+    id,
+    name: args.name.trim(),
+    address: args.address || null,
+    general_contractor: args.general_contractor || null,
+    status: 'active',
+    created_at: now,
+  })
+
+  if (error) return { error: `Failed to create job: ${error.message}` }
+
+  return { success: true, job_id: id, name: args.name.trim() }
+}
+
+async function bulkCreateStructure(args: any, ctx: ToolContext) {
+  // Admin only
+  if (ctx.profile.role !== 'admin') {
+    return { error: 'Only admins can create job structures.' }
+  }
+
+  if (!args.job_id) return { error: 'job_id is required.' }
+  if (!args.floors?.length) return { error: 'No floors provided.' }
+  if (args.floors.length > 10) {
+    return { error: 'Max 10 floors per call. Call again for more.' }
+  }
+
+  // Verify job exists
+  const { data: job } = await ctx.supabase
+    .from('jobs')
+    .select('id, name')
+    .eq('id', args.job_id)
+    .single()
+  if (!job) return { error: 'Job not found.' }
+
+  let floorsCreated = 0
+  let unitsCreated = 0
+  let areasCreated = 0
+  let checklistItemsCreated = 0
+
+  for (const floor of args.floors) {
+    // Create floor
+    const floorId = crypto.randomUUID()
+    const { error: floorErr } = await ctx.supabase.from('floors').insert({
+      id: floorId,
+      job_id: args.job_id,
+      name: floor.name,
+      created_at: new Date().toISOString(),
+    })
+    if (floorErr) {
+      console.error(`[Bulk] Floor insert error:`, floorErr)
+      continue
+    }
+    floorsCreated++
+
+    if (!floor.units?.length) continue
+
+    for (const unit of floor.units) {
+      // Create unit
+      const unitId = crypto.randomUUID()
+      const { error: unitErr } = await ctx.supabase.from('units').insert({
+        id: unitId,
+        floor_id: floorId,
+        name: unit.name,
+        type: 'production',
+        created_at: new Date().toISOString(),
+      })
+      if (unitErr) {
+        console.error(`[Bulk] Unit insert error:`, unitErr)
+        continue
+      }
+      unitsCreated++
+
+      if (!unit.areas?.length) continue
+
+      for (const areaName of unit.areas) {
+        // Create area
+        const areaId = crypto.randomUUID()
+        const { error: areaErr } = await ctx.supabase.from('areas').insert({
+          id: areaId,
+          unit_id: unitId,
+          name: areaName,
+          type: 'production',
+          status: 'NOT_STARTED',
+          progress: 0,
+          created_at: new Date().toISOString(),
+        })
+        if (areaErr) {
+          console.error(`[Bulk] Area insert error:`, areaErr)
+          continue
+        }
+        areasCreated++
+
+        // Create checklist items from preset
+        const preset = getPresetForArea(areaName)
+        if (preset.length > 0) {
+          const baseTime = Date.now()
+          const items = preset.map((text, index) => ({
+            area_id: areaId,
+            text,
+            completed: 0,
+            status: 'NOT_STARTED',
+            position: index,
+            created_at: new Date(baseTime + index * 10).toISOString(),
+          }))
+
+          const { error: itemsErr } = await ctx.supabase
+            .from('checklist_items')
+            .insert(items)
+          if (!itemsErr) {
+            checklistItemsCreated += items.length
+          } else {
+            console.error(`[Bulk] Checklist insert error:`, itemsErr)
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    success: true,
+    job_name: job.name,
+    floors_created: floorsCreated,
+    units_created: unitsCreated,
+    areas_created: areasCreated,
+    checklist_items_created: checklistItemsCreated,
+  }
+}
+
+// ─── Job Deletion (cascade) ─────────────────────────────────────────────────────
+
+async function deleteJob(args: any, ctx: ToolContext) {
+  if (ctx.profile.role !== 'admin') {
+    return { error: 'Only admins can delete jobs.' }
+  }
+
+  if (!args.job_id) return { error: 'job_id is required.' }
+
+  // Verify job exists
+  const { data: job } = await ctx.supabase
+    .from('jobs')
+    .select('id, name')
+    .eq('id', args.job_id)
+    .single()
+  if (!job) return { error: 'Job not found.' }
+
+  // Get all floors for this job
+  const { data: floors } = await ctx.supabase
+    .from('floors')
+    .select('id')
+    .eq('job_id', args.job_id)
+
+  const floorIds = (floors || []).map((f: any) => f.id)
+
+  let unitsDeleted = 0
+  let areasDeleted = 0
+  let checklistDeleted = 0
+
+  if (floorIds.length > 0) {
+    // Get all units
+    const { data: units } = await ctx.supabase
+      .from('units')
+      .select('id')
+      .in('floor_id', floorIds)
+
+    const unitIds = (units || []).map((u: any) => u.id)
+
+    if (unitIds.length > 0) {
+      // Get all areas
+      const { data: areas } = await ctx.supabase
+        .from('areas')
+        .select('id')
+        .in('unit_id', unitIds)
+
+      const areaIds = (areas || []).map((a: any) => a.id)
+
+      if (areaIds.length > 0) {
+        // Delete checklist items
+        const { count: ciCount } = await ctx.supabase
+          .from('checklist_items')
+          .delete({ count: 'exact' })
+          .in('area_id', areaIds)
+        checklistDeleted = ciCount || 0
+
+        // Delete area photos
+        await ctx.supabase
+          .from('area_photos')
+          .delete()
+          .in('area_id', areaIds)
+
+        // Delete areas
+        await ctx.supabase
+          .from('areas')
+          .delete()
+          .in('unit_id', unitIds)
+        areasDeleted = areaIds.length
+      }
+
+      // Delete units
+      await ctx.supabase
+        .from('units')
+        .delete()
+        .in('floor_id', floorIds)
+      unitsDeleted = unitIds.length
+    }
+
+    // Delete floors
+    await ctx.supabase
+      .from('floors')
+      .delete()
+      .eq('job_id', args.job_id)
+  }
+
+  // Delete job-level data (issues, materials, deliveries, POs — may cascade via FK)
+  await ctx.supabase.from('job_issues').delete().eq('job_id', args.job_id)
+  await ctx.supabase.from('project_materials').delete().eq('job_id', args.job_id)
+  await ctx.supabase.from('delivery_tickets').delete().eq('job_id', args.job_id)
+  await ctx.supabase.from('purchase_orders').delete().eq('job_id', args.job_id)
+
+  // Delete the job itself
+  const { error: jobErr } = await ctx.supabase
+    .from('jobs')
+    .delete()
+    .eq('id', args.job_id)
+
+  if (jobErr) return { error: `Failed to delete job: ${jobErr.message}` }
+
+  return {
+    success: true,
+    deleted_job: job.name,
+    floors_deleted: floorIds.length,
+    units_deleted: unitsDeleted,
+    areas_deleted: areasDeleted,
+    checklist_items_deleted: checklistDeleted,
   }
 }

@@ -133,4 +133,125 @@ export const toolDeclarations = [
       required: ['date'],
     },
   },
+  {
+    name: 'get_materials',
+    description:
+      'Get materials inventory for a job. Shows quantities: ordered, in warehouse, in transit, received at job.',
+    parameters: {
+      type: 'object',
+      properties: {
+        job_id: { type: 'string', description: 'The job UUID' },
+        category: {
+          type: 'string',
+          description: 'Optional category filter (e.g. Tile, Grout, Trim)',
+        },
+      },
+      required: ['job_id'],
+    },
+  },
+  {
+    name: 'get_deliveries',
+    description:
+      'Get delivery tickets for a job. Shows ticket number, status, destination, due date, and items.',
+    parameters: {
+      type: 'object',
+      properties: {
+        job_id: { type: 'string', description: 'The job UUID' },
+        status: {
+          type: 'string',
+          enum: ['pending', 'scheduled', 'in_transit', 'delivered', 'cancelled'],
+          description: 'Optional status filter',
+        },
+      },
+      required: ['job_id'],
+    },
+  },
+  {
+    name: 'get_purchase_orders',
+    description:
+      'Get purchase orders for a job. Shows PO number, vendor, status, total amount, and items.',
+    parameters: {
+      type: 'object',
+      properties: {
+        job_id: { type: 'string', description: 'The job UUID' },
+        status: {
+          type: 'string',
+          enum: ['draft', 'submitted', 'approved', 'ordered', 'received', 'cancelled'],
+          description: 'Optional status filter',
+        },
+      },
+      required: ['job_id'],
+    },
+  },
+  {
+    name: 'create_job',
+    description:
+      'Create a new job. Returns the job_id for use with bulk_create_structure. Admin only.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Job name (e.g. "Riverside Tower")' },
+        address: { type: 'string', description: 'Job site address' },
+        general_contractor: {
+          type: 'string',
+          description: 'General contractor name (optional)',
+        },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'delete_job',
+    description:
+      'Delete a job and ALL its data (floors, units, areas, checklists, issues, materials). Admin only. IRREVERSIBLE.',
+    parameters: {
+      type: 'object',
+      properties: {
+        job_id: { type: 'string', description: 'The job UUID to delete' },
+      },
+      required: ['job_id'],
+    },
+  },
+  {
+    name: 'bulk_create_structure',
+    description:
+      'Bulk create floors, units, and areas for a job. Each area auto-gets a checklist based on its name. Max 10 floors per call — call multiple times for larger jobs.',
+    parameters: {
+      type: 'object',
+      properties: {
+        job_id: { type: 'string', description: 'The job UUID' },
+        floors: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Floor name (e.g. "Floor 1")' },
+              units: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: {
+                      type: 'string',
+                      description: 'Unit name (e.g. "Unit 1A")',
+                    },
+                    areas: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      description:
+                        'Area names — each gets auto-checklist. Valid: Master Bathroom, Secondary Bathroom, Powder Room, Kitchen, Foyer, Laundry, Vestibule, Corridor, Restroom, Janitor Room, Locker Room',
+                    },
+                  },
+                  required: ['name', 'areas'],
+                },
+              },
+            },
+            required: ['name', 'units'],
+          },
+          description: 'Floors to create (max 10 per call)',
+        },
+      },
+      required: ['job_id', 'floors'],
+    },
+  },
 ]
