@@ -301,4 +301,13 @@ export const AppSchema = new Schema([
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
         ]
     }),
+    new Table({
+        name: 'job_assignments',
+        columns: [
+            new Column({ name: 'user_id', type: ColumnType.TEXT }),
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'role', type: ColumnType.TEXT }), // 'owner' | 'pm' | 'foreman' | 'viewer'
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+        ]
+    }),
 ]);

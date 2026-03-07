@@ -43,3 +43,9 @@ src/
 - Supabase (PostgreSQL + Storage + Auth)
 - NativeWind (Tailwind CSS for RN)
 - Android package: `com.jantile.trackerv2`
+
+## Historico de Arquitectura
+
+| Fecha | Cambio | Estado |
+|-------|--------|--------|
+| 2026-03-06 | Implementacion de RLS Estricto (Multi-tenancy). Tabla `job_assignments` creada, funciones helper `user_has_job_access()` y `job_id_for_area()`, policies RLS en 10 tablas (jobs, floors, units, areas, checklist_items, area_photos, job_issues, issue_comments, profiles, system_notifications). Migracion: `src/powersync/RLS_Migration.sql`. | Base de datos blindada, `job_assignments` en produccion, `AppSchema` actualizado. |
