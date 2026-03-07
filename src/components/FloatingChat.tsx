@@ -133,7 +133,7 @@ export function FloatingChat() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ fontSize: 18 }}>🤖</Text>
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
-            Jantile Bot
+            Jantile Agent
           </Text>
         </View>
         <TouchableOpacity onPress={() => setIsOpen(false)}>
