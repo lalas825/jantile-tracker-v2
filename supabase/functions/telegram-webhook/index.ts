@@ -1,4 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { chatWithGemini } from './gemini.ts'
+import type { Profile, ToolContext, ChatMessage } from './types.ts'
 
 // ─── Environment ────────────────────────────────────────────────────────────────
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!
@@ -7,14 +9,6 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-
-// ─── Types ──────────────────────────────────────────────────────────────────────
-interface Profile {
-  id: string
-  full_name: string
-  role: string
-  status: string
-}
 
 // ─── Telegram Helpers ───────────────────────────────────────────────────────────
 async function sendMessage(chatId: number, text: string) {
@@ -64,11 +58,17 @@ async function handleStart(profile: Profile): Promise<string> {
   return [
     `\u{1F44B} Hi <b>${profile.full_name || 'User'}</b>!`,
     '',
-    'Available commands:',
-    '/jobs \u2014 My active jobs',
+    '<b>Commands:</b>',
+    '/jobs \u2014 Active jobs',
     '/issues \u2014 Open issues',
     '/manpower \u2014 Field crew',
-    '/new_issue \u2014 Report a new issue',
+    '/new_issue \u2014 Report an issue',
+    '',
+    '\u{1F916} <b>AI Assistant:</b>',
+    'You can also send me any message or photo!',
+    '\u2022 "How is the Waldorf project doing?"',
+    '\u2022 "Show me high priority issues"',
+    '\u2022 Send a photo for construction analysis',
   ].join('\n')
 }
 
@@ -371,18 +371,22 @@ async function handleNewIssue(profile: Profile, text: string): Promise<string> {
 
     const selectedJob = jobs[jobNum - 1]
 
-    // Insert the issue
+    // Insert the issue (include all columns explicitly)
+    const now = new Date().toISOString()
     const { error: insertErr } = await supabase
       .from('job_issues')
       .insert({
+        id: crypto.randomUUID(),
         job_id: selectedJob.id,
+        area_id: null,
         type: 'General',
         priority: 'Medium',
         status: 'open',
         description,
+        photo_url: null,
         created_by: profile.id,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: now,
+        updated_at: now,
       })
 
     if (insertErr) {
@@ -403,12 +407,125 @@ async function handleNewIssue(profile: Profile, text: string): Promise<string> {
   }
 }
 
+// ─── AI Helpers ──────────────────────────────────────────────────────────────────
+
+async function buildToolContext(profile: Profile): Promise<ToolContext> {
+  const { jobIds } = await getJobIds(profile)
+  return { profile, jobIds, supabase }
+}
+
+// ─── Chat History ────────────────────────────────────────────────────────────────
+
+const MAX_HISTORY = 10 // last 10 messages (5 user + 5 assistant)
+
+async function loadHistory(chatId: number): Promise<ChatMessage[]> {
+  try {
+    const { data } = await supabase
+      .from('telegram_chat_history')
+      .select('role, content')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: false })
+      .limit(MAX_HISTORY)
+
+    if (!data?.length) return []
+
+    // Reverse to chronological order
+    return data.reverse().map((row: any) => ({
+      role: row.role as 'user' | 'assistant',
+      content: row.content,
+    }))
+  } catch (err) {
+    console.error('[History] Load error:', err)
+    return []
+  }
+}
+
+async function saveMessage(
+  chatId: number,
+  role: 'user' | 'assistant',
+  content: string
+) {
+  try {
+    await supabase.from('telegram_chat_history').insert({
+      chat_id: chatId,
+      role,
+      content: content.substring(0, 2000), // cap at 2000 chars
+    })
+
+    // Prune old messages — keep only last 20 per chat
+    const { data: old } = await supabase
+      .from('telegram_chat_history')
+      .select('id')
+      .eq('chat_id', chatId)
+      .order('created_at', { ascending: false })
+      .range(20, 1000)
+
+    if (old?.length) {
+      await supabase
+        .from('telegram_chat_history')
+        .delete()
+        .in('id', old.map((r: any) => r.id))
+    }
+  } catch (err) {
+    console.error('[History] Save error:', err)
+  }
+}
+
+async function downloadTelegramPhoto(
+  fileId: string
+): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    // 1. Get file path from Telegram
+    const fileRes = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`
+    )
+    const fileData = await fileRes.json()
+    if (!fileData.ok || !fileData.result?.file_path) {
+      console.error('[Telegram] getFile failed:', JSON.stringify(fileData))
+      return null
+    }
+
+    // 2. Download the file
+    const filePath = fileData.result.file_path as string
+    const downloadUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`
+    const photoRes = await fetch(downloadUrl)
+    if (!photoRes.ok) {
+      console.error('[Telegram] Photo download HTTP error:', photoRes.status)
+      return null
+    }
+
+    // 3. Convert to base64 (chunked to avoid stack overflow on large photos)
+    const arrayBuffer = await photoRes.arrayBuffer()
+    const bytes = new Uint8Array(arrayBuffer)
+
+    const CHUNK = 8192
+    let binary = ''
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      const chunk = bytes.subarray(i, Math.min(i + CHUNK, bytes.length))
+      binary += String.fromCharCode(...chunk)
+    }
+    const base64 = btoa(binary)
+
+    const mimeType = filePath.endsWith('.png') ? 'image/png' : 'image/jpeg'
+
+    console.log(`[Telegram] Photo downloaded: ${bytes.length} bytes, mime: ${mimeType}`)
+
+    return { base64, mimeType }
+  } catch (err) {
+    console.error('[Telegram] Photo download failed:', err)
+    return null
+  }
+}
+
 // ─── Main Handler ───────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   // 1. Validate webhook secret
   const secret = req.headers.get('x-telegram-bot-api-secret-token')
   if (secret !== WEBHOOK_SECRET) {
-    console.warn('[Security] Invalid webhook secret from:', req.headers.get('x-forwarded-for'))
+    console.warn(
+      '[Security] Invalid webhook secret from:',
+      req.headers.get('x-forwarded-for')
+    )
     return new Response('Unauthorized', { status: 401 })
   }
 
@@ -416,14 +533,20 @@ Deno.serve(async (req) => {
     const update = await req.json()
     const message = update.message
 
-    // Ignore non-text messages (photos, stickers, etc.)
-    if (!message?.text) {
+    // Ignore updates without a message (edits, channel posts, etc.)
+    if (!message) {
       return new Response('OK')
     }
 
     const telegramId = String(message.from.id)
     const chatId = message.chat.id
-    const text = message.text.trim()
+    const text = (message.text || message.caption || '').trim()
+    const hasPhoto = !!message.photo?.length
+
+    // Ignore messages with no text AND no photo (stickers, voice, etc.)
+    if (!text && !hasPhoto) {
+      return new Response('OK')
+    }
 
     // 2. Lookup user by telegram_id
     const { data: profile, error: profileErr } = await supabase
@@ -434,7 +557,10 @@ Deno.serve(async (req) => {
 
     if (profileErr || !profile) {
       console.warn('[Security] Unknown telegram_id:', telegramId)
-      await sendMessage(chatId, '\u26D4 Unauthorized access. Contact your Jantile administrator.')
+      await sendMessage(
+        chatId,
+        '\u26D4 Unauthorized access. Contact your Jantile administrator.'
+      )
       return new Response('OK')
     }
 
@@ -443,30 +569,46 @@ Deno.serve(async (req) => {
       return new Response('OK')
     }
 
-    // 3. Route command
-    const command = text.split(' ')[0].split('@')[0].toLowerCase()
-    let response: string
+    // 3. Route: commands vs AI
+    if (text.startsWith('/')) {
+      const command = text.split(' ')[0].split('@')[0].toLowerCase()
+      let response: string
 
-    switch (command) {
-      case '/start':
-        response = await handleStart(profile)
-        break
-      case '/jobs':
-        response = await handleJobs(profile)
-        break
-      case '/issues':
-        response = await handleIssues(profile)
-        break
-      case '/manpower':
-        response = await handleManpower(profile)
-        break
-      case '/new_issue':
-        response = await handleNewIssue(profile, text)
-        break
-      default:
-        response = 'Unknown command. Use /start to see available options.'
+      switch (command) {
+        case '/start':
+          response = await handleStart(profile)
+          break
+        case '/jobs':
+          response = await handleJobs(profile)
+          break
+        case '/issues':
+          response = await handleIssues(profile)
+          break
+        case '/manpower':
+          response = await handleManpower(profile)
+          break
+        case '/new_issue':
+          response = await handleNewIssue(profile, text)
+          break
+        default:
+          // Unknown commands → send to AI
+          response = await handleAI(profile, text, chatId)
+      }
+
+      await sendMessage(chatId, response)
+      return new Response('OK')
     }
 
+    // 4. Photo → AI Vision
+    if (hasPhoto) {
+      await sendMessage(chatId, '\u{1F50D} Analyzing photo...')
+      const response = await handlePhoto(profile, message, chatId)
+      await sendMessage(chatId, response)
+      return new Response('OK')
+    }
+
+    // 5. Free text → AI
+    const response = await handleAI(profile, text, chatId)
     await sendMessage(chatId, response)
     return new Response('OK')
   } catch (err) {
@@ -474,3 +616,66 @@ Deno.serve(async (req) => {
     return new Response('Internal Error', { status: 500 })
   }
 })
+
+// ─── AI Message Handlers ─────────────────────────────────────────────────────────
+
+async function handleAI(
+  profile: Profile,
+  text: string,
+  chatId: number
+): Promise<string> {
+  try {
+    const ctx = await buildToolContext(profile)
+    const history = await loadHistory(chatId)
+
+    // Save user message
+    await saveMessage(chatId, 'user', text)
+
+    const response = await chatWithGemini(text, ctx, history)
+
+    // Save assistant response
+    await saveMessage(chatId, 'assistant', response)
+
+    return response
+  } catch (err: any) {
+    console.error('[AI] Error:', err)
+    return `\u26A0\uFE0F AI error: ${err.message || String(err)}`
+  }
+}
+
+async function handlePhoto(
+  profile: Profile,
+  message: any,
+  chatId: number
+): Promise<string> {
+  try {
+    // Pick a mid-size photo for fast analysis
+    // Telegram sends [tiny, small, medium, large] — we pick small/medium (~320-640px)
+    const photos = message.photo
+    const photoIndex = Math.min(photos.length - 1, 1) // cap at index 1 (~320px) for speed
+    const selectedPhoto = photos[photoIndex]
+    const fileId = selectedPhoto.file_id
+
+    const imageData = await downloadTelegramPhoto(fileId)
+    if (!imageData) {
+      return '\u26A0\uFE0F Could not download photo. Please try again.'
+    }
+
+    const caption = (message.caption || '').trim()
+    const ctx = await buildToolContext(profile)
+    const history = await loadHistory(chatId)
+
+    // Save user message
+    await saveMessage(chatId, 'user', caption || '[Photo sent]')
+
+    const response = await chatWithGemini(caption, ctx, history, imageData)
+
+    // Save assistant response
+    await saveMessage(chatId, 'assistant', response)
+
+    return response
+  } catch (err) {
+    console.error('[AI] Photo error:', err)
+    return '\u26A0\uFE0F Error analyzing photo. Please try again.'
+  }
+}
