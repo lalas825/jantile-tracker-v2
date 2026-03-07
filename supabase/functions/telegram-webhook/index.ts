@@ -34,6 +34,30 @@ function progressBar(pct: number): string {
   return '\u2593'.repeat(filled) + '\u2591'.repeat(10 - filled)
 }
 
+// ─── Data Helpers ────────────────────────────────────────────────────────────────
+
+async function getJobIds(profile: Profile): Promise<{ jobIds: string[] | null; error?: string }> {
+  // Admins see all jobs, others only their assigned ones
+  if (profile.role === 'admin') {
+    return { jobIds: null } // null = no filter (all jobs)
+  }
+
+  const { data: assignments, error } = await supabase
+    .from('job_assignments')
+    .select('job_id')
+    .eq('user_id', profile.id)
+
+  if (error) {
+    return { jobIds: [], error: error.message }
+  }
+
+  if (!assignments?.length) {
+    return { jobIds: [] }
+  }
+
+  return { jobIds: assignments.map((a: any) => a.job_id) }
+}
+
 // ─── Command Handlers ───────────────────────────────────────────────────────────
 
 async function handleStart(profile: Profile): Promise<string> {
@@ -49,30 +73,30 @@ async function handleStart(profile: Profile): Promise<string> {
 
 async function handleJobs(profile: Profile): Promise<string> {
   try {
-    // 1. Get assigned job IDs
-    const { data: assignments, error: assignErr } = await supabase
-      .from('job_assignments')
-      .select('job_id')
-      .eq('user_id', profile.id)
+    // 1. Get job IDs (admin sees all, others see assigned)
+    const { jobIds, error: assignError } = await getJobIds(profile)
 
-    if (assignErr) {
-      console.error('[/jobs] assignments query:', assignErr)
+    if (assignError) {
+      console.error('[/jobs] assignments query:', assignError)
       return '\u26A0\uFE0F Error al consultar tus obras. Intenta de nuevo.'
     }
 
-    if (!assignments?.length) {
+    if (jobIds !== null && !jobIds.length) {
       return '\u{1F4CB} No tienes obras asignadas en este momento.'
     }
 
-    const jobIds = assignments.map((a: any) => a.job_id)
-
     // 2. Get active jobs
-    const { data: jobs, error: jobsErr } = await supabase
+    let query = supabase
       .from('jobs')
       .select('id, name, status')
-      .in('id', jobIds)
       .ilike('status', 'active')
       .order('name')
+
+    if (jobIds !== null) {
+      query = query.in('id', jobIds)
+    }
+
+    const { data: jobs, error: jobsErr } = await query
 
     if (jobsErr) {
       console.error('[/jobs] jobs query:', jobsErr)
@@ -129,31 +153,31 @@ async function handleJobs(profile: Profile): Promise<string> {
 
 async function handleIssues(profile: Profile): Promise<string> {
   try {
-    // 1. Get assigned job IDs
-    const { data: assignments, error: assignErr } = await supabase
-      .from('job_assignments')
-      .select('job_id')
-      .eq('user_id', profile.id)
+    // 1. Get job IDs (admin sees all, others see assigned)
+    const { jobIds, error: assignError } = await getJobIds(profile)
 
-    if (assignErr) {
-      console.error('[/issues] assignments query:', assignErr)
+    if (assignError) {
+      console.error('[/issues] assignments query:', assignError)
       return '\u26A0\uFE0F Error al consultar. Intenta de nuevo.'
     }
 
-    if (!assignments?.length) {
+    if (jobIds !== null && !jobIds.length) {
       return '\u{1F4CB} No tienes obras asignadas en este momento.'
     }
 
-    const jobIds = assignments.map((a: any) => a.job_id)
-
     // 2. Get open issues for those jobs
-    const { data: issues, error: issuesErr } = await supabase
+    let query = supabase
       .from('job_issues')
       .select('id, job_id, type, priority, description, created_at')
-      .in('job_id', jobIds)
       .eq('status', 'open')
       .order('priority', { ascending: false })
       .limit(15)
+
+    if (jobIds !== null) {
+      query = query.in('job_id', jobIds)
+    }
+
+    const { data: issues, error: issuesErr } = await query
 
     if (issuesErr) {
       console.error('[/issues] issues query:', issuesErr)
@@ -164,11 +188,12 @@ async function handleIssues(profile: Profile): Promise<string> {
       return '\u2705 No hay problemas abiertos. \u00A1Todo en orden!'
     }
 
-    // 3. Get job names
+    // 3. Get job names from the issues found
+    const issueJobIds = [...new Set(issues.map((i: any) => i.job_id))]
     const { data: jobs } = await supabase
       .from('jobs')
       .select('id, name')
-      .in('id', jobIds)
+      .in('id', issueJobIds)
 
     const jobMap: Record<string, string> = {}
     jobs?.forEach((j: any) => { jobMap[j.id] = j.name })
@@ -199,29 +224,29 @@ async function handleIssues(profile: Profile): Promise<string> {
 
 async function handleManpower(profile: Profile): Promise<string> {
   try {
-    // 1. Get assigned job IDs
-    const { data: assignments, error: assignErr } = await supabase
-      .from('job_assignments')
-      .select('job_id')
-      .eq('user_id', profile.id)
+    // 1. Get job IDs (admin sees all, others see assigned)
+    const { jobIds, error: assignError } = await getJobIds(profile)
 
-    if (assignErr) {
-      console.error('[/equipo] assignments query:', assignErr)
+    if (assignError) {
+      console.error('[/equipo] assignments query:', assignError)
       return '\u26A0\uFE0F Error al consultar. Intenta de nuevo.'
     }
 
-    if (!assignments?.length) {
+    if (jobIds !== null && !jobIds.length) {
       return '\u{1F4CB} No tienes obras asignadas en este momento.'
     }
 
-    const jobIds = assignments.map((a: any) => a.job_id)
-
     // 2. Get active checkins (no checkout)
-    const { data: checkins, error: checkErr } = await supabase
+    let query = supabase
       .from('crew_checkins')
       .select('job_id, worker_id')
-      .in('job_id', jobIds)
       .is('check_out', null)
+
+    if (jobIds !== null) {
+      query = query.in('job_id', jobIds)
+    }
+
+    const { data: checkins, error: checkErr } = await query
 
     if (checkErr) {
       console.error('[/equipo] checkins query:', checkErr)
@@ -232,11 +257,12 @@ async function handleManpower(profile: Profile): Promise<string> {
       return '\u{1F477} No hay personal activo en campo en este momento.'
     }
 
-    // 3. Get job names
+    // 3. Get job names from checkins found
+    const checkinJobIds = [...new Set(checkins.map((c: any) => c.job_id))]
     const { data: jobs } = await supabase
       .from('jobs')
       .select('id, name')
-      .in('id', jobIds)
+      .in('id', checkinJobIds)
 
     const jobMap: Record<string, string> = {}
     jobs?.forEach((j: any) => { jobMap[j.id] = j.name })
