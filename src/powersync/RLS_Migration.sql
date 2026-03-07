@@ -39,10 +39,11 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 2. HELPER FUNCTION: user_has_job_access(job_id)
---    Returns TRUE if caller is admin/pm OR has a job_assignments record.
+-- 2a. HELPER FUNCTION: is_admin()
+--     SECURITY DEFINER bypasses RLS to avoid infinite recursion when
+--     checking profiles from within profiles policies.
 -- ─────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.user_has_job_access(p_job_id UUID)
+CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
@@ -50,8 +51,23 @@ STABLE
 AS $$
     SELECT EXISTS (
         SELECT 1 FROM profiles
-        WHERE id::uuid = auth.uid() AND role IN ('admin','pm')
-    )
+        WHERE id::uuid = auth.uid() AND role = 'admin'
+    );
+$$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 2b. HELPER FUNCTION: user_has_job_access(job_id)
+--     Returns TRUE if caller is admin OR has a job_assignments record.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.user_has_job_access(p_job_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+    -- Only 'admin' has global access. All other roles (pm, foreman,
+    -- supervisor, warehouse) must have a job_assignments record.
+    SELECT public.is_admin()
     OR EXISTS (
         SELECT 1 FROM job_assignments
         WHERE user_id = auth.uid() AND job_id = p_job_id
@@ -90,15 +106,10 @@ CREATE POLICY "profiles_select_own"
     ON profiles FOR SELECT
     USING (id::uuid = auth.uid());
 
--- Admin/PM can read all profiles
+-- Admin can read all profiles (uses SECURITY DEFINER function to avoid recursion)
 CREATE POLICY "profiles_select_admin"
     ON profiles FOR SELECT
-    USING (
-        EXISTS (
-            SELECT 1 FROM profiles p
-            WHERE p.id::uuid = auth.uid() AND p.role IN ('admin','pm')
-        )
-    );
+    USING (public.is_admin());
 
 -- Each user edits their own profile only
 CREATE POLICY "profiles_update_own"
@@ -121,34 +132,25 @@ CREATE POLICY "ja_select_own"
     ON job_assignments FOR SELECT
     USING (user_id = auth.uid());
 
--- Admin/PM see all assignments
+-- Admin sees all assignments
 CREATE POLICY "ja_select_admin"
     ON job_assignments FOR SELECT
     USING (
-        EXISTS (
-            SELECT 1 FROM profiles p
-            WHERE p.id::uuid = auth.uid() AND p.role IN ('admin','pm')
-        )
+        public.is_admin()
     );
 
--- Only admin/pm can create assignments
+-- Only admin can create assignments
 CREATE POLICY "ja_insert_admin"
     ON job_assignments FOR INSERT
     WITH CHECK (
-        EXISTS (
-            SELECT 1 FROM profiles p
-            WHERE p.id::uuid = auth.uid() AND p.role IN ('admin','pm')
-        )
+        public.is_admin()
     );
 
--- Only admin/pm can delete assignments
+-- Only admin can delete assignments
 CREATE POLICY "ja_delete_admin"
     ON job_assignments FOR DELETE
     USING (
-        EXISTS (
-            SELECT 1 FROM profiles p
-            WHERE p.id::uuid = auth.uid() AND p.role IN ('admin','pm')
-        )
+        public.is_admin()
     );
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -175,7 +177,7 @@ CREATE POLICY "jobs_insert"
     WITH CHECK (
         EXISTS (
             SELECT 1 FROM profiles
-            WHERE id::uuid = auth.uid() AND role IN ('admin','pm')
+            WHERE id::uuid = auth.uid() AND role = 'admin'
         )
     );
 

@@ -29,7 +29,7 @@ const MenuButton = ({ title, icon: Icon, route }: { title: string, icon: any, ro
 };
 
 export default function MenuScreen() {
-    const { signOut } = useAuth();
+    const { signOut, profile } = useAuth();
     return (
         <SafeAreaView className="flex-1 bg-white" edges={['top']}>
             <View className="px-5 py-4 border-b border-slate-100">
@@ -78,11 +78,13 @@ export default function MenuScreen() {
                         icon={Hammer}
                         route="/(tabs)/polishers"
                     />
-                    <MenuButton
-                        title="Team Access"
-                        icon={Key}
-                        route="/(tabs)/team-access"
-                    />
+                    {profile?.role === 'admin' && (
+                        <MenuButton
+                            title="Admin"
+                            icon={Key}
+                            route="/(tabs)/admin"
+                        />
+                    )}
 
                     <View className="mt-8 px-4">
                         <TouchableOpacity

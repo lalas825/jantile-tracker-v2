@@ -75,7 +75,7 @@ export default function DesktopNavbar() {
                 <NavLink title="Manpower" route="/(tabs)/manpower" />
                 <NavLink title="Reports" route="/(tabs)/reports" />
                 <NavLink title="Polishers" route="/(tabs)/polishers" />
-                <NavLink title="Team Access" route="/(tabs)/team-access" />
+                {profile?.role === 'admin' && <NavLink title="Admin" route="/(tabs)/admin" />}
             </View>
 
             {/* Zone 3: The Tools */}

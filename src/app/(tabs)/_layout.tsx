@@ -114,7 +114,7 @@ export default function TabLayout() {
             <Tabs.Screen name="manpower" options={{ href: null, title: 'Manpower' }} />
             <Tabs.Screen name="reports" options={{ href: null, title: 'Reports' }} />
             <Tabs.Screen name="polishers" options={{ href: null, title: 'Polishers', headerShown: false }} />
-            <Tabs.Screen name="team-access" options={{ href: null, title: 'Team Access' }} />
+            <Tabs.Screen name="admin" options={{ href: null, title: 'Admin' }} />
 
             {/* Old screens to hide/ignore or reuse if needed */}
             <Tabs.Screen name="logistics" options={{ href: null }} />
