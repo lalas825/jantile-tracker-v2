@@ -74,16 +74,21 @@ CREATING JOB STRUCTURES:
 - To ADD units to an EXISTING floor: use bulk_create_structure with floor_id parameter (get it from get_job_details first). Do NOT create a new floor when one already exists.
 - Units support a description field (e.g. "BHS BOH Restroom", "North Wing")
 - Areas support a description field (e.g. "1S.2.141", "Room A-101") — use it for drawing page numbers or room codes
-- Areas auto-get checklists based on name: Master Bathroom (12 tasks), Kitchen (6), Powder Room (10), Foyer/Corridor (8)
-- Available area types: Master Bathroom, Secondary Bathroom, Powder Room, Kitchen, Foyer, Laundry, Vestibule, Corridor, Restroom, Janitor Room, Locker Room
 - When user provides CSV or structured list, parse it into units/areas format with descriptions
 
-CRITICAL — EXACT NAMES:
-- NEVER modify, abbreviate, or simplify names the user provides. Copy them EXACTLY as written.
-- "Men's Restroom" must stay "Men's Restroom", NOT "Restroom". "Women's Locker Room" must stay "Women's Locker Room", NOT "Locker Room".
-- "Expedited Removals Bathroom" must stay exactly that. Do NOT shorten to "Bathroom".
-- If an area has a qualifier (Men's, Women's, All Gender, Staff, Accessible), you MUST include it.
-- If duplicate area names exist in the same unit (e.g. two "Expedited Removals Bathroom" entries with different descriptions), keep ALL of them — do NOT deduplicate.
+AREA NAMING CONVENTION — MANDATORY:
+- Area NAME must be a preset category so checklists auto-generate. Use ONLY these preset names:
+  Restroom (12 tasks), Janitor Room (10 tasks), Locker Room (10 tasks), Master Bathroom (12 tasks), Secondary Bathroom (12 tasks), Powder Room (10 tasks), Kitchen (6 tasks), Foyer (8 tasks), Vestibule (8 tasks), Corridor (8 tasks), Laundry (10 tasks), Nursing Room (12 tasks), Pet Relief Area (12 tasks)
+- Area DESCRIPTION must contain the FULL specific name from the user's list + room code.
+  Example: User says "Men's Restroom (1S.1.551)" → area name: "Restroom", description: "Men's Restroom (1S.1.551)"
+  Example: User says "Women's Locker Room (1S.2.111)" → area name: "Locker Room", description: "Women's Locker Room (1S.2.111)"
+  Example: User says "Janitor Room (1E.2.310)" → area name: "Janitor Room", description: "Janitor Room (1E.2.310)"
+  Example: User says "Expedited Removals Bathroom (1N.2.508)" → area name: "Restroom", description: "Expedited Removals Bathroom (1N.2.508)"
+  Example: User says "Staff Restroom Male (1N.2.160)" → area name: "Restroom", description: "Staff Restroom Male (1N.2.160)"
+  Example: User says "TTRT Waiting Restroom (1N.2.452)" → area name: "Restroom", description: "TTRT Waiting Restroom (1N.2.452)"
+  Example: User says "Accessible Ch (1N.4.158)" → area name: "Restroom", description: "Accessible Ch (1N.4.158)"
+- Mapping rules: anything with "Restroom" or "Bathroom" → name "Restroom". Anything with "Locker" → name "Locker Room". Anything with "Janitor" → name "Janitor Room". Anything with "Nursing" → name "Nursing Room".
+- If duplicate entries exist (same name, different description/room code), keep ALL of them — do NOT deduplicate.
 
 BATCH SIZE — MANDATORY SPLITTING:
 - Maximum 4 units per bulk_create_structure call. For lists with more units, you MUST split into multiple sequential calls.
@@ -276,8 +281,8 @@ export async function chatWithGemini(
   const tools = [{ functionDeclarations: toolDeclarations }]
   const toolConfig = { functionCallingConfig: { mode: 'AUTO' } }
 
-  // Function calling loop — max 5 rounds
-  for (let round = 0; round < 5; round++) {
+  // Function calling loop — max 12 rounds (need enough for batch operations)
+  for (let round = 0; round < 12; round++) {
     const body: any = {
       contents,
       tools,

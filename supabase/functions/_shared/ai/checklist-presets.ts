@@ -26,6 +26,8 @@ export const CHECKLIST_PRESETS: Record<string, string[]> = {
   'secondary bathroom': BATHROOM_TASKS,
   'restroom': BATHROOM_TASKS,
   'bathroom': BATHROOM_TASKS,
+  'nursing room': BATHROOM_TASKS,
+  'pet relief area': BATHROOM_TASKS,
   'powder room': POWDER_TASKS,
   'locker room': POWDER_TASKS,
   'janitor room': POWDER_TASKS,
@@ -43,11 +45,14 @@ export function getPresetForArea(name: string): string[] {
   if (CHECKLIST_PRESETS[lower]) return CHECKLIST_PRESETS[lower]
 
   // Partial match
-  if (lower.includes('bathroom') || lower.includes('bath'))
-    return CHECKLIST_PRESETS['master bathroom']
+  if (lower.includes('restroom') || lower.includes('bathroom') || lower.includes('bath'))
+    return CHECKLIST_PRESETS['restroom']
+  if (lower.includes('locker')) return CHECKLIST_PRESETS['locker room']
+  if (lower.includes('janitor')) return CHECKLIST_PRESETS['janitor room']
   if (lower.includes('kitchen')) return CHECKLIST_PRESETS['kitchen']
   if (lower.includes('powder')) return CHECKLIST_PRESETS['powder room']
   if (lower.includes('laundry')) return CHECKLIST_PRESETS['laundry']
+  if (lower.includes('nursing')) return CHECKLIST_PRESETS['nursing room']
 
   // Default fallback
   return CHECKLIST_PRESETS['master bathroom']
