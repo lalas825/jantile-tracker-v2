@@ -664,24 +664,44 @@ async function bulkCreateStructure(args: any, ctx: ToolContext) {
     .single()
   if (!job) return { error: 'Job not found.' }
 
+  // If floor_id is provided, validate it exists
+  let existingFloorId: string | null = null
+  if (args.floor_id) {
+    const { data: existingFloor } = await ctx.supabase
+      .from('floors')
+      .select('id, name')
+      .eq('id', args.floor_id)
+      .single()
+    if (!existingFloor) return { error: 'Floor not found. Check the floor_id.' }
+    existingFloorId = existingFloor.id
+  }
+
   let floorsCreated = 0
   let unitsCreated = 0
   let areasCreated = 0
   let checklistItemsCreated = 0
 
   for (const floor of args.floors) {
-    const floorId = crypto.randomUUID()
-    const { error: floorErr } = await ctx.supabase.from('floors').insert({
-      id: floorId,
-      job_id: args.job_id,
-      name: floor.name,
-      created_at: new Date().toISOString(),
-    })
-    if (floorErr) {
-      console.error(`[Bulk] Floor insert error:`, floorErr)
-      continue
+    let floorId: string
+
+    if (existingFloorId) {
+      // Use existing floor — don't create a new one
+      floorId = existingFloorId
+    } else {
+      // Create new floor
+      floorId = crypto.randomUUID()
+      const { error: floorErr } = await ctx.supabase.from('floors').insert({
+        id: floorId,
+        job_id: args.job_id,
+        name: floor.name,
+        created_at: new Date().toISOString(),
+      })
+      if (floorErr) {
+        console.error(`[Bulk] Floor insert error:`, floorErr)
+        continue
+      }
+      floorsCreated++
     }
-    floorsCreated++
 
     if (!floor.units?.length) continue
 
@@ -691,6 +711,7 @@ async function bulkCreateStructure(args: any, ctx: ToolContext) {
         id: unitId,
         floor_id: floorId,
         name: unit.name,
+        description: unit.description || '',
         type: 'production',
         created_at: new Date().toISOString(),
       })
@@ -702,12 +723,17 @@ async function bulkCreateStructure(args: any, ctx: ToolContext) {
 
       if (!unit.areas?.length) continue
 
-      for (const areaName of unit.areas) {
+      for (const areaEntry of unit.areas) {
+        // Support both string (legacy) and object { name, description } formats
+        const areaName = typeof areaEntry === 'string' ? areaEntry : areaEntry.name
+        const areaDescription = typeof areaEntry === 'string' ? '' : (areaEntry.description || '')
+
         const areaId = crypto.randomUUID()
         const { error: areaErr } = await ctx.supabase.from('areas').insert({
           id: areaId,
           unit_id: unitId,
           name: areaName,
+          description: areaDescription,
           type: 'production',
           status: 'NOT_STARTED',
           progress: 0,

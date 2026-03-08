@@ -215,17 +215,21 @@ export const toolDeclarations = [
   {
     name: 'bulk_create_structure',
     description:
-      'Bulk create floors, units, and areas for a job. Each area auto-gets a checklist based on its name. Max 10 floors per call — call multiple times for larger jobs.',
+      'Bulk create units and areas for a job. Can create new floors OR add to an existing floor via floor_id. Each area auto-gets a checklist based on its name. Max 10 floors per call.',
     parameters: {
       type: 'object',
       properties: {
         job_id: { type: 'string', description: 'The job UUID' },
+        floor_id: {
+          type: 'string',
+          description: 'Optional: existing floor UUID to add units to. If provided, the "floors" array should have exactly 1 entry (its name is ignored, the existing floor is used).',
+        },
         floors: {
           type: 'array',
           items: {
             type: 'object',
             properties: {
-              name: { type: 'string', description: 'Floor name (e.g. "Floor 1")' },
+              name: { type: 'string', description: 'Floor name (e.g. "Floor 1"). Ignored if floor_id is provided.' },
               units: {
                 type: 'array',
                 items: {
@@ -233,22 +237,38 @@ export const toolDeclarations = [
                   properties: {
                     name: {
                       type: 'string',
-                      description: 'Unit name (e.g. "Unit 1A")',
+                      description: 'Unit name (e.g. "Unit 1A", "L1-F2")',
+                    },
+                    description: {
+                      type: 'string',
+                      description: 'Unit description (e.g. "BHS BOH Restroom", "North Wing")',
                     },
                     areas: {
                       type: 'array',
-                      items: { type: 'string' },
-                      description:
-                        'Area names — each gets auto-checklist. Valid: Master Bathroom, Secondary Bathroom, Powder Room, Kitchen, Foyer, Laundry, Vestibule, Corridor, Restroom, Janitor Room, Locker Room',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          name: {
+                            type: 'string',
+                            description: 'Area name — gets auto-checklist. Valid: Master Bathroom, Secondary Bathroom, Powder Room, Kitchen, Foyer, Laundry, Vestibule, Corridor, Restroom, Janitor Room, Locker Room',
+                          },
+                          description: {
+                            type: 'string',
+                            description: 'Area description/drawing page (e.g. "1S.2.141", "Room A-101")',
+                          },
+                        },
+                        required: ['name'],
+                      },
+                      description: 'Areas to create in this unit',
                     },
                   },
                   required: ['name', 'areas'],
                 },
               },
             },
-            required: ['name', 'units'],
+            required: ['units'],
           },
-          description: 'Floors to create (max 10 per call)',
+          description: 'Floors to create (max 10 per call). If floor_id is provided, use 1 entry.',
         },
       },
       required: ['job_id', 'floors'],

@@ -258,11 +258,11 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
         if (!job) return;
         try {
             if (modalMode === 'add-floor') {
-                await SupabaseService.addFloor(job.id, data.name);
+                await SupabaseService.addFloor(job.id, data.name, data.description || '');
             } else if (modalMode === 'edit-floor' && modalTarget?.floorId) {
                 await SupabaseService.updateFloorName(modalTarget.floorId, data.name, data.description);
             } else if (modalMode === 'add-unit' && modalTarget?.floorId) {
-                await SupabaseService.addUnit(modalTarget.floorId, data.name || 'New Unit');
+                await SupabaseService.addUnit(modalTarget.floorId, data.name || 'New Unit', 'production', data.description || '');
             } else if (modalMode === 'edit-unit' && modalTarget?.unitId) {
                 await SupabaseService.updateUnitName(modalTarget.unitId, data.name, data.description);
             } else if (modalMode === 'add-area' && modalTarget?.unitId) {

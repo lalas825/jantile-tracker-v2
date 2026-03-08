@@ -3,7 +3,7 @@ import { toolDeclarations } from './tools.ts'
 import { handleToolCall } from './tool-handlers.ts'
 
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
-const GEMINI_MODEL = 'gemini-2.5-flash'
+const GEMINI_MODEL = 'gemini-2.5-pro'
 const GEMINI_VISION_MODEL = 'gemini-2.5-flash-lite'
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`
 const GEMINI_VISION_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_VISION_MODEL}:generateContent?key=${GEMINI_API_KEY}`
@@ -71,12 +71,15 @@ TOOL USAGE:
 CREATING JOB STRUCTURES:
 - Use create_job to create a new job, then bulk_create_structure to add floors/units/areas
 - IMPORTANT: When create_job returns a job_id, use that SAME job_id directly for bulk_create_structure. Do NOT call get_jobs to look it up again.
+- To ADD units to an EXISTING floor: use bulk_create_structure with floor_id parameter (get it from get_job_details first). Do NOT create a new floor when one already exists.
+- Units support a description field (e.g. "BHS BOH Restroom", "North Wing")
+- Areas support a description field (e.g. "1S.2.141", "Room A-101") — use it for drawing page numbers or room codes
 - Areas auto-get checklists based on name: Master Bathroom (12 tasks), Kitchen (6), Powder Room (10), Foyer/Corridor (8)
 - Available area types: Master Bathroom, Secondary Bathroom, Powder Room, Kitchen, Foyer, Laundry, Vestibule, Corridor, Restroom, Janitor Room, Locker Room
-- When user provides CSV or structured list, parse it into floors/units/areas format
-- Max 10 floors per bulk_create_structure call — call multiple times for larger jobs
+- When user provides CSV or structured list, parse it into units/areas format with descriptions
+- Max 10 floors per bulk_create_structure call — for large lists with many units, split into multiple calls (e.g. 5 units per call)
 - ALWAYS show a summary of what will be created and ask for confirmation BEFORE creating
-- Example: "I'll create 5 floors x 2 units x 3 areas = 30 areas with ~260 checklist items. Proceed?"
+- Example: "I'll create 5 units x 3 areas = 15 areas with ~150 checklist items under Level 1. Proceed?"
 
 DELETING JOBS:
 - Use delete_job to permanently delete a job and ALL its data (floors, units, areas, checklists, issues, materials)
@@ -270,7 +273,7 @@ export async function chatWithGemini(
       systemInstruction: {
         parts: [{ text: getSystemInstruction(ctx.profile, responseFormat) }],
       },
-      generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+      generationConfig: { temperature: 0.7, maxOutputTokens: 8192 },
     }
 
     const res = await fetch(GEMINI_URL, {

@@ -112,13 +112,18 @@ Deno.serve(async (req) => {
     // Parse request body
     let message: string
     let sessionId: string
+    let imageData: { base64: string; mimeType: string } | undefined
     try {
       const body = await req.json()
-      message = body.message
+      message = body.message || ''
       sessionId = body.session_id
-      if (!message || !sessionId) throw new Error('Missing fields')
+      if (!sessionId) throw new Error('Missing session_id')
+      if (!message && !body.image) throw new Error('Missing message or image')
+      if (body.image?.base64 && body.image?.mimeType) {
+        imageData = { base64: body.image.base64, mimeType: body.image.mimeType }
+      }
     } catch {
-      return jsonResponse({ error: 'Invalid request. Required: { message, session_id }' }, 400)
+      return jsonResponse({ error: 'Invalid request. Required: { message, session_id } or { image: { base64, mimeType }, session_id }' }, 400)
     }
 
     // Build context and load history
@@ -126,10 +131,11 @@ Deno.serve(async (req) => {
     const history = await loadHistory(sessionId)
 
     // Call Gemini with markdown format for web
-    const response = await chatWithGemini(message, ctx, history, undefined, 'markdown')
+    const response = await chatWithGemini(message, ctx, history, imageData, 'markdown')
 
     // Save conversation
-    await saveMessage(sessionId, authResult.profile.id, 'user', message)
+    const userContent = imageData ? (message || '[File sent]') : message
+    await saveMessage(sessionId, authResult.profile.id, 'user', userContent)
     await saveMessage(sessionId, authResult.profile.id, 'assistant', response)
 
     return jsonResponse({ response }, 200)

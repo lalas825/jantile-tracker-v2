@@ -395,11 +395,12 @@ export const JobService = {
 
     // --- STRUCTURE MUTATIONS ---
 
-    async addFloor(jobId: string, name: string) {
+    async addFloor(jobId: string, name: string, description: string = '') {
         if (useSupabase) {
             const { error } = await supabase.from('floors').insert({
                 job_id: jobId,
-                name: name
+                name,
+                description,
             });
             if (error) throw error;
             return;
@@ -407,8 +408,8 @@ export const JobService = {
 
         const id = Crypto.randomUUID();
         await db.execute(
-            `INSERT INTO floors (id, job_id, name, created_at) VALUES (?, ?, ?, datetime('now'))`,
-            [id, jobId, name]
+            `INSERT INTO floors (id, job_id, name, description, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
+            [id, jobId, name, description]
         );
     },
 
@@ -433,15 +434,16 @@ export const JobService = {
         );
     },
 
-    async addUnit(floorId: string, name: string, type: 'production' | 'logistics' = 'production'): Promise<string> {
+    async addUnit(floorId: string, name: string, type: 'production' | 'logistics' = 'production', description: string = ''): Promise<string> {
         const id = Crypto.randomUUID();
         if (useSupabase) {
             try {
                 const { error } = await supabase.from('units').insert({
                     id,
                     floor_id: floorId,
-                    name: name,
-                    type: type
+                    name,
+                    type,
+                    description,
                 });
                 if (error) throw error;
             } catch (err: any) {
@@ -451,7 +453,8 @@ export const JobService = {
                     const { error: retryError } = await supabase.from('units').insert({
                         id,
                         floor_id: floorId,
-                        name: name
+                        name,
+                        description,
                     });
                     if (retryError) throw retryError;
                 } else {
@@ -462,8 +465,8 @@ export const JobService = {
         }
 
         await db.execute(
-            `INSERT INTO units (id, floor_id, name, type, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
-            [id, floorId, name, type]
+            `INSERT INTO units (id, floor_id, name, type, description, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+            [id, floorId, name, type, description]
         );
         return id;
     },
