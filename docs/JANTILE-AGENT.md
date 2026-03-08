@@ -219,15 +219,48 @@ Cada area creada via `bulk_create_structure` recibe automaticamente un checklist
 
 ---
 
+## Expertise de Construccion
+
+Ademas de gestionar la app, el agente es un consultor experto en:
+
+### Materiales y Proveedores
+- **Proveedores principales**: Laticrete, Schluter, Mapei, Nemo Tile, Dal-Tile
+- Piedra natural: marmol (Calacatta, Carrara, Statuario), granito, travertino, quartzite, onyx
+- Porcelanato: gran formato, paneles, mosaicos, subway tile
+- Sistemas de instalacion: thinset, grout (sanded, unsanded, epoxy), sealers, membranas
+- Productos especificos: Schluter DITRA/KERDI, Laticrete HYDRO BAN/254 Platinum, Mapei AquaDefense
+
+### Diseno y Tecnica
+- Patrones de layout: herringbone, chevron, basketweave, running bond, Versailles
+- Slab layout: bookmatching, waterfall, mitered corners, vein matching
+- Edge profiles, transiciones, nivelacion, pendiente a desague
+
+### Regulaciones y Normas
+- **TCNA** — metodos de instalacion
+- **ANSI A108/A118** — estandares de tile/mortar/grout
+- **OSHA** — proteccion contra caidas, exposicion a silica, PPE, andamios
+- **ADA** — rutas accesibles, rampas (1:12), DCOF >= 0.42, barras de apoyo
+- **NYC Building Code** — permisos DOB, violaciones HPD, LL11, LL97, SCA
+- **NYC DOT** — regulaciones de aceras
+- **LPC** — requisitos para edificios historicos
+
+### Troubleshooting
+- Eflorescencia, lippage, cracking, delaminacion, manchas, humedad
+- Preparacion de sustrato, pruebas de humedad (CaCl2, RH probes)
+- Remediacion y compatibilidad de materiales
+
+---
+
 ## System Instructions
 
 El agente recibe instrucciones contextuales dinamicas:
 
 1. **Base Instruction** — Comportamiento general, estilo de respuesta, reglas de tool usage
-2. **Format Instruction** — HTML (Telegram) o Markdown (Web)
-3. **Role Instruction** — Permisos y restricciones segun rol del usuario
-4. **Date Context** — Fecha actual (`{TODAY}`) y lunes de la semana (`{MONDAY}`) inyectados para auto-calculo
-5. **User Context** — Nombre y rol del usuario actual
+2. **Construction Expertise** — Conocimiento de materiales, proveedores, regulaciones, diseno
+3. **Format Instruction** — HTML (Telegram) o Markdown (Web)
+4. **Role Instruction** — Permisos y restricciones segun rol del usuario
+5. **Date Context** — Fecha actual (`{TODAY}`) y lunes de la semana (`{MONDAY}`) inyectados para auto-calculo
+6. **User Context** — Nombre y rol del usuario actual
 
 ### Vision Instruction
 Para analisis de imagenes:
