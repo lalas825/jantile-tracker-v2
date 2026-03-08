@@ -940,10 +940,11 @@ async function getWorkers(args: any, ctx: ToolContext) {
 async function getProductionLogs(args: any, ctx: ToolContext) {
   let query = ctx.supabase
     .from('production_logs')
-    .select('id, date, worker_id, job_id, job_name, pl_number, unit, reg_hours, ot_hours, ticket_number, is_jantile, is_ticket, notes, workers(name)')
+    .select('id, date, worker_id, job_id, job_name, pl_number, unit, reg_hours, ot_hours, ticket_number, is_jantile, is_ticket, notes')
     .gte('date', args.start_date)
     .lte('date', args.end_date)
     .order('date', { ascending: false })
+    .limit(500)
 
   if (args.job_id) {
     query = query.eq('job_id', args.job_id)
@@ -961,10 +962,23 @@ async function getProductionLogs(args: any, ctx: ToolContext) {
   if (error) return { error: error.message }
   if (!data?.length) return { logs: [], message: 'No production logs found for this period' }
 
+  // Resolve worker names via separate query
+  const workerIds = [...new Set(data.map((l: any) => l.worker_id).filter(Boolean))]
+  let workerMap: Record<string, string> = {}
+  if (workerIds.length > 0) {
+    const { data: workers } = await ctx.supabase
+      .from('workers')
+      .select('id, name')
+      .in('id', workerIds)
+    if (workers) {
+      workerMap = Object.fromEntries(workers.map((w: any) => [w.id, w.name]))
+    }
+  }
+
   // Summarize
   let totalRegHours = 0
   let totalOtHours = 0
-  const byWorker: Record<string, { name: string; reg: number; ot: number; days: number }> = {}
+  const byWorker: Record<string, { name: string; reg: number; ot: number; dates: Set<string> }> = {}
 
   for (const log of data) {
     const reg = parseFloat(log.reg_hours) || 0
@@ -972,13 +986,13 @@ async function getProductionLogs(args: any, ctx: ToolContext) {
     totalRegHours += reg
     totalOtHours += ot
 
-    const workerName = (log as any).workers?.name || 'Unknown'
+    const workerName = workerMap[log.worker_id] || 'Unknown'
     if (!byWorker[workerName]) {
-      byWorker[workerName] = { name: workerName, reg: 0, ot: 0, days: 0 }
+      byWorker[workerName] = { name: workerName, reg: 0, ot: 0, dates: new Set() }
     }
     byWorker[workerName].reg += reg
     byWorker[workerName].ot += ot
-    byWorker[workerName].days += 1
+    if (log.date) byWorker[workerName].dates.add(log.date)
   }
 
   return {
@@ -992,7 +1006,7 @@ async function getProductionLogs(args: any, ctx: ToolContext) {
       regular_hours: Math.round(w.reg * 100) / 100,
       overtime_hours: Math.round(w.ot * 100) / 100,
       total_hours: Math.round((w.reg + w.ot) * 100) / 100,
-      days_worked: w.days,
+      days_worked: w.dates.size,
     })).sort((a, b) => b.total_hours - a.total_hours),
   }
 }
@@ -1002,7 +1016,7 @@ async function getProductionLogs(args: any, ctx: ToolContext) {
 async function getCrewCheckins(args: any, ctx: ToolContext) {
   let query = ctx.supabase
     .from('crew_checkins')
-    .select('id, worker_id, job_id, check_in, check_out, workers(name), jobs(name)')
+    .select('id, worker_id, job_id, check_in, check_out')
     .gte('check_in', `${args.date}T00:00:00`)
     .lt('check_in', `${args.date}T23:59:59`)
     .order('check_in', { ascending: false })
@@ -1018,6 +1032,33 @@ async function getCrewCheckins(args: any, ctx: ToolContext) {
   if (error) return { error: error.message }
   if (!data?.length) return { checkins: [], message: 'No check-ins found for this date' }
 
+  // Resolve worker and job names via separate queries
+  const workerIds = [...new Set(data.map((c: any) => c.worker_id).filter(Boolean))]
+  const jobIds = [...new Set(data.map((c: any) => c.job_id).filter(Boolean))]
+
+  let workerMap: Record<string, string> = {}
+  let jobMap: Record<string, string> = {}
+
+  if (workerIds.length > 0) {
+    const { data: workers } = await ctx.supabase
+      .from('workers')
+      .select('id, name')
+      .in('id', workerIds)
+    if (workers) {
+      workerMap = Object.fromEntries(workers.map((w: any) => [w.id, w.name]))
+    }
+  }
+
+  if (jobIds.length > 0) {
+    const { data: jobs } = await ctx.supabase
+      .from('jobs')
+      .select('id, name')
+      .in('id', jobIds)
+    if (jobs) {
+      jobMap = Object.fromEntries(jobs.map((j: any) => [j.id, j.name]))
+    }
+  }
+
   return {
     date: args.date,
     total_checkins: data.length,
@@ -1029,8 +1070,8 @@ async function getCrewCheckins(args: any, ctx: ToolContext) {
         : null
 
       return {
-        worker: c.workers?.name || 'Unknown',
-        job: c.jobs?.name || 'Unknown',
+        worker: workerMap[c.worker_id] || 'Unknown',
+        job: jobMap[c.job_id] || 'Unknown',
         check_in: checkIn.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
         check_out: checkOut
           ? checkOut.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })

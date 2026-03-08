@@ -13,7 +13,9 @@ const GEMINI_VISION_URL = `https://generativelanguage.googleapis.com/v1beta/mode
 export type ResponseFormat = 'html' | 'markdown'
 
 const FORMAT_INSTRUCTIONS: Record<ResponseFormat, string> = {
-  html: '- Format with HTML: <b>bold</b>, <i>italic</i>, <code>code</code>',
+  html: `- Format with Telegram-compatible HTML ONLY: <b>bold</b>, <i>italic</i>, <code>code</code>, <pre>block</pre>
+- Do NOT use <ul>, <li>, <table>, <br>, <p>, <h1>, <div> — Telegram rejects these
+- Use bullet characters (•, ▸) and newlines for lists instead of HTML list tags`,
   markdown: '- Format with Markdown: **bold**, *italic*, `code`',
 }
 
@@ -63,7 +65,8 @@ TOOL USAGE:
 - When user asks "how many units" or wants detail, use get_job_details
 - When user asks about materials, deliveries, or inventory, use warehouse tools
 - When user asks about workers, crew, polishers, or hours worked, use crew tools
-- "This week" means Monday to today. Calculate the dates yourself.
+- DATE CALCULATION: NEVER ask the user for dates. Calculate them yourself.
+  Today is {TODAY}. "This week" = Monday {MONDAY} to today {TODAY}. "Last week" = previous Monday to Friday. "Yesterday" = subtract 1 day.
 
 CREATING JOB STRUCTURES:
 - Use create_job to create a new job, then bulk_create_structure to add floors/units/areas
@@ -164,7 +167,17 @@ You handle shop-related operations.
 
 function getSystemInstruction(profile: Profile, format: ResponseFormat): string {
   const roleBlock = ROLE_INSTRUCTIONS[profile.role] || ROLE_INSTRUCTIONS['worker']
-  const instruction = BASE_INSTRUCTION.replace('{FORMAT_INSTRUCTION}', FORMAT_INSTRUCTIONS[format])
+  const today = new Date().toISOString().split('T')[0]
+  const monday = (() => {
+    const d = new Date()
+    const day = d.getDay()
+    d.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
+    return d.toISOString().split('T')[0]
+  })()
+  const instruction = BASE_INSTRUCTION
+    .replace('{FORMAT_INSTRUCTION}', FORMAT_INSTRUCTIONS[format])
+    .replaceAll('{TODAY}', today)
+    .replaceAll('{MONDAY}', monday)
   return instruction + '\n\n' + roleBlock +
     `\nCurrent user: ${profile.full_name || 'User'} (role: ${profile.role})`
 }
@@ -210,12 +223,14 @@ export async function chatWithGemini(
   contents.push({ role: 'user', parts: [{ text: userMessage }] })
 
   const tools = [{ functionDeclarations: toolDeclarations }]
+  const toolConfig = { functionCallingConfig: { mode: 'AUTO' } }
 
   // Function calling loop — max 5 rounds
   for (let round = 0; round < 5; round++) {
     const body: any = {
       contents,
       tools,
+      toolConfig,
       systemInstruction: {
         parts: [{ text: getSystemInstruction(ctx.profile, responseFormat) }],
       },
@@ -238,8 +253,20 @@ export async function chatWithGemini(
     const candidate = data.candidates?.[0]
 
     if (!candidate?.content?.parts) {
-      console.error('[Gemini] No parts:', JSON.stringify(data))
-      return '\u26A0\uFE0F AI could not generate a response. Try rephrasing.'
+      const reason = candidate?.finishReason || 'unknown'
+      const blockReason = data.promptFeedback?.blockReason || ''
+      console.error('[Gemini] No parts:', reason, blockReason, JSON.stringify(data).substring(0, 500))
+
+      // On MALFORMED_FUNCTION_CALL: immediately return error (no retry to avoid timeout)
+      if (reason === 'MALFORMED_FUNCTION_CALL') {
+        console.log('[Gemini] MALFORMED_FUNCTION_CALL — returning error')
+        return '\u26A0\uFE0F I had trouble processing that request. Please try again or rephrase your question.'
+      }
+
+      if (reason === 'SAFETY' || blockReason) {
+        return '\u26A0\uFE0F Response was blocked by safety filters. Try rephrasing your question.'
+      }
+      return `\u26A0\uFE0F AI could not generate a response (${reason}). Try rephrasing.`
     }
 
     const parts: GeminiPart[] = candidate.content.parts

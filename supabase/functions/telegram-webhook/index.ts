@@ -14,11 +14,24 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 // ─── Telegram Helpers ───────────────────────────────────────────────────────────
 async function sendMessage(chatId: number, text: string) {
   try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    // Try with HTML first
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
     })
+
+    if (!res.ok) {
+      const err = await res.text()
+      console.error('[Telegram] sendMessage HTML failed:', res.status, err)
+
+      // Retry without parse_mode (plain text fallback)
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text }),
+      })
+    }
   } catch (err) {
     console.error('[Telegram] sendMessage failed:', err)
   }
