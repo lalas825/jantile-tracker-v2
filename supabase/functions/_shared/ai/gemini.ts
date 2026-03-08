@@ -76,18 +76,17 @@ CREATING JOB STRUCTURES:
 - Areas support a description field (e.g. "1S.2.141", "Room A-101") — use it for drawing page numbers or room codes
 - When user provides CSV or structured list, parse it into units/areas format with descriptions
 
-AREA NAMING CONVENTION — MANDATORY:
-- Area NAME must be a preset category so checklists auto-generate. Use ONLY these preset names:
-  Restroom (12 tasks), Janitor Room (10 tasks), Locker Room (10 tasks), Master Bathroom (12 tasks), Secondary Bathroom (12 tasks), Powder Room (10 tasks), Kitchen (6 tasks), Foyer (8 tasks), Vestibule (8 tasks), Corridor (8 tasks), Laundry (10 tasks), Nursing Room (12 tasks), Pet Relief Area (12 tasks)
-- Area DESCRIPTION must contain the FULL specific name from the user's list + room code.
-  Example: User says "Men's Restroom (1S.1.551)" → area name: "Restroom", description: "Men's Restroom (1S.1.551)"
-  Example: User says "Women's Locker Room (1S.2.111)" → area name: "Locker Room", description: "Women's Locker Room (1S.2.111)"
-  Example: User says "Janitor Room (1E.2.310)" → area name: "Janitor Room", description: "Janitor Room (1E.2.310)"
-  Example: User says "Expedited Removals Bathroom (1N.2.508)" → area name: "Restroom", description: "Expedited Removals Bathroom (1N.2.508)"
-  Example: User says "Staff Restroom Male (1N.2.160)" → area name: "Restroom", description: "Staff Restroom Male (1N.2.160)"
-  Example: User says "TTRT Waiting Restroom (1N.2.452)" → area name: "Restroom", description: "TTRT Waiting Restroom (1N.2.452)"
-  Example: User says "Accessible Ch (1N.4.158)" → area name: "Restroom", description: "Accessible Ch (1N.4.158)"
-- Mapping rules: anything with "Restroom" or "Bathroom" → name "Restroom". Anything with "Locker" → name "Locker Room". Anything with "Janitor" → name "Janitor Room". Anything with "Nursing" → name "Nursing Room".
+AREA NAMING — CRITICAL:
+- Area NAME = the EXACT name from the user's list. Copy it exactly: "Men's Restroom", "Expedited Removals Bathroom", "Staff Restroom Male", etc.
+- Area DESCRIPTION = ONLY the room code/drawing page number. NOT the name again.
+  Example: User says "Men's Restroom (1S.1.551)" → name: "Men's Restroom", description: "1S.1.551"
+  Example: User says "Women's Locker Room (1S.2.111)" → name: "Women's Locker Room", description: "1S.2.111"
+  Example: User says "Expedited Removals Bathroom (1N.2.508)" → name: "Expedited Removals Bathroom", description: "1N.2.508"
+  Example: User says "Staff Restroom Male (1N.2.160)" → name: "Staff Restroom Male", description: "1N.2.160"
+  Example: User says "Janitor Room (1E.2.310)" → name: "Janitor Room", description: "1E.2.310"
+- NEVER put the area name inside the description. Description is ONLY the code in parentheses.
+- NEVER replace the specific name with a generic preset name. "Men's Restroom" must NOT become "Restroom".
+- Checklists auto-generate via partial matching (e.g. "Men's Restroom" contains "restroom" → gets restroom checklist).
 - If duplicate entries exist (same name, different description/room code), keep ALL of them — do NOT deduplicate.
 
 BATCH SIZE — MANDATORY SPLITTING:
