@@ -38,6 +38,7 @@ async function getLogoDataUri(): Promise<string> {
 // Types
 // ---------------------------------------------------------------------------
 interface ReportLog {
+    date: string;
     jobName: string;
     plNumber: string;
     unit: string;
@@ -112,8 +113,10 @@ function buildHTML(
         let workerReg = 0;
         let workerOt = 0;
 
+        const sortedLogs = [...worker.logs].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
         let rowsHTML = '';
-        for (const log of worker.logs) {
+        for (const log of sortedLogs) {
             const reg = safeNum(log.regHours);
             const ot = safeNum(log.otHours);
             const rowTotal = reg + ot;
@@ -122,8 +125,11 @@ function buildHTML(
 
             const typeLabel = log.isTicket ? 'TKT' : log.isJantile ? 'JAN' : '—';
 
+            const displayDate = log.date ? new Date(log.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
+
             rowsHTML += `
             <tr>
+                <td style="padding:7px 8px;font-size:12px;border-bottom:1px solid #f1f5f9;white-space:nowrap;">${displayDate}</td>
                 <td style="padding:7px 8px;font-size:12px;border-bottom:1px solid #f1f5f9;">${log.jobName || '—'}</td>
                 <td style="padding:7px 8px;font-size:12px;border-bottom:1px solid #f1f5f9;text-align:center;">${log.plNumber || '—'}</td>
                 <td style="padding:7px 8px;font-size:12px;border-bottom:1px solid #f1f5f9;text-align:center;">${log.unit || '—'}</td>
@@ -153,6 +159,7 @@ function buildHTML(
             <table style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;overflow:hidden;">
                 <thead>
                     <tr style="background:#f1f5f9;">
+                        <th style="text-align:left;padding:8px;font-size:10px;font-weight:900;letter-spacing:1px;color:#64748b;border-bottom:2px solid #e2e8f0;">DATE</th>
                         <th style="text-align:left;padding:8px;font-size:10px;font-weight:900;letter-spacing:1px;color:#64748b;border-bottom:2px solid #e2e8f0;">JOB SITE</th>
                         <th style="text-align:center;padding:8px;font-size:10px;font-weight:900;letter-spacing:1px;color:#64748b;border-bottom:2px solid #e2e8f0;">PL #</th>
                         <th style="text-align:center;padding:8px;font-size:10px;font-weight:900;letter-spacing:1px;color:#64748b;border-bottom:2px solid #e2e8f0;">UNIT</th>
@@ -168,7 +175,7 @@ function buildHTML(
                     ${rowsHTML}
                     <!-- Subtotal Row -->
                     <tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
-                        <td colspan="3" style="padding:8px;font-size:11px;font-weight:900;text-align:right;letter-spacing:1px;color:#64748b;">SUBTOTAL</td>
+                        <td colspan="4" style="padding:8px;font-size:11px;font-weight:900;text-align:right;letter-spacing:1px;color:#64748b;">SUBTOTAL</td>
                         <td style="padding:8px;font-size:12px;font-weight:900;text-align:center;color:#1e293b;">${workerReg}</td>
                         <td style="padding:8px;font-size:12px;font-weight:900;text-align:center;${workerOt > 0 ? 'color:#dc2626;' : 'color:#1e293b;'}">${workerOt}</td>
                         <td colspan="2"></td>
@@ -186,6 +193,7 @@ function buildHTML(
     <meta charset="utf-8"/>
     <title>Polishers Production Report – ${dateLabel}</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body {
@@ -205,9 +213,36 @@ function buildHTML(
             .no-print { display: none !important; }
         }
         table { width: 100%; border-collapse: collapse; }
+        .action-bar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+            display: flex; justify-content: center; gap: 12px;
+            padding: 12px; background: rgba(30,41,59,0.95); backdrop-filter: blur(8px);
+        }
+        .action-bar button {
+            padding: 10px 24px; border: none; border-radius: 8px;
+            font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 700;
+            cursor: pointer; letter-spacing: 0.5px; text-transform: uppercase;
+        }
+        .btn-pdf { background: #2563eb; color: #fff; }
+        .btn-pdf:hover { background: #1d4ed8; }
+        .btn-pdf:disabled { background: #94a3b8; cursor: wait; }
+        .btn-print { background: #f1f5f9; color: #334155; }
+        .btn-print:hover { background: #e2e8f0; }
     </style>
 </head>
 <body>
+    <!-- Action Bar -->
+    <div class="action-bar no-print">
+        <button class="btn-pdf" id="downloadPdf" onclick="generatePDF()">Download PDF</button>
+        <button class="btn-print" onclick="window.print()">Print</button>
+    </div>
+
+    <!-- Spacer for fixed action bar -->
+    <div class="no-print" style="height:60px;"></div>
+
+    <!-- Report Content -->
+    <div id="report-content">
+
     <!-- Timestamp -->
     <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#94a3b8;margin-bottom:12px;">
         <span>Generated: ${timestamp}</span>
@@ -270,6 +305,28 @@ function buildHTML(
 
     <!-- Footer -->
     <div style="text-align:right;margin-top:30px;font-size:9px;color:#94a3b8;">1/1</div>
+
+    </div><!-- /report-content -->
+
+    <script>
+    function generatePDF() {
+        var btn = document.getElementById('downloadPdf');
+        btn.disabled = true;
+        btn.textContent = 'Generating...';
+        var element = document.getElementById('report-content');
+        var opt = {
+            margin: [0.3, 0.3, 0.3, 0.3],
+            filename: 'Polishers_Report_${dateLabel.replace(/[^a-zA-Z0-9]/g, '_')}.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, logging: false },
+            jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' }
+        };
+        html2pdf().set(opt).from(element).save().then(function() {
+            btn.disabled = false;
+            btn.textContent = 'Download PDF';
+        });
+    }
+    </script>
 </body>
 </html>`;
 }
@@ -293,11 +350,4 @@ export async function printPolishersReport(
 
     printWindow.document.write(html);
     printWindow.document.close();
-
-    printWindow.onload = () => {
-        setTimeout(() => printWindow.print(), 400);
-    };
-    setTimeout(() => {
-        try { printWindow.print(); } catch { /* already printed */ }
-    }, 1200);
 }

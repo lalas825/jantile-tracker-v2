@@ -298,6 +298,21 @@ function PolishersContent() {
         })
     })).filter(w => w.logs.length > 0 || (searchQuery === '' && !colorFilter));
 
+    // Recalculate totals based on filtered workers (not all workers)
+    const displayTotals = React.useMemo(() => {
+        let contract = 0, ticket = 0, total = 0, ot = 0;
+        displayWorkers.forEach(w => {
+            w.logs.forEach(l => {
+                const reg = parseFloat(l.regHours) || 0;
+                const over = parseFloat(l.otHours) || 0;
+                total += reg; ot += over;
+                if (l.isTicket) ticket += reg;
+                else contract += reg;
+            });
+        });
+        return { contract, ticket, total, ot };
+    }, [displayWorkers]);
+
     // Modals state
     const [customPickerVisible, setCustomPickerVisible] = useState(false);
     const [tempRange, setTempRange] = useState<{ start: Date | null, end: Date | null }>({ start: null, end: null });
@@ -330,7 +345,7 @@ function PolishersContent() {
                             <Ionicons name={allCollapsed ? 'expand-outline' : 'contract-outline'} size={16} color="#475569" />
                             <Text className="text-slate-600 font-outfit font-black uppercase tracking-widest text-xs">{allCollapsed ? 'Expand' : 'Collapse'}</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => printPolishersReport(displayWorkers, dateRange, totals)} className="bg-slate-100 px-3 py-2 rounded-lg" style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                        <TouchableOpacity onPress={() => printPolishersReport(displayWorkers, dateRange, displayTotals)} className="bg-slate-100 px-3 py-2 rounded-lg" style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                             <Ionicons name="print-outline" size={16} color="#475569" />
                             <Text className="text-slate-600 font-outfit font-black uppercase tracking-widest text-xs">Report</Text>
                         </TouchableOpacity>
@@ -444,19 +459,19 @@ function PolishersContent() {
                 <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 15 }}>
                     <View style={{ alignItems: 'center' }}>
                         <Text style={{ fontSize: 8, color: '#94a3b8', fontWeight: '800', letterSpacing: 0.5 }}>OT</Text>
-                        <Text style={{ fontSize: 13, color: '#334155', fontWeight: '600' }}>{totals.ot} hrs</Text>
+                        <Text style={{ fontSize: 13, color: '#334155', fontWeight: '600' }}>{displayTotals.ot} hrs</Text>
                     </View>
                     <View style={{ alignItems: 'center' }}>
                         <Text style={{ fontSize: 8, color: '#94a3b8', fontWeight: '800', letterSpacing: 0.5 }}>CONTRACT</Text>
-                        <Text style={{ fontSize: 13, color: '#334155', fontWeight: '600' }}>{totals.contract} hrs</Text>
+                        <Text style={{ fontSize: 13, color: '#334155', fontWeight: '600' }}>{displayTotals.contract} hrs</Text>
                     </View>
                     <View style={{ alignItems: 'center' }}>
                         <Text style={{ fontSize: 8, color: '#94a3b8', fontWeight: '800', letterSpacing: 0.5 }}>TICKET</Text>
-                        <Text style={{ fontSize: 13, color: '#334155', fontWeight: '600' }}>{totals.ticket} hrs</Text>
+                        <Text style={{ fontSize: 13, color: '#334155', fontWeight: '600' }}>{displayTotals.ticket} hrs</Text>
                     </View>
                     <View style={{ alignItems: 'flex-end', marginLeft: 10 }}>
                         <Text style={{ fontSize: 9, color: '#94a3b8', fontWeight: '900', letterSpacing: 0.5 }}>TOTAL</Text>
-                        <Text style={{ fontSize: 32, color: '#0f172a', fontWeight: '900' }}>{totals.total} Hrs</Text>
+                        <Text style={{ fontSize: 32, color: '#0f172a', fontWeight: '900' }}>{displayTotals.total} Hrs</Text>
                     </View>
                 </View>
             </View>
