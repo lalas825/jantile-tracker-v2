@@ -41,26 +41,32 @@ function buildReportHtml(items: any[], job: any, logoSrc: string): string {
     const resolvedItems = items.filter(i => i.status === 'resolved');
     const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
+    const thStyle = 'padding:10px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#92400e;font-weight:700;text-align:left;';
     const tableHeaders = `
         <tr style="background:#fefce8;">
-            <th style="padding:10px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#92400e;font-weight:700;text-align:left;">PL#</th>
-            <th style="padding:10px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#92400e;font-weight:700;text-align:left;">Location</th>
-            <th style="padding:10px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#92400e;font-weight:700;text-align:left;">Type</th>
-            <th style="padding:10px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#92400e;font-weight:700;text-align:left;">Notes</th>
-            <th style="padding:10px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#92400e;font-weight:700;text-align:left;">Reported By</th>
-            <th style="padding:10px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#92400e;font-weight:700;text-align:left;">Date</th>
+            <th style="${thStyle}">PL#</th>
+            <th style="${thStyle}">Photo</th>
+            <th style="${thStyle}">Location</th>
+            <th style="${thStyle}">Type</th>
+            <th style="${thStyle}">Notes</th>
+            <th style="${thStyle}">Reported By</th>
+            <th style="${thStyle}">Date</th>
         </tr>`;
 
     const itemRows = (list: any[]) => list.map((item) => {
         const location = [item.floor_name, item.unit_name, item.area_name].filter(Boolean).join(' › ');
+        const photoCell = item.photo_url
+            ? `<img src="${item.photo_url}" style="width:64px;height:48px;object-fit:cover;border-radius:4px;display:block;" />`
+            : `<span style="color:#cbd5e1;font-size:10px;">—</span>`;
         return `
         <tr>
-            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:12px;font-weight:800;color:#d97706;">${item.plNumber}</td>
-            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:12px;color:#334155;">${location || '—'}</td>
-            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:12px;color:#334155;">${item.type}</td>
-            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:12px;color:#475569;max-width:260px;">${item.description}</td>
-            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:11px;color:#64748b;">${item.created_by}</td>
-            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:11px;color:#64748b;white-space:nowrap;">${new Date(item.created_at).toLocaleDateString()}</td>
+            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:12px;font-weight:800;color:#d97706;vertical-align:middle;">${item.plNumber}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid #fef3c7;vertical-align:middle;">${photoCell}</td>
+            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:12px;color:#334155;vertical-align:middle;">${location || '—'}</td>
+            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:12px;color:#334155;vertical-align:middle;">${item.type}</td>
+            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:12px;color:#475569;max-width:220px;vertical-align:middle;">${item.description}</td>
+            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:11px;color:#64748b;vertical-align:middle;">${item.created_by}</td>
+            <td style="padding:10px 8px;border-bottom:1px solid #fef3c7;font-size:11px;color:#64748b;white-space:nowrap;vertical-align:middle;">${new Date(item.created_at).toLocaleDateString()}</td>
         </tr>`;
     }).join('');
 
