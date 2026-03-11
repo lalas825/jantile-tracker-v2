@@ -1,17 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, LayoutAnimation, Platform, UIManager, Modal, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, LayoutAnimation, Platform, Modal, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SupabaseService, ProjectMaterial } from '../../services/SupabaseService';
 import AddBudgetItemModal from '../logistics/AddBudgetItemModal';
 import AllocateStockModal from './AllocateStockModal';
 import { supabase } from '../../config/supabase';
 import { ChevronDown, ChevronRight, Search, Box } from 'lucide-react-native';
-
-if (Platform.OS === 'android') {
-    if (UIManager.setLayoutAnimationEnabledExperimental) {
-        UIManager.setLayoutAnimationEnabledExperimental(true);
-    }
-}
 
 export default function InventoryView() {
     const [materials, setMaterials] = useState<any[]>([]);

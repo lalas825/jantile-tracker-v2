@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Platform, Alert, Dimensions, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Platform, Alert, Dimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { ChevronLeft, X, CheckCircle2, Activity, Ban, Circle } from 'lucide-react-native';
 import clsx from 'clsx';
