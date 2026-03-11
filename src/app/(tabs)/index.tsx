@@ -159,7 +159,7 @@ export default function Dashboard() {
                     }
                     const { count, error } = await query;
                     if (!error) rejectedTickets = count || 0;
-                } catch (e) { }
+                } catch (e) { console.warn("Dashboard: rejected tickets fetch failed:", e); }
 
                 // 4. Manpower (scoped to user's jobs)
                 let manpower = 0;
@@ -182,7 +182,7 @@ export default function Dashboard() {
                             if (!error) manpower = count || 0;
                         }
                     }
-                } catch (e) { }
+                } catch (e) { console.warn("Dashboard: manpower fetch failed:", e); }
 
                 setWebStats({
                     openIssues,

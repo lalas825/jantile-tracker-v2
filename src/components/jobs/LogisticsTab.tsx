@@ -172,7 +172,7 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
             }
         });
 
-        const sortedRealAreas = [...finalAreas].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        const sortedRealAreas = [...finalAreas].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }));
         return [...sortedRealAreas, ...virtualAreas];
     }, [finalAreas, finalMaterials]);
 

@@ -73,7 +73,7 @@ export default function ProductionRow({ log, activeJobs, onUpdate, onDelete, onD
                         value={localData.jobId || ''}
                         onChange={(e) => {
                             const val = e.target.value;
-                            const job = activeJobs.find(j => j.id === val);
+                            const job = (activeJobs || []).find(j => j.id === val);
                             handleChange('jobId', val);
                             onUpdate({ jobId: val, jobName: job?.name || '' });
                         }}

@@ -117,7 +117,7 @@ export default function FieldScreen() {
                     const { data: transitData, error } = await sb.from('delivery_tickets').select('id')
                         .in('status', ['IN_TRANSIT', 'SHIPPED', 'DISPATCHED']);
                     if (!error) setWebTransit(transitData?.length || 0);
-                } catch (e) { }
+                } catch (e) { console.warn("FieldHub: transit fetch failed:", e); }
 
                 // Workers assigned to jobs
                 try {
@@ -129,7 +129,7 @@ export default function FieldScreen() {
                         }).length;
                         setWebWorkerCount(assignedCount);
                     }
-                } catch (e) { }
+                } catch (e) { console.warn("FieldHub: workers fetch failed:", e); }
 
                 // Active crew check-ins (wrapped in try-catch in case table is missing)
                 try {
@@ -137,7 +137,7 @@ export default function FieldScreen() {
                         .select('id', { count: 'exact', head: true })
                         .is('check_out', null);
                     if (!error) setWebManpower(checkinCount || 0);
-                } catch (e) { }
+                } catch (e) { console.warn("FieldHub: checkins fetch failed:", e); }
 
                 // Avg area progress
                 try {
@@ -146,7 +146,7 @@ export default function FieldScreen() {
                         const avg = Math.round(areasData.reduce((s: number, a: any) => s + (a.progress || 0), 0) / areasData.length);
                         setWebProgress(avg);
                     }
-                } catch (e) { }
+                } catch (e) { console.warn("FieldHub: progress fetch failed:", e); }
             }
 
         } catch (error) {

@@ -33,9 +33,13 @@ const ApprovalBadge = () => {
 
     React.useEffect(() => {
         if (isWeb) {
-            SupabaseService.getAllDeliveryTickets().then(data => {
-                setWebCount(data.filter(t => t.status === 'PENDING_APPROVAL').length);
-            });
+            let mounted = true;
+            SupabaseService.getAllDeliveryTickets()
+                .then(data => {
+                    if (mounted) setWebCount((data || []).filter(t => t.status === 'PENDING_APPROVAL').length);
+                })
+                .catch(err => console.warn("DesktopNavbar: Failed to fetch approval count:", err));
+            return () => { mounted = false; };
         }
     }, [isWeb]);
 
