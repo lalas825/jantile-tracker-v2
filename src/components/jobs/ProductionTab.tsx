@@ -419,8 +419,8 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
                         const updatedJob = await SupabaseService.getJob(job.id);
                         if (updatedJob) {
                             const newArea = (updatedJob as any).floors
-                                ?.flatMap((f: any) => f.units)
-                                ?.flatMap((u: any) => u.areas)
+                                ?.flatMap((f: any) => f.units || [])
+                                ?.flatMap((u: any) => u.areas || [])
                                 ?.find((a: any) => a.id === selectedArea.id);
                             if (newArea) setSelectedArea(newArea);
                         }
@@ -442,8 +442,8 @@ export default function ProductionTab({ job, setJob }: { job: Job, setJob: (j: J
                         const updatedJob = await SupabaseService.getJob(job.id);
                         if (updatedJob) {
                             const newArea = (updatedJob as any).floors
-                                ?.flatMap((f: any) => f.units)
-                                ?.flatMap((u: any) => u.areas)
+                                ?.flatMap((f: any) => f.units || [])
+                                ?.flatMap((u: any) => u.areas || [])
                                 ?.find((a: any) => a.id === selectedArea.id);
                             if (newArea) setSelectedArea(newArea);
                         }

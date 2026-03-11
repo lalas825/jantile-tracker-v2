@@ -150,7 +150,11 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
 
             if (unrecoverableCodes.includes(ex?.code)) {
                 console.warn(`[SupabaseConnector] Non-recoverable error (${ex.code}) — completing transaction to unblock queue`);
-                await transaction.complete();
+                try {
+                    await transaction.complete();
+                } catch (completeErr) {
+                    console.error(`[SupabaseConnector] Failed to complete transaction after non-recoverable error:`, completeErr);
+                }
             }
             // Otherwise PowerSync will retry automatically
         }

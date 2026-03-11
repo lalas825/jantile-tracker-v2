@@ -853,7 +853,8 @@ export const LogisticsService = {
                         if (updateError.message?.includes('column "in_warehouse_pieces" does not exist')) {
                             console.warn("[Supabase SERVICE] Fallback: Retrying update without in_warehouse_pieces...");
                             const { in_warehouse_pieces, ...fallbackPayload } = updatePayload;
-                            await supabase.from('project_materials').update(fallbackPayload).eq('id', receipt.material_id);
+                            const { error: fallbackError } = await supabase.from('project_materials').update(fallbackPayload).eq('id', receipt.material_id);
+                            if (fallbackError) console.error("[Supabase SERVICE] Fallback update also failed:", fallbackError);
                         }
                     } else {
                         console.log(`[Supabase SERVICE] Material ${receipt.material_id} updated successfully.`);
@@ -879,7 +880,7 @@ export const LogisticsService = {
                             photo_url: receipt.photo_url,
                             created_by: userId
                         });
-                        if (claimError) console.error("[Supabase SERVICE] Claim/Doc Error:", claimError);
+                        if (claimError) console.error("[Supabase SERVICE] Claim/Doc Error (non-fatal, receipt still processed):", claimError);
                     }
 
                     // 3. Update PO Item received qty
@@ -901,7 +902,7 @@ export const LogisticsService = {
                 updated_at: new Date().toISOString()
             }).eq('id', poId);
 
-            if (poError) console.error("[Supabase SERVICE] PO Update Error:", poError);
+            if (poError) console.error("[Supabase SERVICE] PO status update failed (materials were received but PO status not updated):", poError);
 
             // Automated PM Alerts
             if (overallHasDiscrepancy) {

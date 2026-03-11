@@ -157,9 +157,10 @@ export const JobService = {
 
         // On native (PowerSync), filter locally by job_assignments for non-admin/pm users.
         const isGlobal = !filter?.role || ['admin', 'pm'].includes(filter.role);
+        const queryParams: any[] = [];
         const assignmentFilter = isGlobal
             ? ''
-            : `AND j.id IN (SELECT job_id FROM job_assignments WHERE user_id = '${filter!.userId}')`;
+            : (() => { queryParams.push(filter!.userId); return `AND j.id IN (SELECT job_id FROM job_assignments WHERE user_id = ?)`; })();
 
         const query = `
             SELECT
@@ -173,7 +174,7 @@ export const JobService = {
             ORDER BY j.name ASC
         `;
 
-        const jobs = await db.getAll(query);
+        const jobs = await db.getAll(query, queryParams);
 
         return jobs.map((j: any) => ({
             ...j,
@@ -277,14 +278,15 @@ export const JobService = {
             }
 
             // Sort logic if needed
+            const safeCompare = (a: any, b: any) => (a?.name || '').localeCompare(b?.name || '', undefined, { numeric: true });
             if (data && data.floors) {
-                data.floors.sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                data.floors.sort(safeCompare);
                 data.floors.forEach((floor: any) => {
                     if (floor.units) {
-                        floor.units.sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                        floor.units.sort(safeCompare);
                         floor.units.forEach((unit: any) => {
                             if (unit.areas) {
-                                unit.areas.sort((a: any, b: any) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                                unit.areas.sort(safeCompare);
                             }
                         });
                     }

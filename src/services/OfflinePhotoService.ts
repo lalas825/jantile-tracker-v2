@@ -16,6 +16,8 @@ interface OfflinePhotoItem {
     status: string;
 }
 
+let _isProcessing = false;
+
 export const OfflinePhotoService = {
 
     // 1. Initial Save (Offline)
@@ -65,9 +67,19 @@ export const OfflinePhotoService = {
     // Call this periodically or on connection restore
     async processQueue() {
         if (Platform.OS === 'web') return;
+        if (_isProcessing) {
+            console.log('📸 [DEBUG] OfflinePhotoService: Already processing, skipping.');
+            return;
+        }
+        _isProcessing = true;
         console.log('📸 [DEBUG] OfflinePhotoService: processQueue START');
 
         try {
+            // Reset photos stuck in 'uploading' for >5 minutes (app crash recovery)
+            await db.execute(
+                `UPDATE offline_photos SET status = 'queued' WHERE status = 'uploading' AND created_at < datetime('now', '-5 minutes')`
+            );
+
             // Get all queued items
             const allItems = await db.getAll(`SELECT * FROM offline_photos`);
             console.log(`📸 [DEBUG] Total rows in offline_photos table: ${allItems.length}`);
@@ -200,6 +212,8 @@ export const OfflinePhotoService = {
             }
         } catch (globalErr: any) {
             console.error('📸 [DEBUG] Global Process Queue Error:', globalErr);
+        } finally {
+            _isProcessing = false;
         }
     }
 };
@@ -207,6 +221,8 @@ export const OfflinePhotoService = {
 // PERIODIC RETRY (Every 30 seconds)
 if (Platform.OS !== 'web') {
     setInterval(() => {
-        OfflinePhotoService.processQueue().catch(() => { });
+        OfflinePhotoService.processQueue().catch((e) => {
+            console.error('📸 [Interval] processQueue error:', e?.message || e);
+        });
     }, 30000);
 }

@@ -115,7 +115,7 @@ export const CrewService = {
                 status: w.status,
                 phone: w.phone,
                 email: w.email,
-                assignedJobIds: Array.isArray(w.assigned_job_ids) ? w.assigned_job_ids : (w.assigned_job_ids ? JSON.parse(w.assigned_job_ids) : []),
+                assignedJobIds: Array.isArray(w.assigned_job_ids) ? w.assigned_job_ids : (() => { try { return w.assigned_job_ids ? JSON.parse(w.assigned_job_ids) : []; } catch { return []; } })(),
                 avatar: w.avatar || getInitials(w.name)
             }));
         }
@@ -129,7 +129,7 @@ export const CrewService = {
             status: w.status,
             phone: w.phone,
             email: w.email,
-            assignedJobIds: w.assigned_job_ids ? JSON.parse(w.assigned_job_ids) : [],
+            assignedJobIds: (() => { try { return w.assigned_job_ids ? JSON.parse(w.assigned_job_ids) : []; } catch { return []; } })(),
             avatar: w.avatar || getInitials(w.name)
         }));
     },
@@ -267,7 +267,7 @@ export const CrewService = {
         return Array.from(workerMap.values());
     },
 
-    async upsertLog(logId: string, date: Date, workerId: string, field: string | Record<string, any>, value?: any): Promise<any> {
+    async upsertLog(logId: string, date: Date, workerId: string, field: string | Record<string, any>, value?: any, _retried?: boolean): Promise<any> {
         const dateStr = formatDate(date);
         const useSupabase = Platform.OS === 'web' || (db as any).isMock;
 
@@ -372,9 +372,9 @@ export const CrewService = {
             }
         } catch (e: any) {
             // Handle race conditions or schema version mismatches
-            if (e.message?.includes('no such column: status_color')) {
+            if (e.message?.includes('no such column: status_color') && !_retried) {
                 await db.execute('ALTER TABLE production_logs ADD COLUMN status_color TEXT');
-                return await CrewService.upsertLog(logId, date, workerId, field, value);
+                return await CrewService.upsertLog(logId, date, workerId, field, value, true);
             }
             if (e.message?.includes('UNIQUE constraint failed')) {
                 const retryParams = [];

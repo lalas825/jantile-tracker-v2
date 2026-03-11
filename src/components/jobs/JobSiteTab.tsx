@@ -149,7 +149,7 @@ export default function JobSiteTab({ job }: JobSiteTabProps) {
         const raw = isWeb ? webTickets : tickets;
         return raw.map((t: any) => ({
             ...t,
-            items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items
+            items: typeof t.items === 'string' ? (() => { try { return JSON.parse(t.items); } catch { return []; } })() : (t.items || [])
         })) as DeliveryTicket[];
     }, [isWeb, webTickets, tickets]);
 
