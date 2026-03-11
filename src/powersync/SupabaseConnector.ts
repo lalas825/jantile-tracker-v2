@@ -50,9 +50,14 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
                             console.log(`[SupabaseConnector] Found row in local DB for ${table}:`, JSON.stringify(row));
                             cleanedData = { ...row };
                         } else {
-                            console.warn(`[SupabaseConnector] Row NOT found in local DB for ${table} with id: ${id}`);
+                            console.warn(`[SupabaseConnector] Row NOT found in local DB for ${table} (${id}) — skipping orphaned op`);
+                            continue; // Row deleted locally, skip this operation
                         }
-                    } catch (e) {
+                    } catch (e: any) {
+                        if (e?.message?.includes('Result set is empty')) {
+                            console.warn(`[SupabaseConnector] Row gone from local DB for ${table} (${id}) — skipping`);
+                            continue; // Row no longer exists, skip
+                        }
                         console.error(`[SupabaseConnector] Error fetching row from local DB:`, e);
                     }
                 }
@@ -81,6 +86,12 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
                         delete cleanedData[col];
                     }
                     console.log(`[SupabaseConnector] Sanitized ${table} (removed ${columnsToRemove.join(', ')})`);
+                }
+
+                // SAFETY NET: Never send empty payloads — they always fail with constraint violations
+                if (operation !== 'DELETE' && Object.keys(cleanedData).length === 0) {
+                    console.warn(`[SupabaseConnector] Empty payload for ${table} (${id}) — skipping to prevent constraint error`);
+                    continue;
                 }
 
                 if (operation === 'PUT') {
@@ -126,10 +137,19 @@ export class SupabaseConnector implements PowerSyncBackendConnector {
             console.log(`[SupabaseConnector] Transaction Completed Successfully`);
         } catch (ex: any) {
             console.error("[SupabaseConnector] Upload error:", JSON.stringify(ex));
-            // If it's a schema mismatch (column not found), complete the transaction
-            // to unblock the queue. The data will re-sync from the server.
-            if (ex?.code === 'PGRST204' || ex?.code === '42703') {
-                console.warn("[SupabaseConnector] Schema mismatch — completing transaction to unblock queue");
+
+            // Complete transaction on non-recoverable errors to unblock the sync queue.
+            // These errors will never succeed on retry, so retrying forever blocks all sync.
+            const unrecoverableCodes = [
+                'PGRST204', // Schema mismatch (column not found in PostgREST)
+                '42703',    // Column does not exist (PostgreSQL)
+                '23502',    // NOT NULL constraint violation (missing required data)
+                '23503',    // Foreign key constraint violation (parent row missing)
+                '23505',    // Unique constraint violation (duplicate key)
+            ];
+
+            if (unrecoverableCodes.includes(ex?.code)) {
+                console.warn(`[SupabaseConnector] Non-recoverable error (${ex.code}) — completing transaction to unblock queue`);
                 await transaction.complete();
             }
             // Otherwise PowerSync will retry automatically

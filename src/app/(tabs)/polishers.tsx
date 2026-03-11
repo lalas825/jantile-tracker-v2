@@ -212,7 +212,7 @@ function PolishersContent() {
     const triggerRefresh = () => setRefreshTrigger(prev => prev + 1);
 
     // --- ACTIONS ---
-    const updateLog = async (workerId: string, logId: string, field: string | Record<string, any>, value?: any) => {
+    const updateLog = async (workerId: string, logId: string, field: string | Record<string, any>, value?: any, logDate?: string) => {
         // OPTIMISTIC UPDATE 🚀
         const updates = typeof field === 'string' ? { [field]: value } : field;
         setOptimisticLogs(prev => ({
@@ -220,8 +220,11 @@ function PolishersContent() {
             [logId]: { ...(prev[logId] || {}), ...updates }
         }));
 
+        // Use the log's actual date to avoid overwriting it (e.g. in Week view)
+        const dateToUse = logDate ? new Date(logDate + 'T00:00:00') : dateRange.start;
+
         try {
-            await SupabaseService.upsertLog(logId, dateRange.start, workerId, field, value);
+            await SupabaseService.upsertLog(logId, dateToUse, workerId, field, value);
             triggerRefresh(); // Force refresh to sync with DB
         } catch (e: any) {
             // Revert optimistic on error
@@ -424,7 +427,7 @@ function PolishersContent() {
                                     {worker.logs.map(log => (
                                         <ProductionRow
                                             key={log.id} log={log} activeJobs={activeJobs}
-                                            onUpdate={(field, value) => updateLog(worker.id, log.id, field as keyof UIJobLog, value)}
+                                            onUpdate={(field, value) => updateLog(worker.id, log.id, field as keyof UIJobLog, value, log.date)}
                                             onDelete={() => deleteRow(log.id)} onDuplicate={() => duplicateRow(worker.id, log)}
                                             onSelectJob={() => setSelectedLogForJob({ workerId: worker.id, logId: log.id })}
                                         />
