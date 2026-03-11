@@ -37,8 +37,19 @@ export default function ProductionRow({ log, activeJobs, onUpdate, onDelete, onD
     };
 
     const handleSave = (field: string) => {
-        if (localData[field] !== log[field]) {
-            onUpdate(field, localData[field]);
+        let value = localData[field];
+        // Validate hours fields: clamp to 0-24
+        if (field === 'regHours' || field === 'otHours') {
+            const num = parseFloat(value);
+            if (isNaN(num) || num < 0) value = '0';
+            else if (num > 24) value = '24';
+            else value = String(num);
+            if (value !== localData[field]) {
+                setLocalData((prev: any) => ({ ...prev, [field]: value }));
+            }
+        }
+        if (value !== log[field]) {
+            onUpdate(field, value);
         }
     };
 

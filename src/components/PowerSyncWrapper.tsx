@@ -40,6 +40,8 @@ export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
 
     useEffect(() => {
         let isLoopActive = true;
+        let statusInterval: ReturnType<typeof setInterval> | null = null;
+        let statusTimeout: ReturnType<typeof setTimeout> | null = null;
 
         console.log("PowerSyncWrapper: Starting init check. Session:", !!session);
 
@@ -51,6 +53,11 @@ export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
 
                 if (!isLoopActive) return;
 
+                // Disconnect previous connection before reconnecting (session change)
+                try {
+                    await db.disconnect();
+                } catch { /* ignore if not connected */ }
+
                 // CONNECT TO BACKEND
                 const connector = new SupabaseConnector();
                 await db.connect(connector);
@@ -58,13 +65,16 @@ export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
                 console.log("PowerSyncWrapper: Sync status after connect:", JSON.stringify(db.currentStatus));
 
                 // Log sync status periodically so we can see if sync completes
-                const statusInterval = setInterval(() => {
+                statusInterval = setInterval(() => {
                     if (db.currentStatus) {
                         console.log("PowerSyncWrapper: Sync status:", JSON.stringify(db.currentStatus));
                     }
                 }, 5000);
                 // Clear after 30s to avoid noise
-                setTimeout(() => clearInterval(statusInterval), 30000);
+                statusTimeout = setTimeout(() => {
+                    if (statusInterval) clearInterval(statusInterval);
+                    statusInterval = null;
+                }, 30000);
 
                 setDbInstance(db);
                 setIsReady(true);
@@ -90,7 +100,11 @@ export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
             setIsReady(true); // Let it render so they can log in
         }
 
-        return () => { isLoopActive = false; };
+        return () => {
+            isLoopActive = false;
+            if (statusInterval) clearInterval(statusInterval);
+            if (statusTimeout) clearTimeout(statusTimeout);
+        };
     }, [session]); // RE-RUN when session changes!
 
 

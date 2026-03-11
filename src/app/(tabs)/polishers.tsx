@@ -78,17 +78,23 @@ function PolishersContent() {
     // FETCH FOR WEB (Direct Supabase)
     useEffect(() => {
         if (isActuallyWeb || db.isMock) {
+            let cancelled = false;
             const fetchWeb = async () => {
                 try {
                     const data = await SupabaseService.getProductionLogs(formatDate(dateRange.start), formatDate(dateRange.end));
-                    setWebLogs(data);
-                    setFetchError(null);
+                    if (!cancelled) {
+                        setWebLogs(data);
+                        setFetchError(null);
+                    }
                 } catch (e: any) {
-                    console.error("[Polishers] Web fetch error:", e);
-                    setFetchError(e.message || "Failed to fetch logs from Supabase.");
+                    if (!cancelled) {
+                        console.error("[Polishers] Web fetch error:", e);
+                        setFetchError(e.message || "Failed to fetch logs from Supabase.");
+                    }
                 }
             };
             fetchWeb();
+            return () => { cancelled = true; };
         }
     }, [dateRange.start.getTime(), dateRange.end.getTime(), refreshTrigger, db.isMock, isActuallyWeb]);
 

@@ -48,29 +48,14 @@ export function FloatingChat() {
     }
   }, [messages, isOpen]);
 
-  // Create hidden file input on mount (web only)
-  useEffect(() => {
-    const inp = document.createElement('input');
-    inp.type = 'file';
-    inp.accept = ACCEPTED_TYPES;
-    inp.style.display = 'none';
-    inp.addEventListener('change', handleFileSelected);
-    document.body.appendChild(inp);
-    fileInputRef.current = inp;
-    return () => {
-      inp.removeEventListener('change', handleFileSelected);
-      inp.remove();
-    };
-  }, []);
-
   const handleFileSelected = useCallback((e: Event) => {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
+    const inp = e.target as HTMLInputElement;
+    const file = inp.files?.[0];
     if (!file) return;
 
     if (file.size > MAX_FILE_SIZE) {
       alert(`File too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max 10MB.`);
-      input.value = '';
+      inp.value = '';
       return;
     }
 
@@ -83,8 +68,24 @@ export function FloatingChat() {
       setSelectedFile({ base64, mimeType, name: file.name, dataUri });
     };
     reader.readAsDataURL(file);
-    input.value = ''; // reset so same file can be re-selected
+    inp.value = ''; // reset so same file can be re-selected
   }, []);
+
+  // Create hidden file input on mount (web only)
+  useEffect(() => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = ACCEPTED_TYPES;
+    inp.style.display = 'none';
+    inp.addEventListener('change', handleFileSelected);
+    document.body.appendChild(inp);
+    fileInputRef.current = inp;
+    return () => {
+      inp.removeEventListener('change', handleFileSelected);
+      inp.remove();
+      fileInputRef.current = null;
+    };
+  }, [handleFileSelected]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
