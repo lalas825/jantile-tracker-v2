@@ -51,6 +51,7 @@ export const SupabaseService = {
 
     // --- PHOTOS (delegated to JobService) ---
     uploadAreaPhoto: JobService.uploadAreaPhoto,
+    uploadIssuePhoto: JobService.uploadIssuePhoto,
     getAreaPhotos: JobService.getAreaPhotos,
     deleteAreaPhoto: JobService.deleteAreaPhoto,
 

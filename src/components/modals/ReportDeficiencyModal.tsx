@@ -104,13 +104,18 @@ export default function ReportDeficiencyModal({
         }
         setSubmitting(true);
         try {
+            let uploadedUrl: string | undefined;
+            if (photoUri) {
+                const url = await SupabaseService.uploadIssuePhoto(photoUri);
+                if (url) uploadedUrl = url;
+            }
             await SupabaseService.createIssue({
                 job_id: jobId,
                 area_id: selectedArea?.id ?? undefined,
                 type: itemType,
                 priority: 'Medium',
                 description: description.trim(),
-                photo_url: photoUri ?? undefined,
+                photo_url: uploadedUrl,
                 created_by: (user as any)?.email ?? (user as any)?.user_metadata?.full_name ?? 'Unknown',
             });
             onSuccess();

@@ -823,6 +823,35 @@ export const JobService = {
         if (areaId) await JobService.recalculateAreaProgress(areaId);
     },
 
+    // --- ISSUE PHOTO UPLOAD ---
+
+    async uploadIssuePhoto(uri: string): Promise<string | null> {
+        try {
+            const response = await fetch(uri);
+            const blob = await response.blob();
+            const filename = `${Crypto.randomUUID()}.jpg`;
+            const storagePath = `issue-photos/${filename}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('area-photos')
+                .upload(storagePath, blob, {
+                    contentType: 'image/jpeg',
+                    upsert: true
+                });
+
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('area-photos')
+                .getPublicUrl(storagePath);
+
+            return publicUrl;
+        } catch (err) {
+            console.error('[JobService] uploadIssuePhoto failed:', err);
+            return null;
+        }
+    },
+
     // --- PHOTO MANAGEMENT ---
 
     async uploadAreaPhoto(areaId: string, uri: string) {
