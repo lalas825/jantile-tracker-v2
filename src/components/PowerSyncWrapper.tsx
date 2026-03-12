@@ -53,34 +53,35 @@ export const PowerSyncWrapper = ({ children }: { children: ReactNode }) => {
 
                 if (!isLoopActive) return;
 
-                // Disconnect previous connection before reconnecting (session change)
+                // Render UI immediately with local data — don't wait for network
+                setDbInstance(db);
+                setIsReady(true);
+
+                // Connect to backend in background (non-blocking)
                 try {
                     await db.disconnect();
                 } catch { /* ignore if not connected */ }
 
-                // CONNECT TO BACKEND
                 const connector = new SupabaseConnector();
-                await db.connect(connector);
-                console.log("PowerSyncWrapper: Connected to backend.");
-                console.log("PowerSyncWrapper: Sync status after connect:", JSON.stringify(db.currentStatus));
+                db.connect(connector).then(() => {
+                    console.log("PowerSyncWrapper: Connected to backend.");
+                    console.log("PowerSyncWrapper: Sync status after connect:", JSON.stringify(db.currentStatus));
 
-                // Log sync status periodically so we can see if sync completes
-                statusInterval = setInterval(() => {
-                    if (db.currentStatus) {
-                        console.log("PowerSyncWrapper: Sync status:", JSON.stringify(db.currentStatus));
-                    }
-                }, 5000);
-                // Clear after 30s to avoid noise
-                statusTimeout = setTimeout(() => {
-                    if (statusInterval) clearInterval(statusInterval);
-                    statusInterval = null;
-                }, 30000);
-
-                setDbInstance(db);
-                setIsReady(true);
+                    // Log sync status periodically
+                    statusInterval = setInterval(() => {
+                        if (db.currentStatus) {
+                            console.log("PowerSyncWrapper: Sync status:", JSON.stringify(db.currentStatus));
+                        }
+                    }, 5000);
+                    statusTimeout = setTimeout(() => {
+                        if (statusInterval) clearInterval(statusInterval);
+                        statusInterval = null;
+                    }, 30000);
+                }).catch((connectErr: any) => {
+                    console.warn("PowerSyncWrapper: Backend connect failed (offline?):", connectErr?.message || connectErr);
+                });
             } catch (e: any) {
                 console.error('CRITICAL PowerSync init error:', e?.message || e);
-                // Fallback to mock DB to allow UI to render
                 const failedDb = {
                     ...mockDb,
                     currentStatus: {
