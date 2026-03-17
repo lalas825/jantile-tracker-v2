@@ -286,7 +286,7 @@ export default function TicketWorkView({ job }: Props) {
           documentNumber={sendTicket.ticket_number || 0}
           jobId={job?.id}
           jobName={job?.name || ''}
-          onSent={fetchTickets}
+          onSent={() => { fetchTickets(); setActiveStage('pending'); }}
         />
       )}
     </View>

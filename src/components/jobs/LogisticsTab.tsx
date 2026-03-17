@@ -103,7 +103,13 @@ export default function LogisticsTab({ job, onAreaUpdated, onRefreshJob }: Logis
     // --- MERGED DATA STREAMS ---
     const finalMaterials = useMemo(() => isWeb ? webMaterials : materials, [isWeb, webMaterials, materials]);
     const finalPOs = useMemo(() => isWeb ? webPOs : rawPOs, [isWeb, webPOs, rawPOs]);
-    const finalTickets = useMemo(() => isWeb ? webTickets : tickets, [isWeb, webTickets, tickets]);
+    const finalTickets = useMemo(() => {
+        if (isWeb) return webTickets;
+        return (tickets as any[]).map((t: any) => ({
+            ...t,
+            items: typeof t.items === 'string' ? JSON.parse(t.items) : (t.items || []),
+        }));
+    }, [isWeb, webTickets, tickets]);
     const finalAreas = useMemo(() => isWeb ? webAreas : rawAreas, [isWeb, webAreas, rawAreas]);
 
     const purchaseOrders = useMemo(() => {

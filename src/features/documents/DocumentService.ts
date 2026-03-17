@@ -231,31 +231,27 @@ export const DocumentService = {
     const now = new Date().toISOString();
 
     try {
-      if (useSupabase) {
-        const { error } = await supabase.from('document_signatures').insert({
-          document_type: params.documentType,
-          document_id: params.documentId,
-          job_id: params.jobId,
-          signer_name: params.signerName,
-          signer_email: params.signerEmail || null,
-          signer_role: params.signerRole || 'gc',
-          status: 'pending',
-          token,
-          created_at: now,
-        });
-        if (error) { console.error('[DocumentService] createSignatureRequest web error:', error); throw error; }
-      } else {
-        const id = Crypto.randomUUID();
-        await db.execute(
-          `INSERT INTO document_signatures (id, document_type, document_id, job_id, signer_name, signer_email, signer_role, status, token, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [id, params.documentType, params.documentId, params.jobId, params.signerName, params.signerEmail || null, params.signerRole || 'gc', 'pending', token, now]
-        );
-      }
+      // ALWAYS use Supabase directly — the public signing page reads from Supabase,
+      // so the record must exist server-side immediately (not waiting for PowerSync sync).
+      const { error } = await supabase.from('document_signatures').insert({
+        document_type: params.documentType,
+        document_id: params.documentId,
+        job_id: params.jobId,
+        signer_name: params.signerName,
+        signer_email: params.signerEmail || null,
+        signer_role: params.signerRole || 'gc',
+        status: 'pending',
+        token,
+        created_at: now,
+      });
+      if (error) { console.error('[DocumentService] createSignatureRequest error:', error); throw error; }
 
-      // Update parent document status to pending_signature
+      // Update parent document status to pending_signature (also via Supabase for consistency)
       if (params.documentType === 'work_ticket') {
-        await DocumentService.updateWorkTicket(params.documentId, { status: 'pending_signature' });
+        const { error: updateErr } = await supabase.from('work_tickets')
+          .update({ status: 'pending_signature', updated_at: now })
+          .eq('id', params.documentId);
+        if (updateErr) console.warn('[DocumentService] status update warning:', updateErr.message);
       }
 
       const signUrl = DocumentService.generateSignUrl(token);

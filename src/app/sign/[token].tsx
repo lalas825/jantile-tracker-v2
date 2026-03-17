@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   headerLogo: {
-    width: 60,
+    width: 200,
     height: 60,
     marginBottom: 8,
   },
@@ -325,8 +325,8 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   logo: {
-    width: 80,
-    height: 80,
+    width: 200,
+    height: 60,
   },
 
   // ── Loading / Error / Success ──
