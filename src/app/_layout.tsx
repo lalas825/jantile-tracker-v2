@@ -45,6 +45,9 @@ function AuthGuard() {
 
         const inAuthGroup = segments[0] === 'login';
         const inPendingPage = segments[0] === 'pending-approval';
+        const inPublicSign = (segments[0] as string) === 'sign';
+
+        if (inPublicSign) return; // Public signing page — no auth required
 
         if (!session && !inAuthGroup) {
             console.log('[AuthGuard] → redirect to /login');
@@ -91,6 +94,7 @@ function RootLayoutNav() {
                 <Stack.Screen name="login" options={{ headerShown: false }} />
                 <Stack.Screen name="pending-approval" options={{ headerShown: false }} />
                 <Stack.Screen name="logistics/new-request" options={{ headerShown: false }} />
+                <Stack.Screen name="sign" options={{ headerShown: false }} />
             </Stack>
 
             <AuthGuard />

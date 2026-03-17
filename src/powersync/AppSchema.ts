@@ -313,4 +313,39 @@ export const AppSchema = new Schema([
             new Column({ name: 'created_at', type: ColumnType.TEXT }),
         ]
     }),
+    new Table({
+        name: 'work_tickets',
+        columns: [
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'ticket_number', type: ColumnType.INTEGER }),
+            new Column({ name: 'service_date', type: ColumnType.TEXT }),
+            new Column({ name: 'work_description', type: ColumnType.TEXT }),
+            new Column({ name: 'trade', type: ColumnType.TEXT }),
+            new Column({ name: 'labor', type: ColumnType.TEXT }), // JSON string
+            new Column({ name: 'materials', type: ColumnType.TEXT }), // JSON string
+            new Column({ name: 'gc_notes', type: ColumnType.TEXT }),
+            new Column({ name: 'status', type: ColumnType.TEXT }), // draft | pending_signature | signed | declined
+            new Column({ name: 'signature_token', type: ColumnType.TEXT }),
+            new Column({ name: 'created_by', type: ColumnType.TEXT }),
+            new Column({ name: 'foreman_name', type: ColumnType.TEXT }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+            new Column({ name: 'updated_at', type: ColumnType.TEXT }),
+        ]
+    }),
+    new Table({
+        name: 'document_signatures',
+        columns: [
+            new Column({ name: 'document_type', type: ColumnType.TEXT }),
+            new Column({ name: 'document_id', type: ColumnType.TEXT }),
+            new Column({ name: 'job_id', type: ColumnType.TEXT }),
+            new Column({ name: 'signer_name', type: ColumnType.TEXT }),
+            new Column({ name: 'signer_email', type: ColumnType.TEXT }),
+            new Column({ name: 'signer_role', type: ColumnType.TEXT }),
+            new Column({ name: 'signature_url', type: ColumnType.TEXT }),
+            new Column({ name: 'status', type: ColumnType.TEXT }), // pending | signed | declined
+            new Column({ name: 'token', type: ColumnType.TEXT }),
+            new Column({ name: 'signed_at', type: ColumnType.TEXT }),
+            new Column({ name: 'created_at', type: ColumnType.TEXT }),
+        ]
+    }),
 ]);
