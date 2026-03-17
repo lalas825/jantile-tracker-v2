@@ -94,7 +94,7 @@ export default function PublicSigningPage() {
   if (state === 'loading') {
     return (
       <View style={styles.centerContainer}>
-        <Image source={require('../../../assets/images/icon.png')} style={styles.logo} resizeMode="contain" />
+        <Image source={require('../../../assets/images/jantile-logo.png')} style={styles.logo} resizeMode="contain" />
         <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 24 }} />
         <Text style={styles.loadingText}>Loading document...</Text>
       </View>
@@ -157,7 +157,7 @@ export default function PublicSigningPage() {
     <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
       {/* Header */}
       <View style={styles.header}>
-        <Image source={require('../../../assets/images/icon.png')} style={styles.headerLogo} resizeMode="contain" />
+        <Image source={require('../../../assets/images/jantile-logo.png')} style={styles.headerLogo} resizeMode="contain" />
         <Text style={styles.headerTitle}>Document Signature</Text>
       </View>
 
