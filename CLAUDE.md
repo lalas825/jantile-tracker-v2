@@ -267,11 +267,21 @@ src/utils/
 2. **Send**: `DocumentService.createSignatureRequest()` → inserts `document_signatures` row → updates ticket to `pending_signature` → returns sign URL
 3. **Sign**: GC opens `/sign/{token}` → `DocumentService.getDocumentByToken()` (public, supabase only) → `SignatureCanvas` captures base64 → `DocumentService.submitSignature()` uploads PNG to `signatures` bucket → updates status to `signed`
 4. **PDF**: `DocumentPDF.printTicket()` → generates HTML with Jantile letterhead, labor/materials tables, signature overlay → `expo-print` (native) / `window.open` (web)
+5. **Audit**: `AuditService.log()` fire-and-forget for `PDF_GENERATED` and `SIGNATURE_SUBMITTED` events → `audit_logs` table
+
+### Critical Rules (Blindaje)
+
+- **`createSignatureRequest` MUST always use Supabase directly** — never PowerSync. The public signing page reads from Supabase, so the record must exist server-side immediately. (Bug found: PowerSync insert → sync delay → "Unable to load document")
+- **PowerSync JSON fields must be parsed** — PowerSync stores JSONB as TEXT in SQLite. Any `useQuery()` result with JSON columns (e.g., `delivery_tickets.items`, `work_tickets.labor/materials`) must be parsed with `JSON.parse()` before use. (Bug found: `ticket.items.reduce()` on a string → "undefined is not a function")
+- **CreateTicketModal uses bottom sheet pattern** on mobile — `justifyContent: 'flex-end'` + `animationType: 'slide'` + `KeyboardAvoidingView`. Never use centered modals with `ScrollView flex:1` (the parent has no fixed height → content collapses).
+- **Form state must reset on modal open** — `useState` initial values only run on mount. Use `useEffect([visible, editTicket])` to reset form fields when the modal opens.
+- **After sending for signature, auto-switch to Pending tab** — otherwise the user thinks the ticket "disappeared".
 
 ### Database
 
 - `work_tickets`: T&M tickets with status lifecycle (draft → pending_signature → signed/declined)
 - `document_signatures`: Shared signature records (reusable for PTP, JHA, etc. later)
+- `audit_logs`: Event tracking (event_type, payload jsonb, user_id). RLS: insert for authenticated, select for admin/pm only
 - `signatures` bucket: Public Supabase Storage for signature PNGs
 - RLS: work_tickets gated by `job_assignments`, document_signatures open for token-based access
 
